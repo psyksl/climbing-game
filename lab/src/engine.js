@@ -31,41 +31,42 @@ const G = (() => {
   function keyUp(code) { edge.released[code] = true; if (actionKeys.includes(code)) edge.aRelease = true; }
   window.addEventListener('keydown', e => {
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
-    unlockAudio();
+    unlockAudio(); paused = false;
     if (e.repeat || auto) return;
     real.keys[e.code] = true; keyDown(e.code);
   });
   window.addEventListener('keyup', e => { if (auto) return; real.keys[e.code] = false; keyUp(e.code); });
-  window.addEventListener('blur', () => { for (const k in real.keys) if (real.keys[k]) { real.keys[k] = false; keyUp(k); } if (real.action) { real.action = false; edge.aRelease = true; } });
   function toLogical(cx, cy) { return { x: (cx - offX) / scale, y: (cy - offY) / scale }; }
-  canvas.addEventListener('contextmenu', e => e.preventDefault());
-  const activePointers = new Set();
-  canvas.addEventListener('pointerdown', e => {
-    e.preventDefault(); unlockAudio(); if (auto) return;
-    const p = toLogical(e.clientX, e.clientY);
-    mouse.x = p.x; mouse.y = p.y;
-    if (e.pointerType === 'mouse') {
-      mouse.down[e.button] = true; edge.clicks.push({ x: p.x, y: p.y, button: e.button });
-      if (oneButton && e.button === 0) { real.action = true; edge.aPress = true; }
-    } else {
-      activePointers.add(e.pointerId);
-      edge.clicks.push({ x: p.x, y: p.y, button: 0, touch: true });
-      if (oneButton && !real.action) { real.action = true; edge.aPress = true; }
-    }
-  });
-  function pointerEnd(e) {
-    if (auto) return;
-    if (e.pointerType === 'mouse') {
-      mouse.down[e.button] = false;
-      if (oneButton && e.button === 0 && real.action) { real.action = false; edge.aRelease = true; }
-    } else {
-      activePointers.delete(e.pointerId);
-      if (oneButton && activePointers.size === 0 && real.action) { real.action = false; edge.aRelease = true; }
-    }
+  window.addEventListener('contextmenu', e => e.preventDefault());
+  // 마우스 버튼: 이벤트 종류가 아니라 매 이벤트의 buttons 값(지금 눌린 버튼 전체)으로 맞춘다.
+  // 한 버튼을 누른 채 다른 버튼을 누르거나 떼면 브라우저는 pointerdown/up이 아니라 pointermove로 알려 주기 때문이다.
+  let guard = false; // 포커스를 잃었다 돌아온 뒤에는 버튼을 모두 뗀 것이 확인될 때까지 누름을 듣지 않는다
+  function setBtn(btn, on) {
+    if (mouse.down[btn] === on) return;
+    mouse.down[btn] = on;
+    if (on) edge.clicks.push({ x: mouse.x, y: mouse.y, button: btn });
   }
-  canvas.addEventListener('pointerup', pointerEnd);
-  canvas.addEventListener('pointercancel', pointerEnd);
-  canvas.addEventListener('pointermove', e => { if (auto) return; const p = toLogical(e.clientX, e.clientY); mouse.x = p.x; mouse.y = p.y; });
+  function syncMouse(e) {
+    if (auto || (e.pointerType && e.pointerType !== 'mouse')) return;
+    const p = toLogical(e.clientX, e.clientY); mouse.x = p.x; mouse.y = p.y;
+    const b = e.buttons;
+    if (guard) { if (b === 0) guard = false; else return; }
+    setBtn(0, !!(b & 1)); setBtn(2, !!(b & 2)); setBtn(1, !!(b & 4));
+  }
+  for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'mousedown', 'mouseup', 'mousemove', 'mouseenter'])
+    window.addEventListener(t, e => {
+      if (t === 'pointerdown') { unlockAudio(); try { canvas.setPointerCapture(e.pointerId); } catch (err) {} } // 창 밖에서 떼도 알 수 있게
+      if (t.startsWith('pointer') || t === 'mousedown') e.preventDefault();
+      syncMouse(e);
+    }, { passive: false });
+  function dropAll() { // 포커스를 잃으면 누르고 있던 것을 모두 뗀 것으로 본다(잡고 있는 손은 영향 없음)
+    for (const k in real.keys) if (real.keys[k]) { real.keys[k] = false; keyUp(k); }
+    setBtn(0, false); setBtn(1, false); setBtn(2, false);
+  }
+  let paused = false;
+  window.addEventListener('blur', () => { if (auto) return; dropAll(); guard = true; paused = true; });
+  window.addEventListener('focus', () => { paused = false; });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && !auto) { dropAll(); guard = true; paused = true; } });
   document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
 
   const input = {
@@ -171,6 +172,7 @@ const G = (() => {
   let game = null, acc = 0, last = 0, simTime = 0;
   function frame(ts) {
     const dt = Math.min(0.1, (ts - last) / 1000 || 0); last = ts; acc += dt;
+    if (paused) acc = 0;
     while (acc >= STEP) {
       if (game.bot && auto) game.bot(STEP, bot, auto);
       game.update(STEP, input);
@@ -186,6 +188,7 @@ const G = (() => {
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
     game.draw(ctx);
     if (flashT > 0) { ctx.globalAlpha = Math.min(1, flashT * 4); ctx.fillStyle = flashCol; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+    if (paused) { ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(0, 0, W, H); banner('일시정지', '창을 클릭하거나 키를 누르면 이어서 — 잡고 있던 손발은 그대로', 'info', 220); }
     ctx.restore();
     requestAnimationFrame(frame);
   }
