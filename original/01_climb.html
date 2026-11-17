@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>01 벽 한 장</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}canvas{display:block;touch-action:none}</style>
+</head><body>
+<script>
+// 공통 엔진: 960x540 논리 해상도, 고정 스텝 120Hz, 키·마우스·터치, 효과음, 자동 시연 훅
+'use strict';
+const G = (() => {
+  const W = 960, H = 540, STEP = 1 / 120;
+  const FONT = '"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR","Noto Sans CJK KR","WenQuanYi Zen Hei",sans-serif';
+  const canvas = document.createElement('canvas');
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  let scale = 1, offX = 0, offY = 0, dpr = 1;
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth, h = window.innerHeight;
+    scale = Math.min(w / W, h / H);
+    offX = (w - W * scale) / 2; offY = (h - H * scale) / 2;
+    canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  }
+  window.addEventListener('resize', resize); resize();
+
+  const params = new URLSearchParams(location.search);
+  const auto = params.get('auto');
+
+  // ---- 입력
+  const real = { keys: {}, action: false };
+  const virt = { keys: {}, action: false };
+  const edge = { pressed: {}, released: {}, aPress: false, aRelease: false, clicks: [] };
+  const mouse = { x: W / 2, y: H / 2, down: [false, false, false] };
+  let oneButton = false;
+  const actionKeys = ['Space'];
+  function keyDown(code) { edge.pressed[code] = true; if (actionKeys.includes(code)) edge.aPress = true; }
+  function keyUp(code) { edge.released[code] = true; if (actionKeys.includes(code)) edge.aRelease = true; }
+  window.addEventListener('keydown', e => {
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
+    unlockAudio();
+    if (e.repeat || auto) return;
+    real.keys[e.code] = true; keyDown(e.code);
+  });
+  window.addEventListener('keyup', e => { if (auto) return; real.keys[e.code] = false; keyUp(e.code); });
+  window.addEventListener('blur', () => { for (const k in real.keys) if (real.keys[k]) { real.keys[k] = false; keyUp(k); } if (real.action) { real.action = false; edge.aRelease = true; } });
+  function toLogical(cx, cy) { return { x: (cx - offX) / scale, y: (cy - offY) / scale }; }
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  const activePointers = new Set();
+  canvas.addEventListener('pointerdown', e => {
+    e.preventDefault(); unlockAudio(); if (auto) return;
+    const p = toLogical(e.clientX, e.clientY);
+    mouse.x = p.x; mouse.y = p.y;
+    if (e.pointerType === 'mouse') {
+      mouse.down[e.button] = true; edge.clicks.push({ x: p.x, y: p.y, button: e.button });
+      if (oneButton && e.button === 0) { real.action = true; edge.aPress = true; }
+    } else {
+      activePointers.add(e.pointerId);
+      edge.clicks.push({ x: p.x, y: p.y, button: 0, touch: true });
+      if (oneButton && !real.action) { real.action = true; edge.aPress = true; }
+    }
+  });
+  function pointerEnd(e) {
+    if (auto) return;
+    if (e.pointerType === 'mouse') {
+      mouse.down[e.button] = false;
+      if (oneButton && e.button === 0 && real.action) { real.action = false; edge.aRelease = true; }
+    } else {
+      activePointers.delete(e.pointerId);
+      if (oneButton && activePointers.size === 0 && real.action) { real.action = false; edge.aRelease = true; }
+    }
+  }
+  canvas.addEventListener('pointerup', pointerEnd);
+  canvas.addEventListener('pointercancel', pointerEnd);
+  canvas.addEventListener('pointermove', e => { if (auto) return; const p = toLogical(e.clientX, e.clientY); mouse.x = p.x; mouse.y = p.y; });
+  document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+  const input = {
+    key: c => !!(real.keys[c] || virt.keys[c]),
+    pressed: c => !!edge.pressed[c],
+    released: c => !!edge.released[c],
+    get action() { return real.action || virt.action || !!real.keys.Space || !!virt.keys.Space; },
+    get actionPressed() { return edge.aPress; },
+    get actionReleased() { return edge.aRelease; },
+    get clicks() { return edge.clicks; },
+    mouse,
+    any() { return edge.aPress || Object.keys(edge.pressed).length > 0 || edge.clicks.length > 0; },
+  };
+  // 자동 시연용 가상 입력
+  const bot = {
+    key(code, on) { if (!!virt.keys[code] === on) return; virt.keys[code] = on; on ? keyDown(code) : keyUp(code); },
+    action(on) { if (virt.action === on) return; virt.action = on; on ? edge.aPress = true : edge.aRelease = true; },
+    tap(code) { keyDown(code); keyUp(code); },
+    move(x, y) { mouse.x = x; mouse.y = y; },
+    click(x, y, button = 0) { mouse.x = x; mouse.y = y; edge.clicks.push({ x, y, button }); },
+  };
+
+  // ---- 소리
+  let ac = null;
+  function unlockAudio() {
+    if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
+    try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ac = null; }
+  }
+  function tone(freq, dur, type = 'square', vol = 0.12, slide = 0) {
+    if (!ac) return;
+    const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), t + dur);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(ac.destination); o.start(t); o.stop(t + dur + 0.02);
+  }
+  function noise(dur, vol = 0.15, hp = 800) {
+    if (!ac) return;
+    const t = ac.currentTime, n = Math.floor(ac.sampleRate * dur), b = ac.createBuffer(1, n, ac.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+    s.buffer = b; f.type = 'highpass'; f.frequency.value = hp; g.gain.value = vol;
+    s.connect(f).connect(g).connect(ac.destination); s.start(t);
+  }
+  const sfx = {
+    snap() { tone(1800, 0.05, 'square', 0.15); tone(900, 0.06, 'triangle', 0.12); },
+    grab() { tone(660, 0.07, 'triangle', 0.18); },
+    thud() { tone(120, 0.18, 'sine', 0.3, -60); },
+    whoosh() { noise(0.35, 0.10, 1200); },
+    fail() { tone(220, 0.25, 'sawtooth', 0.12, -120); },
+    win() { tone(523, 0.1, 'triangle', 0.15); setTimeout(() => tone(784, 0.18, 'triangle', 0.15), 110); },
+    beep() { tone(1200, 0.06, 'square', 0.08); },
+    warn() { tone(880, 0.08, 'square', 0.1); },
+    miss() { tone(300, 0.08, 'triangle', 0.12, -100); },
+  };
+
+  // ---- 그리기 도구
+  function text(s, x, y, o = {}) {
+    ctx.font = `${o.weight || 600} ${o.size || 16}px ${FONT}`;
+    ctx.textAlign = o.align || 'left'; ctx.textBaseline = o.base || 'alphabetic';
+    if (o.stroke) { ctx.lineWidth = o.strokeW || 4; ctx.strokeStyle = o.stroke; ctx.strokeText(s, x, y); }
+    ctx.fillStyle = o.color || '#f2f2ee'; ctx.fillText(s, x, y);
+  }
+  function textW(s, size = 16, weight = 600) { ctx.font = `${weight} ${size}px ${FONT}`; return ctx.measureText(s).width; }
+  function panel(x, y, w, h, fill = 'rgba(10,12,16,0.82)', stroke = null) {
+    ctx.fillStyle = fill; roundRect(x, y, w, h, 8); ctx.fill();
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+  }
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function circle(x, y, r, fill, stroke, lw = 2) {
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+  }
+  function line(x1, y1, x2, y2, color, lw = 2, dash = null) {
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.strokeStyle = color; ctx.lineWidth = lw;
+    if (dash) ctx.setLineDash(dash); ctx.stroke(); if (dash) ctx.setLineDash([]);
+  }
+  // 상단 안내(최대 두 줄)와 제목, 하단 버전
+  function header(title, l1, l2) {
+    text(title, 16, 28, { size: 18, weight: 800 });
+    if (l1) text(l1, 16, 50, { size: 13, color: 'rgba(240,240,235,0.78)', weight: 500 });
+    if (l2) text(l2, 16, 68, { size: 13, color: 'rgba(240,240,235,0.78)', weight: 500 });
+    text('v0.1 · R 다시', W - 12, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.4)', weight: 500 });
+  }
+  // 결과 띠: 실패 원인 / 성공
+  function banner(main, sub, kind = 'fail', y = 86) {
+    const col = kind === 'fail' ? 'rgba(150,28,28,0.92)' : kind === 'win' ? 'rgba(24,110,60,0.92)' : 'rgba(30,40,70,0.92)';
+    const w = Math.max(textW(main, 24, 800), textW(sub || '', 15, 500)) + 60;
+    panel(W / 2 - w / 2, y, w, sub ? 74 : 48, col);
+    text(main, W / 2, y + 34, { size: 24, weight: 800, align: 'center' });
+    if (sub) text(sub, W / 2, y + 60, { size: 15, weight: 500, align: 'center', color: 'rgba(255,255,255,0.9)' });
+  }
+
+  let shakeT = 0, shakeA = 0, flashT = 0, flashCol = '#fff';
+  function shake(a = 6, t = 0.25) { shakeA = a; shakeT = t; }
+  function flash(col = 'rgba(255,60,60,0.35)', t = 0.25) { flashCol = col; flashT = t; }
+
+  // ---- 루프
+  let game = null, acc = 0, last = 0, simTime = 0;
+  function frame(ts) {
+    const dt = Math.min(0.1, (ts - last) / 1000 || 0); last = ts; acc += dt;
+    while (acc >= STEP) {
+      if (game.bot && auto) game.bot(STEP, bot, auto);
+      game.update(STEP, input);
+      simTime += STEP; acc -= STEP;
+      edge.pressed = {}; edge.released = {}; edge.aPress = false; edge.aRelease = false; edge.clicks = [];
+      if (shakeT > 0) shakeT -= STEP; if (flashT > 0) flashT -= STEP;
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    let sx = 0, sy = 0;
+    if (shakeT > 0) { sx = (Math.random() - 0.5) * shakeA * 2; sy = (Math.random() - 0.5) * shakeA * 2; }
+    ctx.setTransform(scale * dpr, 0, 0, scale * dpr, (offX + sx * scale) * dpr, (offY + sy * scale) * dpr);
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
+    game.draw(ctx);
+    if (flashT > 0) { ctx.globalAlpha = Math.min(1, flashT * 4); ctx.fillStyle = flashCol; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+    ctx.restore();
+    requestAnimationFrame(frame);
+  }
+  function run(g, opts = {}) {
+    game = g; oneButton = !!opts.oneButton;
+    document.title = opts.title || document.title;
+    g.init && g.init();
+    requestAnimationFrame(t => { last = t; requestAnimationFrame(frame); });
+  }
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+  return { W, H, ctx, input, bot, sfx, text, textW, panel, roundRect, circle, line, header, banner, shake, flash, run, auto, params, clamp, lerp, dist, get time() { return simTime; } };
+})();
+
+</script>
+<script>
+// 01 벽 한 장 · 네 팔다리 클라이밍
+// ---- 순수 계산부(노드에서 검증 가능)
+const CB = { T: 54, SW: 13, HW: 10, A: 72, AMIN: 16, L: 84, LMIN: 32, TH: 0.75, MAT: 500 };
+const LIMB = ['왼손', '오른손', '왼발', '오른발'];
+function offsets(th) {
+  const s = Math.sin(th), c = Math.cos(th);
+  const Sx = CB.T * s, Sy = -CB.T * c;
+  return [[Sx - CB.SW * c, Sy - CB.SW * s], [Sx + CB.SW * c, Sy + CB.SW * s], [-CB.HW * c, -CB.HW * s], [CB.HW * c, CB.HW * s]];
+}
+function anchorsOf(p) { return offsets(p.th).map(o => [p.hx + o[0], p.hy + o[1]]); }
+const lenMax = i => i < 2 ? CB.A : CB.L, lenMin = i => i < 2 ? CB.AMIN : CB.LMIN;
+// 붙은 팔다리(att: {limb: [x,y]})를 모두 만족하는 몸통 자세를 찾는다
+function solve(att, start, prefer) {
+  let best = null;
+  for (let k = -6; k <= 6; k++) {
+    const th = k / 6 * CB.TH;
+    const off = offsets(th);
+    let x = start[0], y = start[1];
+    const cons = Object.keys(att).map(Number).map(i => ({ i, cx: att[i][0] - off[i][0], cy: att[i][1] - off[i][1], foot: i >= 2, hy: att[i][1] }));
+    let viol = 0;
+    for (let it = 0; it < 60; it++) {
+      viol = 0;
+      for (const c of cons) {
+        const dx = x - c.cx, dy = y - c.cy, d = Math.hypot(dx, dy) || 1e-6;
+        const mx = lenMax(c.i), mn = lenMin(c.i);
+        if (d > mx) { viol = Math.max(viol, d - mx); x = c.cx + dx / d * mx; y = c.cy + dy / d * mx; }
+        else if (d < mn) { viol = Math.max(viol, mn - d); x = c.cx + dx / d * mn; y = c.cy + dy / d * mn; }
+        if (c.foot) { // 발은 엉덩이보다 많이 위로 갈 수 없다
+          const lim = c.hy - off[c.i][1] + 22;
+          if (y > lim) { viol = Math.max(viol, y - lim); y = lim; }
+        }
+      }
+      if (viol < 0.01) break;
+    }
+    if (viol < 0.8) {
+      const sc = Math.hypot(x - prefer[0], y - prefer[1]) + 60 * Math.abs(th - (prefer[2] || 0));
+      if (!best || sc < best.sc) best = { hx: x, hy: y, th, sc };
+    }
+  }
+  return best;
+}
+function comfortTarget(att) {
+  let sx = 0, sy = 0, n = 0;
+  for (const k in att) {
+    const i = +k, h = att[k];
+    if (i < 2) { sx += h[0] + (i === 0 ? 14 : -14); sy += h[1] + CB.A * 0.82 + CB.T; }
+    else { sx += h[0] + (i === 2 ? 12 : -12); sy += h[1] - CB.L * 0.78; }
+    n++;
+  }
+  return [sx / n, sy / n];
+}
+function restPose(att, cur) {
+  const t = comfortTarget(att);
+  return solve(att, t, [t[0], t[1], 0]) || solve(att, [cur.hx, cur.hy], [cur.hx, cur.hy, cur.th]);
+}
+function canReach(att, limb, hold, cur) {
+  const a = { ...att }; delete a[limb]; a[limb] = hold;
+  return solve(a, [cur.hx, cur.hy], [cur.hx, cur.hy, cur.th]);
+}
+function isStable(att) {
+  const hands = (att[0] ? 1 : 0) + (att[1] ? 1 : 0), all = Object.keys(att).length;
+  return hands >= 1 && all >= 2;
+}
+// 벽: 홀드 13개
+const HOLDS = [
+  { id: 'f1', x: 440, y: 480, k: 'foot' }, { id: 'f2', x: 520, y: 480, k: 'foot' },
+  { id: 's1', x: 445, y: 330, k: 'jug' }, { id: 's2', x: 520, y: 326, k: 'jug' },
+  { id: 'p1', x: 452, y: 298, k: 'jug' }, { id: 'p2', x: 530, y: 294, k: 'jug' },
+  { id: 'fr', x: 562, y: 418, k: 'foot' },
+  { id: 'fs', x: 496, y: 430, k: 'foot' },
+  { id: 'm1', x: 572, y: 230, k: 'crimp' },
+  { id: 'f3', x: 452, y: 352, k: 'foot' }, { id: 'f4', x: 580, y: 338, k: 'foot' },
+  { id: 'd1', x: 436, y: 196, k: 'jug' }, { id: 'd2', x: 470, y: 138, k: 'jug' },
+  { id: 'x1', x: 610, y: 175, k: 'crimp' },
+  { id: 'f5', x: 660, y: 240, k: 'foot' },
+  { id: 'top', x: 556, y: 104, k: 'top' },
+];
+const HOLD = Object.fromEntries(HOLDS.map(h => [h.id, h]));
+const START = { 0: 's1', 1: 's2', 2: 'f1', 3: 'f2' };
+if (typeof module !== 'undefined') module.exports = { CB, solve, restPose, canReach, isStable, HOLDS, HOLD, START, anchorsOf };
+
+// ---- 게임
+if (typeof G !== 'undefined') {
+const W = G.W, H = G.H, GRAV = 1300, MOVE_T = 0.22;
+let S; window.__S = () => S;
+function attNow(exclude = -1) { const a = {}; for (let i = 0; i < 4; i++) if (S.on[i] && i !== exclude) a[i] = [HOLD[S.on[i]].x, HOLD[S.on[i]].y]; return a; }
+function reset() {
+  const tries = S ? S.tries + 1 : 1;
+  S = { on: { ...START }, sel: 1, pose: { hx: 480, hy: 410, th: 0 }, mode: 'static', moving: null, dyn: null, grip: 0,
+    msg: null, endT: 0, won: false, tries, t: 0, fx: [], load: [0, 0, 0, 0], lastAct: '', reach: {}, hover: null, deny: null, clock: 0 };
+  const a = attNow(); S.pose = restPose(a, S.pose); S.target = { ...S.pose }; S.lastAct = '';
+  recomputeReach();
+}
+function limbPos(i) {
+  if (S.moving && S.moving.limb === i) { const m = S.moving, u = G.clamp(m.t / MOVE_T, 0, 1), e = u * u * (3 - 2 * u); return [G.lerp(m.from[0], m.to[0], e), G.lerp(m.from[1], m.to[1], e) - Math.sin(u * Math.PI) * 14]; }
+  if (S.on[i]) return [HOLD[S.on[i]].x, HOLD[S.on[i]].y];
+  const an = anchorsOf(S.pose)[i];
+  if (i < 2) return [an[0] + (i ? 10 : -10), an[1] + CB.A * 0.8];
+  return [an[0] + (i === 2 ? -6 : 6), an[1] + CB.L * 0.85];
+}
+function recomputeReach() {
+  S.reach = {};
+  if (S.mode !== 'static' || S.won || S.endT > 0) return;
+  for (const h of HOLDS) {
+    if (Object.values(S.on).includes(h.id)) continue;
+    if (h.k === 'foot' && S.sel < 2 && h.id !== 'fs' && h.id !== 'fr') { /* 손으로 발칩도 잡을 수 있게 둔다 */ }
+    S.reach[h.id] = !!canReach(attNow(S.sel), S.sel, [h.x, h.y], S.pose);
+  }
+}
+function dynStart(reason) {
+  // 남은 손 하나에 매달려 흔들리거나, 손이 없으면 떨어진다
+  const an = anchorsOf(S.pose);
+  const Sx = S.pose.hx + CB.T * Math.sin(S.pose.th), Sy = S.pose.hy - CB.T * Math.cos(S.pose.th);
+  S.dyn = { s: [Sx, Sy], sp: [Sx, Sy], h: [S.pose.hx, S.pose.hy], hp: [S.pose.hx, S.pose.hy] };
+  const hands = [0, 1].filter(i => S.on[i] && !(S.moving && S.moving.limb === i));
+  if (hands.length === 0) { S.on[2] = null; S.on[3] = null; } // 손이 없으면 발이 미끄러진다
+  S.mode = 'dyn'; S.grip = hands.length ? 2.2 : 0; S.dynReason = reason;
+  G.sfx.warn();
+}
+function hit(x, y) { // 마우스 근처 홀드
+  let best = null, bd = 30;
+  for (const h of HOLDS) { const d = G.dist(x, y, h.x, h.y); if (d < bd) { bd = d; best = h; } }
+  return best;
+}
+function startMove(limb, h) {
+  const rest = attNow(limb);
+  const from = limbPos(limb);
+  S.on[limb] = null;
+  S.moving = { limb, hold: h.id, from, to: [h.x, h.y], t: 0 };
+  S.lastAct = `${LIMB[limb]}을 ${h.k === 'foot' ? '발칩' : '홀드'}로 옮기는`;
+  if (!isStable(rest)) dynStart(`${LIMB[limb]}을 옮기는 동안 남은 지지점이 ${describe(rest)}`);
+  else { const p = canReach(rest, limb, [h.x, h.y], S.pose); if (p) S.target = p; }
+}
+function describe(a) {
+  const ks = Object.keys(a).map(Number);
+  if (!ks.length) return '하나도 없었다';
+  return ks.map(i => LIMB[i]).join('·') + (ks.length === 1 ? ' 하나뿐이었다' : '뿐이었다');
+}
+function finishMove() {
+  const m = S.moving; S.moving = null;
+  const h = HOLD[m.hold];
+  if (S.mode === 'static') {
+    S.on[m.limb] = m.hold; landFx(m.limb, h);
+    const p = restPose(attNow(), S.pose); if (p) S.target = p;
+    if (h.k === 'top' && m.limb < 2) win();
+  } else {
+    // 흔들리는 중 도착: 지금 자세에서 닿으면 잡는다
+    tryGrab(m.limb, h);
+  }
+  recomputeReach();
+}
+function curAnchors() {
+  if (S.mode !== 'dyn') return anchorsOf(S.pose);
+  const d = S.dyn, dx = d.s[0] - d.h[0], dy = d.s[1] - d.h[1], th = Math.atan2(dx, -dy);
+  return anchorsOf({ hx: d.h[0], hy: d.h[1], th });
+}
+function tryGrab(limb, h) {
+  const an = curAnchors()[limb];
+  const d = G.dist(an[0], an[1], h.x, h.y);
+  if (d <= lenMax(limb) + 4) {
+    S.on[limb] = h.id; landFx(limb, h);
+    const a = attNow();
+    if (isStable(a)) {
+      const d0 = S.dyn; const th = Math.atan2(d0.s[0] - d0.h[0], -(d0.s[1] - d0.h[1]));
+      const cur = { hx: d0.h[0], hy: d0.h[1], th: G.clamp(th, -CB.TH, CB.TH) };
+      const p = restPose(a, cur) || solve(a, [cur.hx, cur.hy], [cur.hx, cur.hy, cur.th]);
+      if (p) { S.mode = 'static'; S.dyn = null; S.pose = cur; S.target = p; G.sfx.grab(); }
+    } else if (limb < 2) S.grip = 2.2;
+    if (h.k === 'top' && limb < 2) win();
+    return true;
+  }
+  S.fx.push({ x: h.x, y: h.y, t: 0.8, kind: 'miss', text: `${Math.round(d - lenMax(limb))}px 모자람` });
+  G.sfx.miss();
+  return false;
+}
+function landFx(limb, h) {
+  G.sfx.grab(); S.fx.push({ x: h.x, y: h.y, t: 0.4, kind: 'grab' });
+  S.load[limb < 2 ? limb : limb] = 1; // 어깨·무릎 반응
+}
+function win() { S.won = true; S.mode = 'static'; G.sfx.win(); }
+function fail() {
+  S.endT = 1; G.sfx.thud(); G.shake(6, 0.25); G.flash();
+  S.msg = ['매트에 닿음 — 시도 종료', S.dynReason ? S.dynReason + '.' : '지지점 없이 떨어졌다.'];
+}
+const game = {
+  init() { reset(); S.tries = 1; },
+  update(dt, inp) {
+    S.t += dt;
+    if (inp.pressed('KeyR')) { reset(); return; }
+    if (S.won) { if (inp.pressed('Space') || inp.clicks.some(c => c.button === 0 && c.y > CB.MAT)) reset(); return; }
+    if (S.endT > 0) { S.endT -= dt; if (inp.pressed('Space') || inp.clicks.length) S.endT = 0; if (S.endT <= 0) reset(); return; }
+    S.clock += dt;
+    const selKeys = { KeyQ: 0, KeyE: 1, KeyZ: 2, KeyC: 3 };
+    for (const k in selKeys) if (inp.pressed(k)) { S.sel = selKeys[k]; G.sfx.beep(); recomputeReach(); }
+    S.hover = hit(inp.mouse.x, inp.mouse.y);
+    for (const c of inp.clicks) {
+      if (c.y > CB.MAT + 4 && c.button === 0 && S.mode === 'static' && !S.moving) { reset(); return; } // 매트 클릭 = 재시작
+      const h = hit(c.x, c.y);
+      if (c.button === 2) { // 놓기
+        if (S.on[S.sel] && !S.moving) {
+          const rest = attNow(S.sel);
+          S.lastAct = `${LIMB[S.sel]}을 놓은`;
+          S.on[S.sel] = null; G.sfx.beep();
+          if (S.mode === 'static') { if (!isStable(rest)) dynStart(`${LIMB[S.sel]}을 놓자 남은 지지점이 ${describe(rest)}`); else { const p = restPose(rest, S.pose); if (p) S.target = p; } }
+          recomputeReach();
+        }
+        continue;
+      }
+      if (!h || S.moving) continue;
+      if (Object.values(S.on).includes(h.id)) continue;
+      if (S.mode === 'static') {
+        if (S.reach[h.id]) startMove(S.sel, h);
+        else { S.deny = { x: h.x, y: h.y, t: 0.7, limb: S.sel }; G.sfx.miss(); } // 멀어서 실패: 접점 유지
+      } else {
+        tryGrab(S.sel, h);
+      }
+    }
+    if (S.moving) { S.moving.t += dt; if (S.moving.t >= MOVE_T) finishMove(); }
+    // 몸 움직임
+    if (S.mode === 'static') {
+      const k = Math.min(1, dt * 9);
+      S.pose.hx += (S.target.hx - S.pose.hx) * k; S.pose.hy += (S.target.hy - S.pose.hy) * k; S.pose.th += (S.target.th - S.pose.th) * k;
+    } else stepDyn(dt);
+    for (const f of S.fx) f.t -= dt; S.fx = S.fx.filter(f => f.t > 0);
+    if (S.deny) { S.deny.t -= dt; if (S.deny.t <= 0) S.deny = null; }
+    for (let i = 0; i < 4; i++) S.load[i] = Math.max(0, S.load[i] - dt * 2.5);
+  },
+  draw(c) { draw(c); },
+  bot(dt, b) { botStep(dt, b); },
+};
+function stepDyn(dt) {
+  const d = S.dyn;
+  for (const p of ['s', 'h']) { // verlet
+    const cur = d[p], prev = d[p + 'p'];
+    const nx = cur[0] + (cur[0] - prev[0]) * 0.995, ny = cur[1] + (cur[1] - prev[1]) * 0.995 + GRAV * dt * dt;
+    d[p + 'p'] = [cur[0], cur[1]]; d[p] = [nx, ny];
+  }
+  for (let it = 0; it < 4; it++) {
+    // 몸통 길이
+    let dx = d.s[0] - d.h[0], dy = d.s[1] - d.h[1], L = Math.hypot(dx, dy) || 1, e = (L - CB.T) / L / 2;
+    d.s[0] -= dx * e; d.s[1] -= dy * e; d.h[0] += dx * e; d.h[1] += dy * e;
+    for (const i of [0, 1]) if (S.on[i]) {
+      const hd = HOLD[S.on[i]], sx = d.s[0] + (i ? 1 : -1) * CB.SW * 0.5;
+      dx = sx - hd.x; dy = d.s[1] - hd.y; L = Math.hypot(dx, dy);
+      if (L > CB.A) { d.s[0] -= dx / L * (L - CB.A); d.s[1] -= dy / L * (L - CB.A); }
+    }
+  }
+  const hands = [0, 1].filter(i => S.on[i]);
+  if (hands.length && S.grip > 0) {
+    S.grip -= dt;
+    if (S.grip <= 0) { for (const i of hands) S.on[i] = null; S.dynReason = (S.dynReason || '손 하나로 매달렸다') + ' — 손 하나로는 오래 버티지 못했다'; G.sfx.miss(); }
+  }
+  const an = curAnchors();
+  const low = Math.max(d.h[1] + CB.L * 0.8, an[2][1], an[3][1]);
+  if (low >= CB.MAT) fail();
+}
+// ---- 그리기
+function drawHold(c, h) {
+  const r = h.k === 'jug' ? 13 : h.k === 'crimp' ? 9 : h.k === 'top' ? 15 : 7;
+  c.save(); c.translate(h.x, h.y);
+  c.beginPath();
+  if (h.k === 'jug') { c.ellipse(0, 0, r * 1.2, r * 0.8, 0, 0, Math.PI * 2); c.fillStyle = '#d98a3a'; }
+  else if (h.k === 'crimp') { c.rect(-r * 1.4, -r * 0.45, r * 2.8, r * 0.9); c.fillStyle = '#c9504a'; }
+  else if (h.k === 'top') { for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i * Math.PI * 2 / 5; c.lineTo(Math.cos(a) * r, Math.sin(a) * r); c.lineTo(Math.cos(a + Math.PI / 5) * r * 0.5, Math.sin(a + Math.PI / 5) * r * 0.5); } c.closePath(); c.fillStyle = '#ffd166'; }
+  else { c.moveTo(-r, r * 0.4); c.lineTo(0, -r * 0.7); c.lineTo(r, r * 0.4); c.closePath(); c.fillStyle = '#6aa6d9'; }
+  c.fill(); c.strokeStyle = 'rgba(0,0,0,0.5)'; c.lineWidth = 2; c.stroke();
+  c.restore();
+  if (S.mode === 'static' && S.reach[h.id] && !S.moving) { // 유효한 홀드: 점선 테두리
+    c.save(); c.setLineDash([5, 4]); c.lineDashOffset = -S.t * 20;
+    G.circle(h.x, h.y, r + 9, null, '#7dffb0', 2.5); c.restore();
+  }
+  if (S.mode === 'dyn') G.circle(h.x, h.y, r + 7, null, 'rgba(255,255,255,0.25)', 1.5);
+}
+function ik(a, b, len, bend) { // 두 마디 팔다리
+  const dx = b[0] - a[0], dy = b[1] - a[1], d = Math.min(Math.hypot(dx, dy), len - 0.01), h = Math.sqrt(Math.max(0, (len / 2) ** 2 - (d / 2) ** 2));
+  const mx = a[0] + dx / 2, my = a[1] + dy / 2, L = Math.hypot(dx, dy) || 1;
+  return [mx - dy / L * h * bend, my + dx / L * h * bend];
+}
+function draw(c) {
+  c.fillStyle = '#c9c4b8'; c.fillRect(0, 0, W, H);
+  c.fillStyle = '#bdb7aa'; for (let y = 0; y < CB.MAT; y += 60) for (let x = (y / 60 % 2) * 60; x < W; x += 120) c.fillRect(x, y, 60, 60);
+  for (let y = 30; y < CB.MAT; y += 40) for (let x = 20; x < W; x += 40) G.circle(x, y, 1.6, 'rgba(0,0,0,0.18)');
+  c.fillStyle = '#3c5a8a'; c.fillRect(0, CB.MAT, W, H - CB.MAT);
+  G.text('시작 매트 — 클릭하면 처음부터', W / 2, CB.MAT + 26, { size: 13, align: 'center', color: '#dfe7f5' });
+  for (const h of HOLDS) drawHold(c, h);
+  G.text('TOP', HOLD.top.x + 22, HOLD.top.y + 5, { size: 13, weight: 800, color: '#7a5a00' });
+  // 몸
+  let an, Sx, Sy, Hx, Hy;
+  if (S.mode === 'dyn') { const d = S.dyn; Sx = d.s[0]; Sy = d.s[1]; Hx = d.h[0]; Hy = d.h[1]; an = curAnchors(); }
+  else { an = anchorsOf(S.pose); Hx = S.pose.hx; Hy = S.pose.hy; Sx = Hx + CB.T * Math.sin(S.pose.th); Sy = Hy - CB.T * Math.cos(S.pose.th); }
+  const ends = [0, 1, 2, 3].map(i => {
+    if (S.mode === 'dyn' && !S.on[i] && !(S.moving && S.moving.limb === i)) {
+      return i < 2 ? [an[i][0] + (i ? 8 : -8), an[i][1] + CB.A * 0.85] : [an[i][0] + (i === 2 ? -4 : 4), an[i][1] + CB.L * 0.9];
+    }
+    return limbPos(i);
+  });
+  // 팔다리
+  for (let i = 0; i < 4; i++) {
+    const len = lenMax(i), bend = i < 2 ? (i ? -1 : 1) : (i === 2 ? -1 : 1);
+    const e = ends[i], mid = ik(an[i], e, len + 2, bend);
+    const col = i % 2 ? '#2a6f97' : '#8a3b3b';
+    c.beginPath(); c.moveTo(an[i][0], an[i][1]); c.lineTo(mid[0], mid[1]); c.lineTo(e[0], e[1]);
+    c.strokeStyle = col; c.lineWidth = i < 2 ? 7 : 9; c.lineCap = 'round'; c.lineJoin = 'round'; c.stroke();
+    // 체중 반응: 어깨·무릎
+    const jp = i < 2 ? an[i] : mid;
+    G.circle(jp[0], jp[1], 5 + S.load[i] * 6, S.load[i] > 0.05 ? '#ffe08a' : col);
+  }
+  // 몸통
+  c.beginPath(); c.moveTo(an[0][0], an[0][1]); c.lineTo(an[1][0], an[1][1]); c.lineTo(an[3][0], an[3][1]); c.lineTo(an[2][0], an[2][1]); c.closePath();
+  c.fillStyle = '#3b3f46'; c.fill();
+  G.circle(Sx, Sy - 14, 10, '#3b3f46');
+  // 장갑·신발 (L/R 표식)
+  for (let i = 0; i < 4; i++) {
+    const e = ends[i], sel = S.sel === i, col = i % 2 ? '#4fb3e8' : '#e86a5a';
+    if (i < 2) { G.roundRect(e[0] - 10, e[1] - 10, 20, 20, 6); c.fillStyle = col; c.fill(); }
+    else { c.beginPath(); c.ellipse(e[0] + (i === 2 ? -4 : 4), e[1], 13, 7, 0, 0, Math.PI * 2); c.fillStyle = col; c.fill(); }
+    c.strokeStyle = sel ? '#fff' : 'rgba(0,0,0,0.6)'; c.lineWidth = sel ? 3 : 1.5; c.stroke();
+    G.text(i % 2 ? 'R' : 'L', e[0] + (i === 2 ? -4 : i === 3 ? 4 : 0), e[1] + 5, { size: 12, weight: 900, align: 'center', color: '#111' });
+    if (sel) { G.circle(e[0], e[1], 19 + Math.sin(S.t * 8) * 2, null, '#ffffff', 2); }
+  }
+  // 조준선: 선택한 팔다리 → 마우스 홀드
+  if (S.hover && S.mode === 'static' && !S.moving && !S.won) {
+    const ok = S.reach[S.hover.id], e = an[S.sel];
+    G.line(e[0], e[1], S.hover.x, S.hover.y, ok ? 'rgba(125,255,176,0.8)' : 'rgba(255,90,90,0.8)', 2, [6, 5]);
+  }
+  if (S.deny) { const a = Math.min(1, S.deny.t * 2); c.globalAlpha = a; G.circle(S.deny.x, S.deny.y, 20, null, '#ff5a5a', 3); G.text('너무 멀다 — ' + LIMB[S.deny.limb] + ' 그대로', S.deny.x + 24, S.deny.y + 5, { size: 13, color: '#a01010', weight: 800 }); c.globalAlpha = 1; }
+  for (const f of S.fx) {
+    if (f.kind === 'grab') G.circle(f.x, f.y, 14 + (0.4 - f.t) * 40, null, `rgba(255,255,255,${f.t * 2})`, 3);
+    else G.text(f.text, f.x + 18, f.y - 10, { size: 13, color: '#a01010', weight: 800 });
+  }
+  if (S.mode === 'dyn' && S.grip > 0) {
+    G.panel(Sx - 50, Sy - 62, 100, 20, 'rgba(0,0,0,0.6)');
+    c.fillStyle = '#ff8a3d'; c.fillRect(Sx - 46, Sy - 57, 92 * S.grip / 2.2, 10);
+    G.text('한 손 버티기', Sx, Sy - 68, { size: 12, align: 'center', color: '#111', weight: 800 });
+  }
+  // 상단
+  G.panel(8, 6, 560, 72, 'rgba(255,255,255,0.75)');
+  G.text('벽 한 장', 18, 30, { size: 18, weight: 800, color: '#222' });
+  G.text('Q/E 왼손·오른손, Z/C 왼발·오른발 고르기 → 초록 점선 홀드를 클릭해 옮긴다. 우클릭은 놓기.', 18, 52, { size: 13, color: '#333', weight: 500 });
+  G.text('세 점이 붙어 있을 때 하나를 옮기면 안전하다. 손이 닿지 않으면 발을 먼저 옮겨 보자.', 18, 70, { size: 13, color: '#333', weight: 500 });
+  const sup = Object.keys(attNow()).map(Number);
+  G.text(`시도 ${S.tries}   지지점 ${sup.length}  ${sup.map(i => LIMB[i]).join('·')}`, W - 14, 30, { size: 13, align: 'right', color: '#222' });
+  G.text(`선택: ${LIMB[S.sel]}`, W - 14, 52, { size: 15, align: 'right', color: S.sel % 2 ? '#1d6f9a' : '#a8402f', weight: 800 });
+  G.text('v0.1 · R 다시', W - 12, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
+  if (S.msg && S.endT > 0) G.banner(S.msg[0], S.msg[1], 'fail', 380);
+  if (S.won) G.banner('완등!', `시도 ${S.tries}번째 · ${S.clock.toFixed(1)}초 — 매트를 클릭하거나 스페이스로 처음부터`, 'win', 380);
+}
+// ---- 자동 시연(녹화용): 위험한 순서로 떨어진 뒤, 안전한 순서로 완등
+const SCRIPT = [
+  ['sel', 'RH'], ['release'], ['sel', 'RF'], ['release'], ['sel', 'LH'], ['hover', 'p1', 0.5], ['click', 'p1', 1.2],
+  ['sel', 'RH'], ['hover', 'p2', 0.4], ['click', 'p2'], ['sel', 'LH'], ['hover', 'p1', 0.4], ['click', 'p1'],
+  ['sel', 'RH'], ['hover', 'm1', 0.6], ['click', 'm1', 1.0],
+  ['sel', 'RF'], ['hover', 'fr', 0.4], ['click', 'fr'], ['sel', 'LF'], ['hover', 'fs', 0.5], ['click', 'fs'],
+  ['sel', 'RH'], ['hover', 'm1', 0.5], ['click', 'm1'],
+  ['sel', 'LF'], ['hover', 's1', 0.4], ['click', 's1'], ['sel', 'RF'], ['hover', 'p2', 0.4], ['click', 'p2'],
+  ['sel', 'LH'], ['hover', 'd2', 0.4], ['click', 'd2'], ['sel', 'LF'], ['hover', 'd1', 0.4], ['click', 'd1'],
+  ['sel', 'LH'], ['hover', 'top', 0.4], ['click', 'top'],
+];
+let BOT = null;
+function botStep(dt, b) {
+  if (!BOT) BOT = { i: 0, wait: 1.2 };
+  if (S.won) return;
+  if (S.endT > 0 || S.moving || S.mode === 'dyn') { BOT.wait = Math.max(BOT.wait, 0.45); return; }
+  BOT.wait -= dt; if (BOT.wait > 0) return;
+  const st = SCRIPT[BOT.i]; if (!st) return;
+  BOT.i++;
+  const [op, arg, w] = st;
+  BOT.wait = w ?? (op === 'sel' ? 0.35 : 0.6);
+  if (op === 'sel') b.tap({ LH: 'KeyQ', RH: 'KeyE', LF: 'KeyZ', RF: 'KeyC' }[arg]);
+  else if (op === 'hover') { const h = HOLD[arg]; b.move(h.x, h.y); }
+  else if (op === 'click') { const h = HOLD[arg]; b.click(h.x, h.y, 0); }
+  else if (op === 'release') b.click(G.input.mouse.x, G.input.mouse.y, 2);
+}
+G.run(game, { title: '01 벽 한 장' });
+}
+
+</script>
+</body></html>

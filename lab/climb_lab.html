@@ -1,0 +1,753 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>등반 조작 실험실</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}canvas{display:block;touch-action:none;cursor:none}</style>
+</head><body>
+<script>
+// 공통 엔진: 960x540 논리 해상도, 고정 스텝 120Hz, 키·마우스·터치, 효과음, 자동 시연 훅
+'use strict';
+const G = (() => {
+  const W = 960, H = 540, STEP = 1 / 120;
+  const FONT = '"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR","Noto Sans CJK KR","WenQuanYi Zen Hei",sans-serif';
+  const canvas = document.createElement('canvas');
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  let scale = 1, offX = 0, offY = 0, dpr = 1;
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth, h = window.innerHeight;
+    scale = Math.min(w / W, h / H);
+    offX = (w - W * scale) / 2; offY = (h - H * scale) / 2;
+    canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  }
+  window.addEventListener('resize', resize); resize();
+
+  const params = new URLSearchParams(location.search);
+  const auto = params.get('auto');
+
+  // ---- 입력
+  const real = { keys: {}, action: false };
+  const virt = { keys: {}, action: false };
+  const edge = { pressed: {}, released: {}, aPress: false, aRelease: false, clicks: [] };
+  const mouse = { x: W / 2, y: H / 2, down: [false, false, false] };
+  let oneButton = false;
+  const actionKeys = ['Space'];
+  function keyDown(code) { edge.pressed[code] = true; if (actionKeys.includes(code)) edge.aPress = true; }
+  function keyUp(code) { edge.released[code] = true; if (actionKeys.includes(code)) edge.aRelease = true; }
+  window.addEventListener('keydown', e => {
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
+    unlockAudio();
+    if (e.repeat || auto) return;
+    real.keys[e.code] = true; keyDown(e.code);
+  });
+  window.addEventListener('keyup', e => { if (auto) return; real.keys[e.code] = false; keyUp(e.code); });
+  window.addEventListener('blur', () => { for (const k in real.keys) if (real.keys[k]) { real.keys[k] = false; keyUp(k); } if (real.action) { real.action = false; edge.aRelease = true; } });
+  function toLogical(cx, cy) { return { x: (cx - offX) / scale, y: (cy - offY) / scale }; }
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  const activePointers = new Set();
+  canvas.addEventListener('pointerdown', e => {
+    e.preventDefault(); unlockAudio(); if (auto) return;
+    const p = toLogical(e.clientX, e.clientY);
+    mouse.x = p.x; mouse.y = p.y;
+    if (e.pointerType === 'mouse') {
+      mouse.down[e.button] = true; edge.clicks.push({ x: p.x, y: p.y, button: e.button });
+      if (oneButton && e.button === 0) { real.action = true; edge.aPress = true; }
+    } else {
+      activePointers.add(e.pointerId);
+      edge.clicks.push({ x: p.x, y: p.y, button: 0, touch: true });
+      if (oneButton && !real.action) { real.action = true; edge.aPress = true; }
+    }
+  });
+  function pointerEnd(e) {
+    if (auto) return;
+    if (e.pointerType === 'mouse') {
+      mouse.down[e.button] = false;
+      if (oneButton && e.button === 0 && real.action) { real.action = false; edge.aRelease = true; }
+    } else {
+      activePointers.delete(e.pointerId);
+      if (oneButton && activePointers.size === 0 && real.action) { real.action = false; edge.aRelease = true; }
+    }
+  }
+  canvas.addEventListener('pointerup', pointerEnd);
+  canvas.addEventListener('pointercancel', pointerEnd);
+  canvas.addEventListener('pointermove', e => { if (auto) return; const p = toLogical(e.clientX, e.clientY); mouse.x = p.x; mouse.y = p.y; });
+  document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+  const input = {
+    key: c => !!(real.keys[c] || virt.keys[c]),
+    pressed: c => !!edge.pressed[c],
+    released: c => !!edge.released[c],
+    get action() { return real.action || virt.action || !!real.keys.Space || !!virt.keys.Space; },
+    get actionPressed() { return edge.aPress; },
+    get actionReleased() { return edge.aRelease; },
+    get clicks() { return edge.clicks; },
+    mouse,
+    any() { return edge.aPress || Object.keys(edge.pressed).length > 0 || edge.clicks.length > 0; },
+  };
+  // 자동 시연용 가상 입력
+  const bot = {
+    key(code, on) { if (!!virt.keys[code] === on) return; virt.keys[code] = on; on ? keyDown(code) : keyUp(code); },
+    action(on) { if (virt.action === on) return; virt.action = on; on ? edge.aPress = true : edge.aRelease = true; },
+    tap(code) { keyDown(code); keyUp(code); },
+    move(x, y) { mouse.x = x; mouse.y = y; },
+    click(x, y, button = 0) { mouse.x = x; mouse.y = y; edge.clicks.push({ x, y, button }); },
+  };
+
+  // ---- 소리
+  let ac = null;
+  function unlockAudio() {
+    if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
+    try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ac = null; }
+  }
+  function tone(freq, dur, type = 'square', vol = 0.12, slide = 0) {
+    if (!ac) return;
+    const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), t + dur);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(ac.destination); o.start(t); o.stop(t + dur + 0.02);
+  }
+  function noise(dur, vol = 0.15, hp = 800) {
+    if (!ac) return;
+    const t = ac.currentTime, n = Math.floor(ac.sampleRate * dur), b = ac.createBuffer(1, n, ac.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+    s.buffer = b; f.type = 'highpass'; f.frequency.value = hp; g.gain.value = vol;
+    s.connect(f).connect(g).connect(ac.destination); s.start(t);
+  }
+  const sfx = {
+    snap() { tone(1800, 0.05, 'square', 0.15); tone(900, 0.06, 'triangle', 0.12); },
+    grab() { tone(660, 0.07, 'triangle', 0.18); },
+    thud() { tone(120, 0.18, 'sine', 0.3, -60); },
+    whoosh() { noise(0.35, 0.10, 1200); },
+    fail() { tone(220, 0.25, 'sawtooth', 0.12, -120); },
+    win() { tone(523, 0.1, 'triangle', 0.15); setTimeout(() => tone(784, 0.18, 'triangle', 0.15), 110); },
+    beep() { tone(1200, 0.06, 'square', 0.08); },
+    warn() { tone(880, 0.08, 'square', 0.1); },
+    miss() { tone(300, 0.08, 'triangle', 0.12, -100); },
+  };
+
+  // ---- 그리기 도구
+  function text(s, x, y, o = {}) {
+    ctx.font = `${o.weight || 600} ${o.size || 16}px ${FONT}`;
+    ctx.textAlign = o.align || 'left'; ctx.textBaseline = o.base || 'alphabetic';
+    if (o.stroke) { ctx.lineWidth = o.strokeW || 4; ctx.strokeStyle = o.stroke; ctx.strokeText(s, x, y); }
+    ctx.fillStyle = o.color || '#f2f2ee'; ctx.fillText(s, x, y);
+  }
+  function textW(s, size = 16, weight = 600) { ctx.font = `${weight} ${size}px ${FONT}`; return ctx.measureText(s).width; }
+  function panel(x, y, w, h, fill = 'rgba(10,12,16,0.82)', stroke = null) {
+    ctx.fillStyle = fill; roundRect(x, y, w, h, 8); ctx.fill();
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+  }
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function circle(x, y, r, fill, stroke, lw = 2) {
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+  }
+  function line(x1, y1, x2, y2, color, lw = 2, dash = null) {
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.strokeStyle = color; ctx.lineWidth = lw;
+    if (dash) ctx.setLineDash(dash); ctx.stroke(); if (dash) ctx.setLineDash([]);
+  }
+  // 상단 안내(최대 두 줄)와 제목, 하단 버전
+  function header(title, l1, l2) {
+    text(title, 16, 28, { size: 18, weight: 800 });
+    if (l1) text(l1, 16, 50, { size: 13, color: 'rgba(240,240,235,0.78)', weight: 500 });
+    if (l2) text(l2, 16, 68, { size: 13, color: 'rgba(240,240,235,0.78)', weight: 500 });
+    text('v0.1 · R 다시', W - 12, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.4)', weight: 500 });
+  }
+  // 결과 띠: 실패 원인 / 성공
+  function banner(main, sub, kind = 'fail', y = 86) {
+    const col = kind === 'fail' ? 'rgba(150,28,28,0.92)' : kind === 'win' ? 'rgba(24,110,60,0.92)' : 'rgba(30,40,70,0.92)';
+    const w = Math.max(textW(main, 24, 800), textW(sub || '', 15, 500)) + 60;
+    panel(W / 2 - w / 2, y, w, sub ? 74 : 48, col);
+    text(main, W / 2, y + 34, { size: 24, weight: 800, align: 'center' });
+    if (sub) text(sub, W / 2, y + 60, { size: 15, weight: 500, align: 'center', color: 'rgba(255,255,255,0.9)' });
+  }
+
+  let shakeT = 0, shakeA = 0, flashT = 0, flashCol = '#fff';
+  function shake(a = 6, t = 0.25) { shakeA = a; shakeT = t; }
+  function flash(col = 'rgba(255,60,60,0.35)', t = 0.25) { flashCol = col; flashT = t; }
+
+  // ---- 루프
+  let game = null, acc = 0, last = 0, simTime = 0;
+  function frame(ts) {
+    const dt = Math.min(0.1, (ts - last) / 1000 || 0); last = ts; acc += dt;
+    while (acc >= STEP) {
+      if (game.bot && auto) game.bot(STEP, bot, auto);
+      game.update(STEP, input);
+      simTime += STEP; acc -= STEP;
+      edge.pressed = {}; edge.released = {}; edge.aPress = false; edge.aRelease = false; edge.clicks = [];
+      if (shakeT > 0) shakeT -= STEP; if (flashT > 0) flashT -= STEP;
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    let sx = 0, sy = 0;
+    if (shakeT > 0) { sx = (Math.random() - 0.5) * shakeA * 2; sy = (Math.random() - 0.5) * shakeA * 2; }
+    ctx.setTransform(scale * dpr, 0, 0, scale * dpr, (offX + sx * scale) * dpr, (offY + sy * scale) * dpr);
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
+    game.draw(ctx);
+    if (flashT > 0) { ctx.globalAlpha = Math.min(1, flashT * 4); ctx.fillStyle = flashCol; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+    ctx.restore();
+    requestAnimationFrame(frame);
+  }
+  function run(g, opts = {}) {
+    game = g; oneButton = !!opts.oneButton;
+    document.title = opts.title || document.title;
+    g.init && g.init();
+    requestAnimationFrame(t => { last = t; requestAnimationFrame(frame); });
+  }
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+  return { W, H, ctx, input, bot, sfx, text, textW, panel, roundRect, circle, line, header, banner, shake, flash, run, auto, params, clamp, lerp, dist, get time() { return simTime; } };
+})();
+
+</script>
+<script>
+// 등반 조작 실험실 · 물리 계산부 (브라우저·노드 공용, 화면과 무관)
+// 몸: 가슴·엉덩이·양손·양발 6개 질점. 몸통은 막대, 팔다리는 최대·최소 길이가 있는 줄 + 근육.
+// 근육은 두 질점 사이에 크기 같고 방향 반대인 힘으로만 작용한다(외부에서 끌어 주는 힘 없음).
+'use strict';
+const PH = (() => {
+  const C = {
+    G: 1400, T: 54, A: 72, AMIN: 0, L: 84, LMIN: 26,
+    MC: 28, MP: 22, MH: 2, MF: 6,
+    SUB: 8, ITER: 4, FLOOR: 640, GRAB_R: 14, PLANT_R: 10, FOOT_R: 5, MU: 1.0,
+    LEG_RANGE: 125, REACT: 0, // 다리가 몸통 아래 방향에서 벗어날 수 있는 각도
+  };
+  const MASS = C.MC + C.MP + 2 * C.MH + 2 * C.MF, W = MASS * C.G;
+  // 힘 한계(체중 W의 배수)와 스프링 값
+  const M = {
+    armPull: 1.3 * W, armPush: 0.9 * W, armK: 1.3 * W / 3, armC: 2000, armRate: 320,
+    legPush: 1.8 * W, legPull: 0, legK: 1.8 * W / 3, legC: 2400, legRate: 750,
+    handReach: 0.3 * W, handKp: 0.3 * W / 15, handKd: 110,
+    footReach: 0.5 * W, footKp: 0.5 * W / 15, footKd: 250,
+    upK: 0.1 * W, upC: 1500, upMax: 1.5 * W,
+    freeC: [4, 4, 10, 10],
+  };
+  const GRIP = { // th: 손이 버티는 방향의 한계각(면을 누르는 방향 기준)
+    ledge: { th: 75, name: '턱' }, incut: { th: 105, name: '깊은 턱' },
+    jug: { th: 180, all: true, name: '저그' }, sloper: { th: 40, name: '둥근 면' }, block: null,
+  };
+
+  // ---- 지형
+  function poly(id, type, pts, extra = {}) {
+    let cx = 0, cy = 0; for (const q of pts) { cx += q[0]; cy += q[1]; } cx /= pts.length; cy /= pts.length;
+    const edges = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      let nx = b[1] - a[1], ny = -(b[0] - a[0]); const l = Math.hypot(nx, ny); nx /= l; ny /= l;
+      if ((a[0] - cx) * nx + (a[1] - cy) * ny < 0) { nx = -nx; ny = -ny; }
+      const g = GRIP[type];
+      edges.push({ ax: a[0], ay: a[1], bx: b[0], by: b[1], nx, ny, grip: !!g && (g.all || ny < -0.5) });
+    }
+    return { id, type, pts, edges, cx, cy, ...extra };
+  }
+  const rect = (id, type, x, y, w, h, extra) => poly(id, type, [[x, y], [x + w, y], [x + w, y + h], [x, y + h]], extra);
+  function makeWorld() {
+    const dome = []; for (let a = 200; a <= 340; a += 20) dome.push([400 + 36 * Math.cos(a * Math.PI / 180), 248 + 36 * Math.sin(a * Math.PI / 180)]);
+    const hex = []; for (let a = 0; a < 360; a += 60) hex.push([415 + 9 * Math.cos(a * Math.PI / 180), 350 + 9 * Math.sin(a * Math.PI / 180)]);
+    return [
+      rect('A', 'incut', 180, 300, 150, 16), rect('F1', 'ledge', 296, 440, 44, 60),
+      poly('J', 'jug', hex), poly('S', 'sloper', dome),
+      rect('B', 'ledge', 470, 330, 140, 16), rect('F3', 'ledge', 510, 440, 40, 10),
+      rect('G', 'incut', 520, 240, 110, 16, { goal: true }),
+    ];
+  }
+  function closestOnSeg(e, x, y) {
+    const dx = e.bx - e.ax, dy = e.by - e.ay, t = Math.max(0, Math.min(1, ((x - e.ax) * dx + (y - e.ay) * dy) / (dx * dx + dy * dy)));
+    return [e.ax + dx * t, e.ay + dy * t];
+  }
+  // 원(발)과 볼록 다각형: 밀어낼 방향과 깊이
+  function polyPush(pl, x, y, r) {
+    let best = -1e9, bi = -1;
+    for (let i = 0; i < pl.edges.length; i++) { const e = pl.edges[i], d = (x - e.ax) * e.nx + (y - e.ay) * e.ny; if (d > best) { best = d; bi = i; } }
+    if (best > r) return null;
+    if (best <= 0) { const e = pl.edges[bi]; return { nx: e.nx, ny: e.ny, depth: r - best }; }
+    let dm = 1e9, qx = 0, qy = 0;
+    for (const e of pl.edges) { const q = closestOnSeg(e, x, y), d = Math.hypot(x - q[0], y - q[1]); if (d < dm) { dm = d; qx = q[0]; qy = q[1]; } }
+    if (dm >= r || dm < 1e-9) return null;
+    return { nx: (x - qx) / dm, ny: (y - qy) / dm, depth: r - dm };
+  }
+  function nearestGrip(world, x, y) {
+    let best = null;
+    for (const pl of world) for (const e of pl.edges) if (e.grip) {
+      const q = closestOnSeg(e, x, y), d = Math.hypot(x - q[0], y - q[1]);
+      if (!best || d < best.d) best = { d, x: q[0], y: q[1], nx: e.nx, ny: e.ny, type: pl.type, poly: pl.id };
+    }
+    return best;
+  }
+  function nearestSurface(world, x, y) {
+    let best = null;
+    for (const pl of world) for (const e of pl.edges) {
+      const q = closestOnSeg(e, x, y), d = Math.hypot(x - q[0], y - q[1]);
+      if (!best || d < best.d) best = { d, x: q[0], y: q[1], nx: e.nx, ny: e.ny, poly: pl.id };
+    }
+    return best;
+  }
+
+  // ---- 몸
+  const pt = (x, y, m) => ({ x, y, px: x, py: y, vx: 0, vy: 0, m, fx: 0, fy: 0 });
+  const STATIONS = {
+    1: { name: '두 손 매달리기', c: [307, 371], hands: [[296, 300], [318, 300]] },
+    2: { name: '한 손 매달리기', c: [322, 372], hands: [null, [322, 300]] },
+    3: { name: '발판 위 웅크리기', c: [333, 351.1], p: [330, 405], hands: [[304, 300], [328, 300]], feet: [[318, 435], [334, 435]] },
+    4: { name: '건너편 한 손', c: [476, 402], hands: [[476, 330], null] },
+  };
+  function create(world, station = 1) {
+    const st = STATIONS[station] || STATIONS[1];
+    const c = st.c, hp = st.p || [c[0], c[1] + C.T];
+    const s = { world, station, t: 0, dead: false, won: false, winT: 0, events: [], p: [pt(c[0], c[1], C.MC), pt(hp[0], hp[1], C.MP)], limb: [] };
+    for (let i = 0; i < 4; i++) {
+      const arm = i < 2, root = arm ? 0 : 1, side = i % 2 ? 1 : -1;
+      const at = arm ? st.hands[i] : st.feet && st.feet[i - 2];
+      const r = s.p[root];
+      const pos = at || (arm ? [r.x + side * 8, r.y + C.A * 0.9] : [r.x + side * 7, r.y + C.L * 0.95]);
+      s.p.push(pt(pos[0], pos[1], arm ? C.MH : C.MF));
+      const lb = { i, arm, root, end: 2 + i, max: arm ? C.A : C.L, min: arm ? C.AMIN : C.LMIN, mode: 'free', anchor: null, L0: 0, tens: 0, lam: 0, slipT: 0, ang: 0, contact: false, noContactT: 0, poly: null, force: 0, brace: false, ext: 0 };
+      if (at && arm) { const g = nearestGrip(world, at[0], at[1]); lb.mode = 'grip'; lb.anchor = g; s.p[2 + i].x = g.x; s.p[2 + i].y = g.y; }
+      if (at && !arm) { lb.mode = 'plant'; lb.contact = true; lb.poly = nearestSurface(world, at[0], at[1]).poly; }
+      lb.L0 = Math.min(lb.max, Math.hypot(pos[0] - r.x, pos[1] - r.y));
+      s.limb.push(lb);
+    }
+    return s;
+  }
+
+  function handleInput(s, inp) {
+    for (let i = 0; i < 4; i++) {
+      const lb = s.limb[i], e = s.p[lb.end], r = s.p[lb.root], held = lb.arm ? inp.hand[i] : inp.foot[i - 2];
+      if (held && lb.mode !== 'reach') {
+        if (lb.mode === 'grip') s.events.push({ type: 'release', limb: i, x: e.x, y: e.y });
+        lb.mode = 'reach'; lb.anchor = null; lb.tens = 0; lb.slipT = 0;
+      } else if (!held && lb.mode === 'reach') {
+        if (lb.arm) {
+          const g = nearestGrip(s.world, e.x, e.y);
+          if (g && g.d <= C.GRAB_R) {
+            lb.mode = 'grip'; lb.anchor = g; e.x = g.x; e.y = g.y; e.vx = e.vy = 0;
+            lb.brace = false; lb.L0 = lb.max; lb.ext = Math.max(0, Math.hypot(e.x - r.x, e.y - r.y) - lb.max); // 잡는 순간 팔은 느슨하다. 당긴 길이는 힘주기로 정한다
+            s.events.push({ type: 'grab', limb: i, x: g.x, y: g.y, poly: g.poly });
+          } else { lb.mode = 'free'; s.events.push({ type: 'miss', limb: i, x: e.x, y: e.y, d: g ? g.d - C.GRAB_R : 999 }); }
+        } else {
+          const q = nearestSurface(s.world, e.x, e.y), ok = q && q.d <= C.PLANT_R;
+          if (ok) { e.x = q.x + q.nx * C.FOOT_R; e.y = q.y + q.ny * C.FOOT_R; e.vx = r.vx; e.vy = r.vy; lb.poly = q.poly; }
+          if (ok) { lb.mode = 'plant'; lb.noContactT = 0; lb.contact = true; lb.L0 = Math.max(lb.min, Math.min(lb.max, Math.hypot(e.x - r.x, e.y - r.y))); s.events.push({ type: 'plant', limb: i, x: e.x, y: e.y }); }
+          else { lb.mode = 'free'; s.events.push({ type: 'footmiss', limb: i, x: e.x, y: e.y, d: q ? q.d - C.PLANT_R : 999 }); }
+        }
+      }
+    }
+  }
+
+  function substep(s, inp, h) {
+    const p = s.p, c = p[0], hp = p[1];
+    for (const q of p) { q.fx = 0; q.fy = q.m * C.G; }
+    let planted = false;
+    const anchored = s.limb.some(l => l.mode === 'grip' || l.mode === 'plant');
+    for (const lb of s.limb) {
+      const r = p[lb.root], e = p[lb.end], arm = lb.arm;
+      const dx = e.x - r.x, dy = e.y - r.y, len = Math.hypot(dx, dy) || 1e-6, ux = dx / len, uy = dy / len;
+      const rv = (e.vx - r.vx) * ux + (e.vy - r.vy) * uy;
+      lb.force = 0;
+      if (lb.mode === 'reach') {
+        let tx = inp.cx - r.x, ty = inp.cy - r.y, tl = Math.hypot(tx, ty);
+        if (tl < 1e-3) { tx = 0; ty = 1; tl = 1; }
+        if (!arm) { // 다리 가동 범위: 몸통 아래 방향 기준
+          const dxn = (hp.x - c.x) / C.T, dyn = (hp.y - c.y) / C.T, lim = C.LEG_RANGE * Math.PI / 180;
+          const cr = dxn * ty - dyn * tx, dt = dxn * tx + dyn * ty, ang = Math.atan2(cr, dt);
+          if (Math.abs(ang) > lim) { const a = Math.sign(ang) * lim, ca = Math.cos(a), sa = Math.sin(a); tx = (dxn * ca - dyn * sa) * tl; ty = (dyn * ca + dxn * sa) * tl; }
+        }
+        const tm = Math.max(lb.min * 1.1, Math.min(lb.max * 0.97, tl)); tx *= tm / tl; ty *= tm / tl;
+        const kp = arm ? M.handKp : M.footKp, kd = arm ? M.handKd : M.footKd, fm = arm ? M.handReach : M.footReach;
+        let Fx = kp * (r.x + tx - e.x) - kd * (e.vx - r.vx), Fy = kp * (r.y + ty - e.y) - kd * (e.vy - r.vy) - e.m * C.G;
+        const fl = Math.hypot(Fx, Fy); if (fl > fm) { Fx *= fm / fl; Fy *= fm / fl; }
+        e.fx += Fx; e.fy += Fy; r.fx -= Fx; r.fy -= Fy;
+        { // 팔다리를 휘두르는 반작용은 몸통을 반대로 돌린다(각운동량 보존)
+          const tau = dx * Fy - dy * Fx, gx = -(c.y - hp.y) / C.T, gy = (c.x - hp.x) / C.T, g = -tau / C.T * (anchored ? C.REACT : 1);
+          c.fx += g * gx; c.fy += g * gy; hp.fx -= g * gx; hp.fy -= g * gy;
+        }
+      } else if (lb.mode === 'grip' || lb.mode === 'plant') {
+        if (!arm) planted = true;
+        const k = arm ? M.armK : M.legK, cc = arm ? M.armC : M.legC, pull = arm ? M.armPull : M.legPull;
+        // 팔은 몸이 손보다 면 바깥쪽(위)에 있을 때만 밀 수 있다. 아래에 매달렸을 때는 줄처럼 느슨해진다.
+        const push = arm ? (lb.brace && (r.x - e.x) * lb.anchor.nx + (r.y - e.y) * lb.anchor.ny > 0 ? M.armPush : 0) : M.legPush;
+        let drive = 0;
+        if (inp.power) lb.brace = true;
+        if (inp.power) { // 힘주기: 붙은 팔다리가 몸을 커서 쪽으로 옮기도록 길이를 바꾼다
+          // 몸(팔은 가슴, 다리는 엉덩이)이 가야 할 변위 중 이 팔다리 방향 성분만큼 늘이거나 줄인다
+          const gx = inp.cx - r.x, gy = inp.cy + (arm ? 0 : C.T) - r.y;
+          const Ld = Math.max(lb.min, Math.min(lb.max, len - (gx * ux + gy * uy))), rate = (arm ? M.armRate : M.legRate) * h;
+          const dL = Math.max(-rate, Math.min(rate, Ld - lb.L0));
+          lb.L0 += dL; drive = dL / h;
+          if (!arm && lb.L0 < len - 1.5) { lb.L0 = len - 1.5; drive = 0; } // 다리를 접을 때 발을 들어올리지 않는다(몸이 내려오는 만큼만 접힌다)
+        }
+        let err = len - lb.L0;
+        if (k * err > pull) { lb.L0 = len - pull / k; err = pull / k; } // 버티지 못하면 그만큼 늘어난다
+        else if (k * err < -push) { lb.L0 = len + push / k; err = -push / k; }
+        lb.L0 = Math.max(lb.min, Math.min(lb.max, lb.L0));
+        let Fa = Math.max(-push, Math.min(pull, k * err + cc * (rv - drive)));
+        if (arm && Fa) { // 손이 미끄러질 방향으로는 팔 힘을 주지 않는다(줄처럼 팽팽해져 걸리는 힘은 그대로 받는다)
+          const a = lb.anchor, cos = Math.sign(Fa) * (ux * a.nx + uy * a.ny);
+          if (cos < Math.cos((GRIP[a.type].th - 4) * Math.PI / 180)) { Fa = 0; lb.L0 = len; }
+        }
+        r.fx += Fa * ux; r.fy += Fa * uy; e.fx -= Fa * ux; e.fy -= Fa * uy;
+        lb.force = Fa;
+      } else {
+        const cf = M.freeC[lb.i], Fx = -cf * (e.vx - r.vx), Fy = -cf * (e.vy - r.vy);
+        e.fx += Fx; e.fy += Fy; r.fx -= Fx; r.fy -= Fy;
+      }
+    }
+    if (planted) { // 발을 디뎠을 때만 몸통을 세우는 힘(발목·골반 역할)
+      const gx = -(c.y - hp.y) / C.T, gy = (c.x - hp.x) / C.T;
+      let f = (M.upK * (hp.x - c.x) - M.upC * (c.vx - hp.vx)) * gx + (M.upK * (hp.y - C.T - c.y) - M.upC * (c.vy - hp.vy)) * gy;
+      f = Math.max(-M.upMax, Math.min(M.upMax, f));
+      c.fx += f * gx; c.fy += f * gy; hp.fx -= f * gx; hp.fy -= f * gy;
+    }
+    for (let i = 0; i < p.length; i++) {
+      const q = p[i], lb = i >= 2 ? s.limb[i - 2] : null;
+      q.px = q.x; q.py = q.y;
+      if (lb && lb.mode === 'grip') { q.x = lb.anchor.x; q.y = lb.anchor.y; q.vx = q.vy = 0; continue; }
+      q.vx += q.fx / q.m * h; q.vy += q.fy / q.m * h;
+      q.x += q.vx * h; q.y += q.vy * h;
+    }
+    for (const lb of s.limb) { lb.lam = 0; lb.hit = false; if (lb.ext > 0) lb.ext = Math.max(0, lb.ext - 120 * h); }
+    for (let it = 0; it < C.ITER; it++) {
+      { // 몸통 막대
+        const dx = c.x - hp.x, dy = c.y - hp.y, l = Math.hypot(dx, dy) || 1e-6, d = (l - C.T) / l, wc = 1 / c.m, wp = 1 / hp.m, ws = wc + wp;
+        c.x -= dx * d * wc / ws; c.y -= dy * d * wc / ws; hp.x += dx * d * wp / ws; hp.y += dy * d * wp / ws;
+      }
+      for (const lb of s.limb) {
+        const r = p[lb.root], e = p[lb.end], pin = lb.mode === 'grip';
+        const dx = e.x - r.x, dy = e.y - r.y, l = Math.hypot(dx, dy) || 1e-6;
+        const mx = lb.max + lb.ext, over = l > mx ? l - mx : l < lb.min ? l - lb.min : 0;
+        if (over) {
+          const wr = 1 / r.m, we = pin ? 0 : 1 / e.m, ws = wr + we, d = over / l;
+          r.x += dx * d * wr / ws; r.y += dy * d * wr / ws; e.x -= dx * d * we / ws; e.y -= dy * d * we / ws;
+          if (pin) lb.lam += over;
+        }
+        if (lb.mode === 'plant') { // 디딘 발만 그 지형과 맞닿는다
+          for (const pl of s.world) {
+            if (pl.id !== lb.poly) continue;
+            const hit = polyPush(pl, e.x, e.y, C.FOOT_R + 1.5);
+            if (!hit) continue;
+            lb.hit = true;
+            const dep = hit.depth - 1.5; if (dep <= 0) continue;
+            e.x += hit.nx * dep; e.y += hit.ny * dep;
+            friction(e, hit.nx, hit.ny, dep);
+          }
+        }
+      }
+      for (const q of p) if (q.y > C.FLOOR - 4) { const dep = q.y - (C.FLOOR - 4); q.y = C.FLOOR - 4; friction(q, 0, -1, dep); s.hitMat = true; }
+    }
+    for (let i = 0; i < p.length; i++) { const q = p[i]; q.vx = (q.x - q.px) / h; q.vy = (q.y - q.py) / h; }
+    for (const lb of s.limb) {
+      if (lb.mode === 'grip') { const ft = lb.force + 50 * lb.lam / (h * h); lb.tens += (ft - lb.tens) * Math.min(1, h / 0.03); }
+      if (!lb.arm) lb.contact = lb.hit;
+    }
+  }
+  function friction(q, nx, ny, dep) {
+    const mx = q.x - q.px, my = q.y - q.py, dn = mx * nx + my * ny, tx = mx - dn * nx, ty = my - dn * ny, tl = Math.hypot(tx, ty);
+    if (tl < 1e-9) return;
+    const k = Math.min(1, C.MU * dep / tl);
+    q.x -= tx * k; q.y -= ty * k;
+  }
+
+  function step(s, inp, dt) {
+    s.events.length = 0;
+    if (s.dead) return;
+    handleInput(s, inp);
+    const h = dt / C.SUB;
+    for (let k = 0; k < C.SUB; k++) substep(s, inp, h);
+    s.t += dt;
+    const c = s.p[0];
+    for (const lb of s.limb) {
+      const e = s.p[lb.end];
+      if (lb.mode === 'grip') { // 손이 버티는 방향 검사: 면을 누르는 방향에서 한계각을 넘게 당기면 미끄러진다
+        const a = lb.anchor, dx = c.x - a.x, dy = c.y - a.y, l = Math.hypot(dx, dy) || 1e-6, sg = lb.tens >= 0 ? 1 : -1;
+        const cos = sg * (dx * -a.nx + dy * -a.ny) / l, lim = GRIP[a.type].th;
+        lb.ang = Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI; lb.lim = lim;
+        if (Math.abs(lb.tens) > 0.25 * W && lb.ang > lim) lb.slipT += dt; else lb.slipT = 0;
+        if (lb.slipT > 0.06) { lb.mode = 'free'; lb.anchor = null; s.events.push({ type: 'slip', limb: lb.i, x: e.x, y: e.y, ang: lb.ang, lim, kind: a.type }); }
+      } else if (lb.mode === 'plant') {
+        lb.noContactT = lb.contact ? 0 : lb.noContactT + dt;
+        if (lb.noContactT > 0.12) { lb.mode = 'free'; s.events.push({ type: 'footoff', limb: lb.i, x: e.x, y: e.y }); }
+      }
+    }
+    if (s.hitMat) { s.dead = true; s.events.push({ type: 'mat' }); }
+    const g = s.limb[0].mode === 'grip' && s.limb[1].mode === 'grip' && s.world.find(pl => pl.goal);
+    if (g && s.limb[0].anchor.poly === g.id && s.limb[1].anchor.poly === g.id) { s.winT += dt; if (s.winT > 0.4 && !s.won) { s.won = true; s.events.push({ type: 'win' }); } } else s.winT = 0;
+  }
+  // 진단용: 전체 운동량·각운동량·역학적 에너지
+  function diag(s) {
+    let px = 0, py = 0, L = 0, E = 0, m = 0, cx = 0, cy = 0;
+    for (const q of s.p) { px += q.m * q.vx; py += q.m * q.vy; m += q.m; cx += q.m * q.x; cy += q.m * q.y; }
+    cx /= m; cy /= m;
+    for (const q of s.p) { L += q.m * ((q.x - cx) * (q.vy - py / m) - (q.y - cy) * (q.vx - px / m)); E += 0.5 * q.m * (q.vx * q.vx + q.vy * q.vy) - q.m * C.G * q.y; }
+    return { px, py, L, E, cx, cy, m };
+  }
+  return { C, M, W, MASS, GRIP, STATIONS, makeWorld, create, step, diag, nearestGrip, nearestSurface };
+})();
+if (typeof module !== 'undefined') module.exports = PH;
+
+</script>
+<script>
+// 자동 시연·자동 시험용 조작기. 사람과 똑같은 입력(커서 위치, 손 버튼 2개, 발 키 2개, 힘주기)만 낸다.
+'use strict';
+const BOTS = (() => {
+  const idle = () => ({ cx: 0, cy: 0, hand: [false, false], foot: [false, false], power: false });
+  const d = (a, x, y) => Math.hypot(a.x - x, a.y - y);
+  const PHX = typeof PH !== 'undefined' ? PH : require('./physics.js');
+  const BX = 470, BY = 330, JX = 415, JY = 350;
+  const near = (s, i) => { const g = PHX.nearestGrip(s.world, s.p[2 + i].x, s.p[2 + i].y); return g ? g.d : 999; };
+  // 손 i를 (x,y)로 뻗어, 닿으면 버튼을 떼어 잡는다. 잡았으면 true
+  function catchWith(s, inp, i, x, y) {
+    const lb = s.limb[i];
+    if (lb.mode === 'grip' && d(lb.anchor, x, y) < 20) return true;
+    inp.cx = x; inp.cy = y;
+    inp.hand[i] = !(lb.mode === 'reach' && d(s.p[2 + i], x, y) < 9);
+    return false;
+  }
+  function plantFoot(s, inp, i, x, y) {
+    const lb = s.limb[i];
+    if (lb.mode === 'plant') return true;
+    inp.cx = x; inp.cy = y;
+    inp.foot[i - 2] = !(lb.mode === 'reach' && d(s.p[2 + i], x, y) < 6);
+    return false;
+  }
+  // 건너편 턱(B)에 한 손이 걸린 뒤: 다른 손, 그다음 발로 안정시킨다
+  function stabilize(s, m, inp) {
+    const first = m.first, other = 1 - first, a = s.limb[first].anchor;
+    if (!a) return;
+    if (!m.second) { if (s.t - m.tc > 0.25 && catchWith(s, inp, other, a.x + (a.x < BX + 25 ? 22 : -22), BY)) m.second = s.t; return; }
+    if (!m.foot) { if (s.t - m.second > 0.3 && plantFoot(s, inp, 3, Math.max(BX + 46, Math.min(BX + 74, s.p[1].x)), BY + 108)) m.foot = s.t; return; }
+    m.done = true;
+  }
+  function flyCatch(s, m, inp, tx, ty) { // 공중: 두 손을 뻗어 먼저 닿는 손으로 잡는다
+    for (const i of [0, 1]) {
+      const lb = s.limb[i];
+      if (lb.mode === 'grip' && lb.anchor.poly === 'B') { m.first = i; m.tc = s.t; return true; }
+    }
+    inp.cx = tx; inp.cy = ty;
+    for (const i of [0, 1]) inp.hand[i] = !(s.limb[i].mode === 'reach' && near(s, i) < 9 && d(s.p[2 + i], tx, ty) < 40);
+    return false;
+  }
+  const defs = {
+    // 방법 1: 한 손으로 매달려 다리로 반동을 키운 뒤 놓고 건너편 턱을 잡는다
+    swing: { station: 2, title: '방법 1 · 한 손 반동 → 놓기 → 한 손 잡기 → 안정', p: { rel: 48, amp: 60 },
+      run(s, m, p) {
+        const inp = idle(), c = s.p[0], hp = s.p[1];
+        if (m.ph === 0) {
+          const a = s.limb[1].anchor; if (!a) return inp;
+          const phi = Math.atan2(c.x - a.x, c.y - a.y) * 180 / Math.PI;
+          m.amp = Math.max(m.amp || 0, Math.abs(phi)); m.maxAmp = Math.max(m.maxAmp || 0, Math.abs(phi));
+          inp.foot = [true, true]; inp.cx = hp.x + (s.t < 0.3 || phi < 0 ? 70 : -70); inp.cy = hp.y + 45;
+          if (m.maxAmp > p.amp && phi < -10) m.ready = true;
+          if (m.ready && phi > p.rel && c.vx > 0) { m.ph = 1; m.t1 = s.t; }
+          return inp;
+        }
+        if (m.ph === 1) { if (flyCatch(s, m, inp, BX + 8, BY)) m.ph = 2; return inp; }
+        stabilize(s, m, inp); return inp;
+      } },
+    // 방법 2: 발판을 디디고 웅크렸다가 다리로 밀며 두 손을 놓는다
+    jump: { station: 3, title: '방법 2 · 웅크리기 → 발로 밀기 → 손 놓기 → 잡기 → 안정', p: { lean: 0.5, rel: 0.02, pw: 0.25 },
+      run(s, m, p) {
+        const inp = idle();
+        if (m.ph === 0) {
+          if (s.t < 0.5) return inp;
+          const t = s.t - 0.5; inp.power = true;
+          if (t < p.lean) { inp.cx = 352; inp.cy = 362; return inp; }
+          inp.cx = 450; inp.cy = 200;
+          if (t > p.lean + p.rel) inp.hand = [true, true];
+          if (t > p.lean + p.pw) m.ph = 1;
+          return inp;
+        }
+        if (m.ph === 1) { if (flyCatch(s, m, inp, BX + 8, BY)) m.ph = 2; return inp; }
+        stabilize(s, m, inp); return inp;
+      } },
+    // 방법 3: 작은 반동으로 중간 저그를 잡고, 당겨 올라가 건너편 턱으로 손을 옮긴다
+    jug: { station: 2, title: '방법 3 · 작은 반동 → 저그 → 당겨 올라 손 옮기기', p: { rel: 30 },
+      run(s, m, p) {
+        const inp = idle(), c = s.p[0], hp = s.p[1];
+        if (m.ph === 0) {
+          const a = s.limb[1].anchor; if (!a) return inp;
+          const phi = Math.atan2(c.x - a.x, c.y - a.y) * 180 / Math.PI;
+          inp.foot = [true, true]; inp.cx = hp.x + (s.t < 0.3 || phi < 0 ? 70 : -70); inp.cy = hp.y + 45;
+          if (phi > p.rel && c.vx > 0 && d(c, JX, JY) < 80) m.ph = 1;
+          return inp;
+        }
+        if (m.ph === 1) { if (catchWith(s, inp, 0, JX, JY - 8)) { m.ph = 2; m.t2 = s.t; } return inp; }
+        if (m.ph === 2) { // 오른손도 저그로 옮겨 두 손으로 버틴다
+          if (s.t - m.t2 < 0.3) return inp;
+          if (catchWith(s, inp, 1, JX + 6, JY - 6)) { m.ph = 3; m.t2 = s.t; } return inp;
+        }
+        if (m.ph === 3) { // 당겨 올라가기
+          inp.power = true; inp.cx = JX + 8; inp.cy = JY + 6;
+          if (c.y < 345 || s.t - m.t2 > 1.5) { m.ph = 4; m.t2 = s.t; }
+          return inp;
+        }
+        if (m.ph === 4) { inp.power = true; if (catchWith(s, inp, 1, BX + 8, BY)) { m.ph = 5; m.first = 1; m.tc = s.t; } return inp; }
+        stabilize(s, m, inp); return inp;
+      } },
+    // 마무리: 건너편에서 두 손·한 발로 자리 잡고, 발로 밀어 일어서며 목표 턱을 잡는다
+    top: { station: 4, title: '마무리 · 발 딛고 일어서며 목표 턱 잡기', p: {}, win: true,
+      run(s, m) {
+        const inp = idle(), c = s.p[0];
+        if (m.ph === 0) { if (s.t < 0.4) return inp; inp.power = true; if (catchWith(s, inp, 1, BX + 24, BY)) m.ph = 1; return inp; }
+        if (m.ph === 1) { if (plantFoot(s, inp, 3, BX + 58, BY + 108)) { m.ph = 2; m.t2 = s.t; } return inp; }
+        if (m.ph === 2) { inp.power = true; inp.cx = BX + 62; inp.cy = BY - 45; if (c.y < BY - 28 || s.t - m.t2 > 1.6) m.ph = 3; return inp; }
+        if (m.ph === 3) { inp.power = true; if (catchWith(s, inp, 0, BX + 66, BY - 90)) m.ph = 4; return inp; }
+        if (m.ph === 4) { if (catchWith(s, inp, 1, BX + 88, BY - 90)) m.ph = 5; return inp; }
+        if (s.won) m.done = true; return inp;
+      } },
+    // 실패 예: 반동이 모자란 채 일찍 놓는다
+    early: { station: 2, title: '실패 예 · 반동이 모자란 채 놓기', p: { rel: 20, amp: 25 }, expectFail: true, run(s, m, p) { return defs.swing.run(s, m, p); } },
+    // 실패 예: 도약 중 손을 떼는 것이 늦다
+    late: { station: 3, title: '실패 예 · 발로 밀었지만 손을 늦게 놓기', p: { lean: 0.5, rel: 0.3, pw: 0.35 }, expectFail: true, run(s, m, p) { return defs.jump.run(s, m, p); } },
+  };
+  function make(name, over) {
+    const def = defs[name], m = { ph: 0 }, p = { ...def.p, ...over };
+    return { def, m, step: s => def.run(s, m, p) };
+  }
+  return { defs, make, idle };
+})();
+if (typeof module !== 'undefined') module.exports = BOTS;
+
+</script>
+<script>
+// 등반 조작 실험실 · 화면과 입력
+'use strict';
+(() => {
+  const W = G.W, H = G.H, OX = -30, OY = 130, C = PH.C;
+  const LIMB = ['왼손', '오른손', '왼발', '오른발'], COL = ['#e86a5a', '#4fb3e8', '#e86a5a', '#4fb3e8'], DARK = ['#8a3b3b', '#2a6f97', '#8a3b3b', '#2a6f97'];
+  const world = PH.makeWorld();
+  const autoList = G.auto ? (G.auto === 'all' ? Object.keys(BOTS.defs) : [G.auto].filter(n => BOTS.defs[n])) : [];
+  let S, station = 1, tries = 0, fx = [], why = null, endT = 0, block = [true, true, true, true], slow = false, tick = 0, bot = null, autoI = 0, doneT = 0, air = null, last = BOTS.idle();
+  window.__lab = { get s() { return S; }, get bot() { return bot; }, finished: false, results: [] };
+
+  function reset(st) {
+    if (st) station = st;
+    if (autoList.length) { bot = BOTS.make(autoList[autoI % autoList.length]); station = bot.def.station; }
+    S = PH.create(world, station); tries++; fx = []; why = null; endT = 0; doneT = 0; air = null; block = [true, true, true, true];
+  }
+  function readInput(inp) {
+    const m = inp.mouse, raw = [m.down[0] || inp.key('KeyQ'), m.down[2] || inp.key('KeyE'), inp.key('KeyA'), inp.key('KeyD')];
+    for (let i = 0; i < 4; i++) { if (!raw[i]) block[i] = false; if (block[i]) raw[i] = false; } // 재시작 때 눌려 있던 버튼은 한 번 떼야 듣는다
+    return { cx: m.x + OX, cy: m.y + OY, hand: [raw[0], raw[1]], foot: [raw[2], raw[3]], power: inp.key('Space') || inp.key('ShiftLeft') || inp.key('KeyW') };
+  }
+  function note(e) {
+    const n = LIMB[e.limb];
+    if (e.type === 'grab') { fx.push({ x: e.x, y: e.y, t: 0.4, kind: 'ring' }); G.sfx.grab(); }
+    else if (e.type === 'plant') { fx.push({ x: e.x, y: e.y, t: 0.3, kind: 'ring' }); G.sfx.beep(); }
+    else if (e.type === 'miss') { say(e, e.d < 80 ? `${n} 허공 — 잡을 곳까지 ${Math.ceil(e.d)}px 모자람` : `${n} 허공 — 근처에 잡을 곳이 없다`); G.sfx.miss(); }
+    else if (e.type === 'footmiss') { if (e.d < 30) say(e, `${n} 헛디딤 — 면까지 ${Math.ceil(e.d)}px`, true); }
+    else if (e.type === 'slip') { say(e, `${n} 미끄러짐 — 당기는 방향 ${Math.round(e.ang)}°, 이 ${PH.GRIP[e.kind].name}의 한계 ${e.lim}°`); G.sfx.fail(); }
+    else if (e.type === 'footoff') say(e, `${n} 접촉 끊김 — 누르는 힘이 없어 발이 떴다`, true);
+    else if (e.type === 'mat') { endT = 1.3; G.sfx.thud(); G.shake(5, 0.2); }
+    else if (e.type === 'win') G.sfx.win();
+  }
+  function say(e, text, minor) { fx.push({ x: e.x, y: e.y, t: 1.6, kind: 'text', text }); if (!minor) why = { text, t: S.t }; }
+
+  const game = {
+    init() { reset(1); },
+    update(dt, inp) {
+      for (const f of fx) f.t -= dt; fx = fx.filter(f => f.t > 0);
+      if (!bot) {
+        if (inp.pressed('KeyR')) { reset(); return; }
+        for (let k = 1; k <= 4; k++) if (inp.pressed('Digit' + k)) { tries = 0; reset(k); return; }
+        if (inp.pressed('KeyT')) slow = !slow;
+      }
+      if (endT > 0) { endT -= dt; if (endT <= 0 || (!bot && inp.any())) { if (bot) nextAuto(false); reset(); } return; }
+      if (S.won && !bot) { if (inp.pressed('Space') || inp.pressed('Enter')) reset(); }
+      tick++; if (slow && tick % 2) return;
+      last = bot ? bot.step(S) : readInput(inp);
+      PH.step(S, last, dt);
+      // 공중에 떠 있는 동안 손이 잡을 곳에 가장 가까웠던 거리를 기억해 둔다(실패 원인 표시용)
+      if (S.limb.some(l => l.mode === 'grip' || l.mode === 'plant')) { air = null; }
+      else { if (!air) air = { t: S.t, gap: 1e9 }; if (S.t - air.t > 0.25) for (const i of [0, 1]) { const q = PH.nearestGrip(world, S.p[2 + i].x, S.p[2 + i].y); air.gap = Math.min(air.gap, q.d - C.GRAB_R); } }
+      for (const e of S.events) note(e);
+      if (bot && bot.m.done) { doneT += dt; if (doneT > 2) { nextAuto(true); reset(); } }
+    },
+    draw,
+  };
+  function nextAuto(ok) { window.__lab.results.push({ name: autoList[autoI % autoList.length], ok }); autoI++; if (autoI >= autoList.length) window.__lab.finished = true; }
+
+  // ---- 그리기
+  const TYPE_COL = { ledge: '#7d828c', incut: '#b9793a', jug: '#d9573a', sloper: '#8b7fa8', block: '#6b6f78' };
+  function drawWorld(c) {
+    c.fillStyle = '#cfcabd'; c.fillRect(OX, OY, W, H);
+    for (let y = 150; y < C.FLOOR; y += 40) for (let x = OX + 20; x < OX + W; x += 40) G.circle(x, y, 1.5, 'rgba(0,0,0,0.13)');
+    c.fillStyle = '#3c5a8a'; c.fillRect(OX, C.FLOOR, W, 60);
+    for (const pl of world) {
+      c.beginPath(); pl.pts.forEach((q, i) => i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1])); c.closePath();
+      c.fillStyle = pl.goal ? '#d9a521' : TYPE_COL[pl.type]; c.fill(); c.strokeStyle = 'rgba(0,0,0,0.45)'; c.lineWidth = 1.5; c.stroke();
+      for (const e of pl.edges) if (e.grip) G.line(e.ax, e.ay, e.bx, e.by, pl.type === 'sloper' ? '#e9e2ff' : '#fff6d8', 3.5); // 손으로 잡을 수 있는 면
+    }
+    const lab = (id, t, dx, dy) => { const pl = world.find(p => p.id === id); G.text(t, pl.cx + dx, pl.cy + dy, { size: 11, align: 'center', color: 'rgba(40,40,40,0.75)', weight: 700 }); };
+    lab('A', '깊은 턱', -40, 26); lab('B', '턱', 30, 26); lab('G', '목표: 두 손으로 잡기', 0, -14); lab('J', '저그', 0, 24); lab('S', '둥근 면(미끄러움)', 0, 24); lab('F1', '발판', 0, 8); lab('F3', '발판', 0, 24);
+  }
+  function ik(a, b, len, bend) {
+    const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1, d = Math.min(L, len - 0.01), h = Math.sqrt(Math.max(0, (len / 2) ** 2 - (d / 2) ** 2));
+    return [a[0] + dx / 2 - dy / L * h * bend, a[1] + dy / 2 + dx / L * h * bend];
+  }
+  function drawBody(c) {
+    const p = S.p, ch = p[0], hp = p[1], ux = (ch.x - hp.x) / C.T, uy = (ch.y - hp.y) / C.T;
+    for (const i of [2, 3, 0, 1]) { // 다리 먼저, 팔 나중
+      const lb = S.limb[i], r = p[lb.root], e = p[lb.end], mid = ik([r.x, r.y], [e.x, e.y], lb.max + 2, i % 2 ? -1 : 1);
+      c.beginPath(); c.moveTo(r.x, r.y); c.lineTo(mid[0], mid[1]); c.lineTo(e.x, e.y);
+      c.strokeStyle = DARK[i]; c.lineWidth = lb.arm ? 7 : 9; c.lineCap = 'round'; c.lineJoin = 'round'; c.globalAlpha = lb.mode === 'free' ? 0.65 : 1; c.stroke(); c.globalAlpha = 1;
+      if (i === 3) { G.line(hp.x, hp.y, ch.x, ch.y, '#3b3f46', 20); c.lineCap = 'round'; G.circle(ch.x + ux * 20, ch.y + uy * 20, 10, '#3b3f46'); }
+    }
+    for (let i = 0; i < 4; i++) {
+      const lb = S.limb[i], e = p[lb.end], on = lb.mode === 'grip' || lb.mode === 'plant';
+      c.beginPath();
+      if (lb.arm) G.roundRect(e.x - 9, e.y - 9, 18, 18, 6); else c.ellipse(e.x, e.y, 12, 7, 0, 0, Math.PI * 2);
+      c.fillStyle = lb.mode === 'free' ? 'rgba(255,255,255,0.55)' : COL[i]; c.fill();
+      let ring = on ? '#fff' : 'rgba(0,0,0,0.6)';
+      if (lb.mode === 'grip' && Math.abs(lb.tens) > 0.25 * PH.W) { const k = lb.ang / lb.lim; ring = k > 0.9 ? '#ff3b30' : k > 0.7 ? '#ffd23c' : '#fff'; } // 미끄러지기 직전 경고
+      c.strokeStyle = ring; c.lineWidth = on ? 3.5 : 1.5; c.stroke();
+      G.text(i % 2 ? 'R' : 'L', e.x, e.y + 4, { size: 11, weight: 900, align: 'center', color: '#111' });
+      if (lb.mode === 'reach') {
+        const r = p[lb.root];
+        G.circle(r.x, r.y, lb.max, null, 'rgba(255,255,255,0.35)', 1.5); // 닿는 범위
+        G.line(e.x, e.y, last.cx, last.cy, 'rgba(255,255,255,0.6)', 1.5, [4, 4]);
+        const q = lb.arm ? PH.nearestGrip(world, e.x, e.y) : PH.nearestSurface(world, e.x, e.y), ok = q && q.d <= (lb.arm ? C.GRAB_R : C.PLANT_R);
+        if (ok) G.circle(q.x, q.y, 13 + Math.sin(S.t * 14) * 2, null, '#3dff8f', 3); // 지금 떼면 붙는다
+      }
+    }
+  }
+  function key(c, x, label, sub, on, col) {
+    G.panel(x, H - 26, 84, 21, on ? col : 'rgba(10,12,16,0.55)', on ? '#fff' : null);
+    G.text(label, x + 6, H - 11, { size: 12, weight: 800, color: on ? '#111' : '#e8e8e4' });
+    G.text(sub, x + 79, H - 11, { size: 10, weight: 600, align: 'right', color: on ? '#222' : 'rgba(255,255,255,0.55)' });
+  }
+  function draw(c) {
+    c.save(); c.translate(-OX, -OY);
+    drawWorld(c); drawBody(c);
+    for (const f of fx) {
+      if (f.kind === 'ring') G.circle(f.x, f.y, 12 + (0.4 - f.t) * 40, null, `rgba(255,255,255,${Math.min(1, f.t * 3)})`, 3);
+      else { c.globalAlpha = Math.min(1, f.t * 2); const w = G.textW(f.text, 13, 800) + 14; G.panel(f.x + 14, f.y - 30, w, 22, 'rgba(120,16,16,0.9)'); G.text(f.text, f.x + 21, f.y - 14, { size: 13, weight: 800 }); c.globalAlpha = 1; }
+    }
+    if (!S.dead) { G.line(last.cx - 9, last.cy, last.cx + 9, last.cy, '#111', 2); G.line(last.cx, last.cy - 9, last.cx, last.cy + 9, '#111', 2); G.circle(last.cx, last.cy, 5, null, '#fff', 1.5); }
+    c.restore();
+    G.panel(8, 6, 610, 62, 'rgba(255,255,255,0.78)');
+    G.text('등반 조작 실험실', 18, 26, { size: 16, weight: 800, color: '#222' });
+    G.text('누르고 있는 동안 그 손발이 커서를 따라간다 → 떼는 순간 닿은 곳을 잡는다/디딘다. 붙은 손발은 키 없이 유지된다.', 18, 44, { size: 12, color: '#333', weight: 500 });
+    G.text('스페이스: 붙은 팔다리로 몸을 커서 쪽으로 당기고 민다(도약)   R 다시 · 1~4 시작 자세 · T 느리게', 18, 60, { size: 12, color: '#333', weight: 500 });
+    G.text(bot ? bot.def.title : `${station}. ${PH.STATIONS[station].name}   시도 ${tries}${slow ? '   느리게 ×0.5' : ''}`, W - 12, 24, { size: 13, align: 'right', color: '#222', weight: 800, stroke: 'rgba(255,255,255,0.8)' });
+    if (bot) G.text('자동 시연 (사람과 같은 입력만 사용)', W - 12, 42, { size: 11, align: 'right', color: '#444' });
+    key(c, 10, '왼손', '좌클릭·Q', last.hand[0], COL[0]); key(c, 98, '오른손', '우클릭·E', last.hand[1], COL[1]);
+    key(c, 186, '왼발', 'A', last.foot[0], COL[2]); key(c, 274, '오른발', 'D', last.foot[1], COL[3]); key(c, 362, '힘주기', 'Space', last.power, '#ffd166');
+    G.text('실험 빌드 v0.2', W - 10, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
+    if (endT > 0) G.banner('매트에 떨어짐 — 바로 다시', why && (!air || why.t >= air.t - 0.05) ? why.text : air && air.gap > 0 && air.gap < 1e8 ? `손이 잡을 곳에 닿지 못했다 — 가장 가까웠을 때 ${Math.ceil(air.gap)}px 모자람` : air && air.gap <= 0 ? '손이 닿는 거리였지만 잡지 않았다(버튼을 떼야 잡는다)' : '붙잡은 곳 없이 떨어졌다', 'fail', 400);
+    else if (S.won) G.banner('목표 도달!', `${S.t.toFixed(1)}초 · 시도 ${tries} — R 또는 스페이스로 다시`, 'win', 400);
+    else if (bot && bot.m.done) G.banner('건너가서 안정됨', '두 손 + 한 발로 버티는 중', 'win', 440);
+  }
+  G.run(game, { title: '등반 조작 실험실' });
+})();
+
+</script>
+</body></html>
