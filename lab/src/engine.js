@@ -30,7 +30,7 @@ const G = (() => {
   function keyDown(code) { edge.pressed[code] = true; if (actionKeys.includes(code)) edge.aPress = true; }
   function keyUp(code) { edge.released[code] = true; if (actionKeys.includes(code)) edge.aRelease = true; }
   window.addEventListener('keydown', e => {
-    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'Quote', 'Slash'].includes(e.code)) e.preventDefault();
     unlockAudio(); paused = false;
     if (e.repeat || auto) return;
     real.keys[e.code] = true; keyDown(e.code);
@@ -73,6 +73,7 @@ const G = (() => {
     key: c => !!(real.keys[c] || virt.keys[c]),
     pressed: c => !!edge.pressed[c],
     released: c => !!edge.released[c],
+    codes: () => Object.keys(edge.pressed),
     get action() { return real.action || virt.action || !!real.keys.Space || !!virt.keys.Space; },
     get actionPressed() { return edge.aPress; },
     get actionReleased() { return edge.aRelease; },

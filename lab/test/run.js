@@ -57,11 +57,19 @@ if (require.main === module) {
   { const s = PH.create(PH.makeWorld(), { c: [633, 519], hands: [null, [633, 447]], tuck: true }); for (let i = 0; i < 300; i++) { const inp = BOTS.idle(); inp.foot = [true, true]; inp.cx = s.p[1].x; inp.cy = s.p[1].y + 30; PH.step(s, inp, dt); }
     check('돌출부 한 손으로 매달려 버티기(다리 접고)', s.limb[1].mode === 'grip' && s.limb[1].anchor.poly === 'R2' && !s.dead); }
   // 3-3) 도약 입력 여유: 밀기와 손 놓기의 순서·간격
-  { const win = c => { PH.C.COUPLE = c; const ok = []; for (let rel = -0.3; rel <= 0.41; rel += 0.03) if (play('jump', { rel, aimT: true }, 7).ok) ok.push(rel); PH.C.COUPLE = 0.15; return ok; };
+  { const win = c => { PH.C.COUPLE = c; const ok = []; for (let rel = -0.3; rel <= 0.41; rel += 0.03) if (play('jump', { rel, aimT: true }, 7).ok) ok.push(rel); PH.C.COUPLE = 0; return ok; };
     // 0초(동시)에서 시작해 끊기지 않고 이어지는 범위만 센다
     const span = a => { const has = r => a.some(x => Math.abs(x - r) < 0.001); let lo = 0, hi = 0; while (has(hi + 0.03)) hi += 0.03; while (has(lo - 0.03)) lo -= 0.03; return has(0) ? [lo, hi] : [0, -1]; };
     const o = span(win(0)), n = span(win(0.15));
     check('도약: 새 조작이 기존보다 늦게 놓아도 성립', n[1] > o[1] && n[0] <= o[0], `연속 성공 범위 — 기존 ${o[0].toFixed(2)}~+${o[1].toFixed(2)}초 / 새 조작 ${n[0].toFixed(2)}~+${n[1].toFixed(2)}초 (놓자마자 다음 턱 조준, 0.03초 간격)`); }
+  // 3-4) 발 접촉: 발은 면을 눌러 받칠 때만 붙어 있다
+  { const pose = (hip, foot, hands, brace) => { const s = PH.create(PH.makeWorld(), { c: [hip[0], hip[1] - 54], p: hip, hands: hands || [null, null], feet: [null, foot], tuck: true }); s.limb[3].brace = brace; s.limb[3].L0 = Math.hypot(foot[0] - hip[0], foot[1] - hip[1]); let off = null; for (let i = 0; i < 600 && !s.dead; i++) { PH.step(s, BOTS.idle(), dt); if (off === null && s.limb[3].mode !== 'plant') off = s.t; } return { s, off }; };
+    const hangs = [[[540, 400], [560, 340]], [[500, 370], [560, 340]], [[560, 410], [560, 340]]].map(([h, f]) => pose(h, f, null, false));
+    check('양손을 놓고 발이 엉덩이보다 위: 발에 매달리지 못하고 떨어진다', hangs.every(r => r.s.dead && r.off < 0.5), `발이 떨어지기까지 ${hangs.map(r => r.off.toFixed(2)).join(' / ')}초 (수정 전: 5초 내내 매달림)`);
+    const st1 = pose([560, 270], [560, 340], null, false), st2 = pose([560, 270], [560, 340], null, true);
+    check('발판 위 한 발로 체중 받치기(손 없이 5초)', !st1.s.dead && st1.s.limb[3].mode === 'plant' && !st2.s.dead && Math.abs(st1.s.p[1].y - 270) < 12, `엉덩이 높이 변화 ${(st1.s.p[1].y - 270).toFixed(1)}px`);
+    const hf = pose([476, 471], [492, 515], [[476, 345], null], false);
+    check('한 손과 한 발로 버티기(5초)', !hf.s.dead && hf.s.limb[0].mode === 'grip' && hf.s.limb[3].mode === 'plant'); }
   // 4) 세 가지 방법 + 실패 예
   for (const name of Object.keys(BOTS.defs)) {
     const r = play(name), def = BOTS.defs[name];

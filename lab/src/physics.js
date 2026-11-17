@@ -7,13 +7,13 @@ const PH = (() => {
     G: 1400, T: 54, A: 72, AMIN: 0, L: 84, LMIN: 26,
     MC: 28, MP: 22, MH: 2, MF: 6,
     SUB: 8, ITER: 4, FLOOR: 640, GRAB_R: 14, PLANT_R: 10, PLANT_V: 260, FOOT_R: 5, MU: 1.0,
-    COUPLE: 0.15, AIMHOLD: 0, LEG_RANGE: 125, REACT: 0, // 다리가 몸통 아래 방향에서 벗어날 수 있는 각도
+    COUPLE: 0, AIMHOLD: 0, LEG_RANGE: 125, REACT: 0, // 다리가 몸통 아래 방향에서 벗어날 수 있는 각도
   };
   const MASS = C.MC + C.MP + 2 * C.MH + 2 * C.MF, W = MASS * C.G;
   // 힘 한계(체중 W의 배수)와 스프링 값
   const M = {
     armPull: 1.3 * W, armPush: 0.9 * W, armK: 1.3 * W / 3, armC: 2000, armRate: 320,
-    legPush: 1.8 * W, legPull: 0, legPress: 0.15 * W, legK: 1.8 * W / 3, legC: 2400, legRate: 750,
+    legPush: 1.8 * W, legPull: 0, legPress: 0.15 * W, ankle: 0.15 * W, ankleK: 0.02 * W, ankleC: 300, legK: 1.8 * W / 3, legC: 2400, legRate: 750,
     handReach: 0.3 * W, handKp: 0.3 * W / 15, handKd: 110,
     footReach: 0.5 * W, footKp: 0.5 * W / 15, footKd: 250,
     upK: 0.1 * W, upC: 1500, upMax: 1.5 * W,
@@ -39,13 +39,14 @@ const PH = (() => {
     return { id, type, pts, edges, cx, cy, ...extra };
   }
   const rect = (id, type, x, y, w, h, extra) => poly(id, type, [[x, y], [x + w, y], [x + w, y + h], [x, y + h]], extra);
-  function makeWorld() {
+  function makeWorld(variant) { // variant 'near': 건너편 턱을 18px 가깝게 한 연습용 배치
+    const bx = variant === 'near' ? 452 : 470;
     const dome = []; for (let a = 200; a <= 340; a += 20) dome.push([400 + 36 * Math.cos(a * Math.PI / 180), 248 + 36 * Math.sin(a * Math.PI / 180)]);
     const hex = []; for (let a = 0; a < 360; a += 60) hex.push([415 + 9 * Math.cos(a * Math.PI / 180), 350 + 9 * Math.sin(a * Math.PI / 180)]);
     return [
       rect('A', 'incut', 180, 300, 150, 16), rect('F1', 'ledge', 258, 468, 56, 40),
       poly('J', 'jug', hex), poly('S', 'sloper', dome),
-      rect('B', 'ledge', 470, 345, 140, 16), rect('F3', 'ledge', 510, 455, 40, 10), rect('F4', 'ledge', 474, 520, 44, 10),
+      rect('B', 'ledge', bx, 345, 158 - (bx - 452), 16), rect('F3', 'ledge', 510, 455, 40, 10), rect('F4', 'ledge', 474, 520, 44, 10),
       rect('G', 'incut', 520, 252, 110, 16, { goal: true }),
       poly('R', 'rock', [[650, 372], [712, 388], [724, 470], [716, 566], [660, 566], [640, 440]]), // 바위 덩어리: 윗면은 비스듬하고 옆면은 가파르다
       poly('R2', 'rock', [[622, 447], [644, 447], [644, 457], [624, 458]]),                // 바위 옆의 작은 돌출부
@@ -105,7 +106,7 @@ const PH = (() => {
       s.p.push(pt(pos[0], pos[1], arm ? C.MH : C.MF));
       const lb = { i, arm, root, end: 2 + i, max: arm ? C.A : C.L, min: arm ? C.AMIN : C.LMIN, mode: 'free', anchor: null, L0: 0, tens: 0, lam: 0, slipT: 0, ang: 0, contact: false, noContactT: 0, poly: null, force: 0, brace: false, ext: 0, cmp: 0, cnx: 0, cny: -1 };
       if (at && arm) { const g = nearestGrip(world, at[0], at[1]); lb.mode = 'grip'; lb.anchor = g; s.p[2 + i].x = g.x; s.p[2 + i].y = g.y; }
-      if (at && !arm) { lb.mode = 'plant'; lb.contact = true; lb.brace = true; lb.poly = nearestSurface(world, at[0], at[1]).poly; }
+      if (at && !arm) { const q = nearestSurface(world, at[0], at[1]); lb.mode = 'plant'; lb.contact = true; lb.brace = true; lb.poly = q.poly; lb.cnx = q.nx; lb.cny = q.ny; }
       lb.L0 = Math.min(lb.max, Math.hypot(pos[0] - r.x, pos[1] - r.y));
       s.limb.push(lb);
     }
@@ -115,6 +116,7 @@ const PH = (() => {
   function handleInput(s, inp) {
     for (let i = 0; i < 4; i++) {
       const lb = s.limb[i], e = s.p[lb.end], r = s.p[lb.root], held = lb.arm ? inp.hand[i] : inp.foot[i - 2];
+      if (inp.drop && inp.drop[i] && lb.mode === 'reach') { lb.mode = 'free'; continue; } // 붙이려 하지 않고 힘만 뺀다
       if (held && lb.mode !== 'reach') {
         if (lb.mode === 'grip') s.events.push({ type: 'release', limb: i, x: e.x, y: e.y });
         lb.mode = 'reach'; lb.anchor = null; lb.tens = 0; lb.slipT = 0;
@@ -152,7 +154,8 @@ const PH = (() => {
       const rv = (e.vx - r.vx) * ux + (e.vy - r.vy) * uy;
       lb.force = 0;
       if (lb.mode === 'reach') {
-        let tx = inp.cx - r.x, ty = inp.cy - r.y, tl = Math.hypot(tx, ty);
+        const tg = inp.t && inp.t[lb.i]; // 손발마다 목표가 따로 주어지면 그것을 쓴다
+        let tx = (tg ? tg[0] : inp.cx) - r.x, ty = (tg ? tg[1] : inp.cy) - r.y, tl = Math.hypot(tx, ty);
         if (tl < 1e-3) { tx = 0; ty = 1; tl = 1; }
         if (!arm) { // 다리 가동 범위: 몸통 아래 방향 기준
           const dxn = (hp.x - c.x) / C.T, dyn = (hp.y - c.y) / C.T, lim = C.LEG_RANGE * Math.PI / 180;
@@ -197,8 +200,15 @@ const PH = (() => {
         }
         // 막 디딘 발은 가볍게 누르고만 있다(몸이 흔들려도 따라가며 붙어 있다). 힘주기를 쓴 뒤부터 버팀목이 된다
         if (!arm && !lb.brace) { // 면을 향해 누른다(면을 따라 밀지 않으므로 발이 미끄러지지 않는다)
-          lb.L0 = len; Fa = 0;
-          e.fx -= lb.cnx * M.legPress; e.fy -= lb.cny * M.legPress; r.fx += lb.cnx * M.legPress; r.fy += lb.cny * M.legPress;
+          // 몸이 발 위쪽(면의 바깥 방향 50° 이내)에 실리면 그 자리에서 받쳐 준다. 그 밖에는 길이가 몸을 따라간다
+          const over = -(ux * lb.cnx + uy * lb.cny) > 0.64;
+          if (!over || len > lb.L0) { lb.L0 = len; Fa = 0; }
+          if ((r.x - e.x) * lb.cnx + (r.y - e.y) * lb.cny > 0) { e.fx -= lb.cnx * M.legPress; e.fy -= lb.cny * M.legPress; r.fx += lb.cnx * M.legPress; r.fy += lb.cny * M.legPress; }
+        }
+        if (!arm && Fa < 0 && lb.cny < -0.7 && !inp.power) {
+          // 발목: 체중을 받치고 있는 발은 엉덩이를 발 위로 되돌리는 작은 힘을 낸다(한 발 서기). 반력은 발의 마찰이 받는다
+          const f = Math.max(-M.ankle, Math.min(M.ankle, -M.ankleK * (r.x - e.x) - M.ankleC * (r.vx - e.vx)));
+          r.fx += f; e.fx -= f;
         }
         r.fx += Fa * ux; r.fy += Fa * uy; e.fx -= Fa * ux; e.fy -= Fa * uy;
         lb.force = Fa;
@@ -220,7 +230,7 @@ const PH = (() => {
       q.vx += q.fx / q.m * h; q.vy += q.fy / q.m * h;
       q.x += q.vx * h; q.y += q.vy * h;
     }
-    for (const lb of s.limb) { lb.lam = 0; lb.hit = false; if (lb.ext > 0) lb.ext = Math.max(0, lb.ext - 120 * h); if (lb.cmp > 0) lb.cmp = Math.max(0, lb.cmp - 120 * h); }
+    for (const lb of s.limb) { lb.lam = 0; lb.hit = false; lb.taut = false; if (lb.ext > 0) lb.ext = Math.max(0, lb.ext - 120 * h); if (lb.cmp > 0) lb.cmp = Math.max(0, lb.cmp - 120 * h); }
     for (let it = 0; it < C.ITER; it++) {
       { // 몸통 막대
         const dx = c.x - hp.x, dy = c.y - hp.y, l = Math.hypot(dx, dy) || 1e-6, d = (l - C.T) / l, wc = 1 / c.m, wp = 1 / hp.m, ws = wc + wp;
@@ -234,6 +244,7 @@ const PH = (() => {
           const wr = 1 / r.m, we = pin ? 0 : 1 / e.m, ws = wr + we, d = over / l;
           r.x += dx * d * wr / ws; r.y += dy * d * wr / ws; e.x -= dx * d * we / ws; e.y -= dy * d * we / ws;
           if (pin) lb.lam += over;
+          if (lb.mode === 'plant' && l > mx) lb.taut = true;
         }
         if (lb.mode === 'plant') { // 디딘 발만 그 지형과 맞닿는다
           for (const pl of s.world) {
@@ -267,12 +278,13 @@ const PH = (() => {
     if (s.dead) return;
     handleInput(s, inp);
     const footOn = s.limb[2].mode === 'plant' || s.limb[3].mode === 'plant';
+    if (inp.px !== undefined) { inp = Object.assign({}, inp); } // (아래에서 힘 방향 목표를 따로 쓴다)
     s.pushT = inp.power && footOn ? (s.pushT < 0 ? 0 : s.pushT + dt) : -1;
     // 힘 방향 유지(비교용 선택 사항): 힘주기를 시작한 순간의 방향을 AIMHOLD초 동안 쓴다
     if (inp.power && !s.wasPower) s.aim = { dx: inp.cx - s.p[0].x, dy: inp.cy - s.p[0].y, t: 0 };
     if (!inp.power) s.aim = null; else s.aim.t += dt;
     s.wasPower = inp.power;
-    if (s.aim && s.aim.t < C.AIMHOLD) { s.pcx = s.p[0].x + s.aim.dx; s.pcy = s.p[0].y + s.aim.dy; } else { s.pcx = inp.cx; s.pcy = inp.cy; }
+    if (s.aim && s.aim.t < C.AIMHOLD) { s.pcx = s.p[0].x + s.aim.dx; s.pcy = s.p[0].y + s.aim.dy; } else { s.pcx = inp.px !== undefined ? inp.px : inp.cx; s.pcy = inp.py !== undefined ? inp.py : inp.cy; }
     const h = dt / C.SUB;
     for (let k = 0; k < C.SUB; k++) substep(s, inp, h);
     s.t += dt;
@@ -286,6 +298,9 @@ const PH = (() => {
         if (Math.abs(lb.tens) > 0.25 * W && lb.ang > lim) lb.slipT += dt; else lb.slipT = 0;
         if (lb.slipT > 0.06) { lb.mode = 'free'; lb.anchor = null; s.events.push({ type: 'slip', limb: lb.i, x: e.x, y: e.y, ang: lb.ang, lim, kind: a.type }); }
       } else if (lb.mode === 'plant') {
+        // 발은 면을 눌러야만 붙어 있다. 다리가 팽팽하게 당겨지는데 엉덩이가 면 안쪽(발 아래)에 있으면 발에 매달린 것이므로 떨어진다
+        const r = s.p[lb.root];
+        if (lb.taut && (r.x - e.x) * lb.cnx + (r.y - e.y) * lb.cny < 0) { lb.mode = 'free'; s.events.push({ type: 'footoff', limb: lb.i, x: e.x, y: e.y, hang: true }); continue; }
         lb.noContactT = lb.contact ? 0 : lb.noContactT + dt;
         if (lb.noContactT > 0.12) { lb.mode = 'free'; s.events.push({ type: 'footoff', limb: lb.i, x: e.x, y: e.y }); }
       }

@@ -3,21 +3,26 @@
 (() => {
   const W = G.W, H = G.H, OX = -30, OY = 130, C = PH.C;
   const LIMB = ['왼손', '오른손', '왼발', '오른발'], COL = ['#e86a5a', '#4fb3e8', '#e86a5a', '#4fb3e8'], DARK = ['#8a3b3b', '#2a6f97', '#8a3b3b', '#2a6f97'];
-  const world = PH.makeWorld();
+  let world = PH.makeWorld(), layout = null;
   const autoList = G.auto ? (G.auto === 'all' ? Object.keys(BOTS.defs) : G.auto.split(',').filter(n => BOTS.defs[n])) : [];
   if (G.params.get('couple') !== null) C.COUPLE = +G.params.get('couple');
-  let S, station = 1, tries = 0, fx = [], why = null, endT = 0, block = [true, true, true, true], slow = false, tick = 0, bot = null, autoI = 0, doneT = 0, air = null, jump = null, trail = [], swing = null, last = BOTS.idle();
+  const MODE_LIST = ['pick', 'keys', 'hold'];
+  try { const saved = JSON.parse(localStorage.getItem('climbKeys') || 'null'); if (saved) for (const m in saved) Object.assign(CTRL.KEYMAP[m], saved[m]); } catch (e) {}
+  let mode = MODE_LIST.includes(G.params.get('mode')) ? G.params.get('mode') : 'pick', ctrl = CTRL.make(mode), remap = null;
+  const kn = c => (c || '?').replace('Key', '').replace('Digit', '').replace('Arrow', '');
+  let S, station = 1, tries = 0, fx = [], why = null, endT = 0, slow = false, tick = 0, bot = null, autoI = 0, doneT = 0, air = null, jump = null, trail = [], swing = null, last = BOTS.idle();
   window.__lab = { raw: () => { const m = G.input.mouse; return (m.down[0] || G.input.key('KeyQ') ? 'L' : '-') + (m.down[2] || G.input.key('KeyE') ? 'R' : '-'); }, get s() { return S; }, get bot() { return bot; }, finished: false, results: [] };
 
   function reset(st) {
     if (st) station = st;
     if (autoList.length) { bot = BOTS.make(autoList[autoI % autoList.length]); station = bot.def.station; }
-    S = PH.create(world, station); tries++; fx = []; why = null; endT = 0; doneT = 0; air = null; jump = null; trail = []; swing = null; block = [true, true, true, true];
+    S = PH.create(world, station); tries++; fx = []; why = null; endT = 0; doneT = 0; air = null; jump = null; trail = []; swing = null; ctrl = CTRL.make(mode);
   }
   function readInput(inp) {
-    const m = inp.mouse, raw = [m.down[0] || inp.key('KeyQ'), m.down[2] || inp.key('KeyE'), inp.key('KeyA'), inp.key('KeyD')];
-    for (let i = 0; i < 4; i++) { if (!raw[i]) block[i] = false; if (block[i]) raw[i] = false; } // 재시작 때 눌려 있던 버튼은 한 번 떼야 듣는다
-    return { cx: m.x + OX, cy: m.y + OY, hand: [raw[0], raw[1]], foot: [raw[2], raw[3]], power: inp.key('Space') || inp.key('ShiftLeft') || inp.key('KeyW') };
+    const m = inp.mouse, io = { mx: m.x + OX, my: m.y + OY, lheld: m.down[0], rheld: m.down[2], lmb: inp.clicks.some(c => c.button === 0), rmb: inp.clicks.some(c => c.button === 2), key: c => inp.key(c), pressed: c => inp.pressed(c) };
+    const out = ctrl.step(S, io, 1 / 120);
+    for (const i of ctrl.st.air) fx.push({ x: S.p[2 + i].x, y: S.p[2 + i].y, t: 0.9, kind: 'text', text: `${LIMB[i]}: 닿은 곳이 없다 — 그대로 들고 있음` });
+    return out;
   }
   function note(e) {
     const n = LIMB[e.limb];
@@ -27,7 +32,7 @@
     else if (e.type === 'nohold') { say(e, `${n} 걸리지 않음 — 면 기울기 ${Math.round(e.ang)}°, ${PH.GRIP[e.kind].name}은 ${e.lim}°까지`); G.sfx.miss(); }
     else if (e.type === 'footmiss') { if (e.fast) say(e, `${n} 디디지 못함 — 발이 너무 빠르다`, true); else if (e.d < 30) say(e, `${n} 헛디딤 — 면까지 ${Math.ceil(e.d)}px`, true); }
     else if (e.type === 'slip') { say(e, `${n} 미끄러짐 — 당기는 방향 ${Math.round(e.ang)}°, 이 ${PH.GRIP[e.kind].name}의 한계 ${e.lim}°`); G.sfx.fail(); }
-    else if (e.type === 'footoff') say(e, `${n} 접촉 끊김 — 누르는 힘이 없어 발이 떴다`, true);
+    else if (e.type === 'footoff') say(e, e.hang ? `${n} 떨어짐 — 발에 매달릴 수는 없다(몸이 발 아래에 있다)` : `${n} 접촉 끊김 — 누르는 힘이 없어 발이 떴다`, !e.hang);
     else if (e.type === 'mat') { endT = bot ? 2.6 : 1.6; G.sfx.thud(); G.shake(5, 0.2); }
     else if (e.type === 'win') G.sfx.win();
   }
@@ -37,14 +42,23 @@
     init() { reset(1); },
     update(dt, inp) {
       for (const f of fx) f.t -= dt; fx = fx.filter(f => f.t > 0);
+      if (remap) { // 키 다시 지정: 순서대로 누른다. Esc로 그만둔다
+        const codes = inp.codes();
+        if (codes.includes('Escape')) remap = null;
+        else if (codes.length) { CTRL.KEYMAP[mode][remap.list[remap.i]] = codes[0]; remap.i++; if (remap.i >= remap.list.length) { try { localStorage.setItem('climbKeys', JSON.stringify(CTRL.KEYMAP)); } catch (e) {} remap = null; reset(); } }
+        return;
+      }
       if (!bot) {
         if (inp.pressed('KeyR')) { reset(); return; }
         for (let k = 1; k <= 5; k++) if (inp.pressed('Digit' + k)) { tries = 0; reset(k); return; }
-        if (inp.pressed('KeyT')) slow = !slow;
-        if (inp.pressed('KeyJ')) C.COUPLE = C.COUPLE ? 0 : 0.15;
-        if (inp.pressed('KeyH')) C.AIMHOLD = C.AIMHOLD ? 0 : 0.2;
+        if (inp.pressed('Tab')) { mode = MODE_LIST[(MODE_LIST.indexOf(mode) + 1) % MODE_LIST.length]; tries = 0; reset(); return; }
+        if (inp.pressed('Digit6')) slow = !slow;
+        if (inp.pressed('Digit7')) C.COUPLE = C.COUPLE ? 0 : 0.15;
+        if (inp.pressed('Digit8')) { layout = layout ? null : 'near'; world = PH.makeWorld(layout); tries = 0; reset(); return; }
+        if (inp.pressed('Digit9')) C.AIMHOLD = C.AIMHOLD ? 0 : 0.2;
+        if (inp.pressed('Digit0')) { remap = { list: Object.keys(CTRL.KEYMAP[mode]), i: 0 }; return; }
       }
-      if (endT > 0) { endT -= dt; if (endT <= 0 || (!bot && inp.any())) { if (bot) nextAuto(false); reset(); } return; }
+      if (endT > 0) { endT -= dt; if (endT <= 0 || (!bot && endT < 1.2 && inp.any())) { if (bot) nextAuto(false); reset(); } return; }
       if (S.won && !bot) { if (inp.pressed('Space') || inp.pressed('Enter')) reset(); }
       tick++; if (slow && tick % 2) return;
       last = bot ? bot.step(S) : readInput(inp);
@@ -132,17 +146,19 @@
       if (lb.mode === 'reach') {
         const r = p[lb.root];
         G.circle(r.x, r.y, lb.max, null, 'rgba(255,255,255,0.35)', 1.5); // 닿는 범위
-        G.line(e.x, e.y, last.cx, last.cy, 'rgba(255,255,255,0.6)', 1.5, [4, 4]);
+        const tg = last.t && last.t[i] ? last.t[i] : [last.cx, last.cy];
+        G.line(e.x, e.y, tg[0], tg[1], 'rgba(255,255,255,0.6)', 1.5, [4, 4]);
+        if (mode === 'keys' && !bot) { const sel = ctrl.st.sel.l === i || ctrl.st.sel.r === i; G.circle(tg[0], tg[1], sel ? 7 : 4, null, sel ? '#111' : 'rgba(0,0,0,0.4)', 2); }
         const q = lb.arm ? PH.nearestGrip(world, e.x, e.y) : PH.nearestSurface(world, e.x, e.y), ok = q && q.d <= (lb.arm ? C.GRAB_R : C.PLANT_R);
         const steep = ok && lb.arm && q.type === 'rock' && Math.acos(Math.max(-1, Math.min(1, -q.ny))) * 180 / Math.PI > PH.GRIP.rock.th;
         if (ok) G.circle(q.x, q.y, 13 + Math.sin(S.t * 14) * 2, null, steep ? '#ff9a3d' : '#3dff8f', 3); // 초록: 지금 떼면 붙는다. 주황: 닿았지만 면이 가파르다
       }
     }
   }
-  function key(c, x, label, sub, on, col) {
-    G.panel(x, H - 26, 84, 21, on ? col : 'rgba(10,12,16,0.55)', on ? '#fff' : null);
-    G.text(label, x + 6, H - 11, { size: 12, weight: 800, color: on ? '#111' : '#e8e8e4' });
-    G.text(sub, x + 79, H - 11, { size: 10, weight: 600, align: 'right', color: on ? '#222' : 'rgba(255,255,255,0.55)' });
+  function key(c, x, label, sub, on, col, k) {
+    G.panel(x, H - 26, 122, 21, on ? col : 'rgba(10,12,16,0.55)', on ? '#fff' : null);
+    G.text(`${k} ${label}`, x + 6, H - 11, { size: 12, weight: 800, color: on ? '#111' : '#e8e8e4' });
+    G.text(sub, x + 117, H - 11, { size: 10, weight: 600, align: 'right', color: on ? '#222' : 'rgba(255,255,255,0.55)' });
   }
   function draw(c) {
     c.save(); c.translate(-OX, -OY);
@@ -164,17 +180,32 @@
       const tr = swing.prev ? (swing.peak > swing.prev + 1 ? ' ▲ 커지는 중' : swing.peak < swing.prev - 1 ? ' ▼ 줄어드는 중' : ' ─') : '';
       G.text(`반동 ${Math.round(Math.max(swing.peak, swing.cur))}°${tr}`, swing.ax, swing.ay - 14, { size: 13, weight: 800, align: 'center', color: '#111', stroke: 'rgba(255,255,255,0.7)', strokeW: 3 });
     }
-    if (!S.dead) { G.line(last.cx - 9, last.cy, last.cx + 9, last.cy, '#111', 2); G.line(last.cx, last.cy - 9, last.cx, last.cy + 9, '#111', 2); G.circle(last.cx, last.cy, 5, null, '#fff', 1.5); }
+    if (!S.dead && (bot || mode !== 'keys')) { G.line(last.cx - 9, last.cy, last.cx + 9, last.cy, '#111', 2); G.line(last.cx, last.cy - 9, last.cx, last.cy + 9, '#111', 2); G.circle(last.cx, last.cy, 5, null, '#fff', 1.5); }
     c.restore();
-    G.panel(8, 6, 700, 62, 'rgba(255,255,255,0.78)');
-    G.text('등반 조작 실험실', 18, 26, { size: 16, weight: 800, color: '#222' });
-    G.text('누르고 있는 동안 그 손발이 커서를 따라간다 → 떼는 순간 닿은 곳을 잡는다/디딘다. 붙은 손발은 키 없이 유지된다.', 18, 44, { size: 12, color: '#333', weight: 500 });
-    G.text('스페이스: 붙은 팔다리로 몸을 커서 쪽으로 당기고 민다(도약)   R 다시 · 1~5 시작 자세 · T 느리게 · J 도약 연결 · H 방향 유지', 18, 60, { size: 12, color: '#333', weight: 500 });
-    G.text(bot ? bot.def.title : `${station}. ${PH.STATIONS[station].name}   시도 ${tries}${slow ? '   느리게 ×0.5' : ''}`, W - 12, 88, { size: 13, align: 'right', color: '#222', weight: 800, stroke: 'rgba(255,255,255,0.8)' });
-    G.text(`${bot ? '자동 시연(사람과 같은 입력만 사용) · ' : ''}도약 연결 ${C.COUPLE ? '켬' : '끔'} · 방향 유지 ${C.AIMHOLD ? '켬' : '끔'}`, W - 12, 104, { size: 11, align: 'right', color: '#333', stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
-    key(c, 10, '왼손', '좌클릭·Q', last.hand[0], COL[0]); key(c, 98, '오른손', '우클릭·E', last.hand[1], COL[1]);
-    key(c, 186, '왼발', 'A', last.foot[0], COL[2]); key(c, 274, '오른발', 'D', last.foot[1], COL[3]); key(c, 362, '힘주기', 'Space', last.power, '#ffd166');
-    G.text('실험 빌드 v0.3', W - 10, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
+    const K = CTRL.KEYMAP[mode], sp = kn(K.power);
+    const lines = mode === 'pick' ? [
+      `${kn(K.lh)} 왼손 · ${kn(K.rh)} 오른손 · ${kn(K.lf)} 왼발 · ${kn(K.rf)} 오른발 : 한 번 눌러 집기 (떼어져서 커서를 따라온다. 누르고 있지 않아도 된다)`,
+      `좌클릭 : 집은 손발을 그 자리에 붙이기      우클릭 또는 같은 키 다시 : 붙이지 않고 힘 빼기`,
+      `${kn(K.swingL)} / ${kn(K.swingR)} 누르고 있기 : 다리를 왼쪽 / 오른쪽으로 (반동)   ${kn(K.tuck)} : 다리 접기   ${sp} : 붙은 팔다리로 밀기·당기기 (커서 쪽)`,
+    ] : mode === 'keys' ? [
+      `왼손 담당  ${kn(K.lh)} 왼손 · ${kn(K.lf)} 왼발 고르기 → ${kn(K.lUp)}${kn(K.lLeft)}${kn(K.lDown)}${kn(K.lRight)} 로 움직이기 → 같은 키 다시 : 붙이기   ${kn(K.lDrop)} : 힘 빼기`,
+      `오른손 담당  ${kn(K.rh)} 오른손 · ${kn(K.rf)} 오른발 고르기 → ${kn(K.rUp)}${kn(K.rLeft)}${kn(K.rDown)}${kn(K.rRight)} 로 움직이기 → 같은 키 다시 : 붙이기   ${kn(K.rDrop)} : 힘 빼기`,
+      `${sp} : 붙은 팔다리로 밀기·당기기 (누르고 있는 방향키 쪽, 없으면 위)`,
+    ] : [
+      `좌클릭(${kn(K.lh)}) 왼손 · 우클릭(${kn(K.rh)}) 오른손 · ${kn(K.lf)} 왼발 · ${kn(K.rf)} 오른발 : 누르고 있는 동안 커서를 따라오고, 떼는 순간 붙는다`,
+      `${sp} : 붙은 팔다리로 밀기·당기기 (커서 쪽)`, '',
+    ];
+    G.panel(8, 6, 716, 84, 'rgba(255,255,255,0.82)');
+    G.text(`조작 ${CTRL.MODES[mode]}`, 18, 25, { size: 14, weight: 800, color: '#222' });
+    lines.forEach((t, k) => G.text(t, 18, 43 + k * 15, { size: 11.5, color: '#222', weight: 600 }));
+    G.text('Tab 조작 방식 바꾸기 · R 다시 · 1~5 시작 자세 · 6 느리게 · 7 도약 연결 · 8 연습 배치 · 0 키 다시 지정', 18, 104, { size: 11, color: '#333', weight: 600, stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
+    G.text(bot ? bot.def.title : `${station}. ${PH.STATIONS[station].name}   시도 ${tries}${slow ? '   느리게 ×0.5' : ''}`, W - 12, 24, { size: 13, align: 'right', color: '#222', weight: 800, stroke: 'rgba(255,255,255,0.8)' });
+    G.text(`${bot ? '자동 시연(사람과 같은 입력만 사용) · ' : ''}도약 연결 ${C.COUPLE ? '켬' : '끔'} · ${layout ? '연습 배치' : '기존 벽'}`, W - 12, 42, { size: 11, align: 'right', color: '#333', stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
+    const kname = mode === 'hold' ? ['좌클릭', '우클릭', kn(K.lf), kn(K.rf)] : [kn(K.lh), kn(K.rh), kn(K.lf), kn(K.rf)];
+    for (let i = 0; i < 4; i++) { const m = S.limb[i].mode, on = m === 'reach'; key(c, 10 + i * 126, LIMB[i], on ? '움직이는 중' : m === 'free' ? '힘 빠짐' : '붙음', on, COL[i], kname[i]); }
+    key(c, 514, '힘주기', '', last.power, '#ffd166', sp);
+    if (remap) { G.panel(W / 2 - 220, 200, 440, 70, 'rgba(20,30,60,0.95)', '#fff'); G.text(`키 다시 지정 (${remap.i + 1}/${remap.list.length}) — Esc 그만`, W / 2, 226, { size: 13, align: 'center', weight: 600 }); G.text(`「${CTRL.LABEL[remap.list[remap.i]]}」에 쓸 키를 누르세요`, W / 2, 252, { size: 18, align: 'center', weight: 800 }); }
+    G.text('실험 빌드 v0.4', W - 10, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
     if (endT > 0) G.banner('매트에 떨어짐 — 바로 다시', why && (!air || why.t >= air.t - 0.05) ? why.text : hint() ? '도약이 다음 턱에 이어지지 않았다' : air && air.gap > 0 && air.gap < 1e8 ? `손이 잡을 곳에 닿지 못했다 — 가장 가까웠을 때 ${Math.ceil(air.gap)}px 모자람` : air && air.gap <= 0 ? '손이 닿는 거리였지만 잡지 않았다(버튼을 떼야 잡는다)' : '붙잡은 곳 없이 떨어졌다', 'fail', 380);
     if (endT > 0 && hint()) { const t = hint(), w = G.textW(t, 14, 800) + 28; G.panel(W / 2 - w / 2, 458, w, 28, 'rgba(255,214,102,0.96)'); G.text(t, W / 2, 477, { size: 14, weight: 800, align: 'center', color: '#111' }); }
     else if (S.won) G.banner('목표 도달!', `${S.t.toFixed(1)}초 · 시도 ${tries} — R 또는 스페이스로 다시`, 'win', 400);

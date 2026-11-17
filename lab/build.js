@@ -8,7 +8,7 @@ const html = `<!doctype html>
 <title>등반 조작 실험실</title>
 <style>html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}canvas{display:block;touch-action:none;cursor:none}</style>
 </head><body>
-${['engine.js', 'physics.js', 'bots.js', 'game.js'].map(n => `<script>\n${src(n)}\n</script>`).join('\n')}
+${['engine.js', 'physics.js', 'bots.js', 'controls.js', 'game.js'].map(n => `<script>\n${src(n)}\n</script>`).join('\n')}
 </body></html>
 `;
 fs.writeFileSync(path.join(__dirname, 'climb_lab.html'), html);

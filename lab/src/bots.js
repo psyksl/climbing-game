@@ -4,7 +4,8 @@ const BOTS = (() => {
   const idle = () => ({ cx: 0, cy: 0, hand: [false, false], foot: [false, false], power: false });
   const d = (a, x, y) => Math.hypot(a.x - x, a.y - y);
   const PHX = typeof PH !== 'undefined' ? PH : require('./physics.js');
-  const BX = 470, BY = 345, JX = 415, JY = 350;
+  const BX0 = 470, BY = 345, JX = 415, JY = 350;
+  const bx = s => s.world.find(pl => pl.id === 'B').pts[0][0];
   const near = (s, i) => { const g = PHX.nearestGrip(s.world, s.p[2 + i].x, s.p[2 + i].y); return g ? g.d : 999; };
   // 손 i를 (x,y)로 뻗어, 닿으면 버튼을 떼어 잡는다. 잡았으면 true
   function catchWith(s, inp, i, x, y) {
@@ -26,8 +27,8 @@ const BOTS = (() => {
   function stabilize(s, m, inp) {
     const first = m.first, other = 1 - first, a = s.limb[first].anchor;
     if (!a) return;
-    if (!m.second) { if (s.t - m.tc > 0.25 && catchWith(s, inp, other, a.x + (a.x < BX + 25 ? 22 : -22), BY)) m.second = s.t; return; }
-    if (!m.foot) { if (s.t - m.second > 0.3 && plantFoot(s, inp, 3, Math.max(BX + 10, Math.min(BX + 42, s.p[1].x + 6)), BY + 173)) m.foot = s.t; return; }
+    if (!m.second) { if (s.t - m.tc > 0.25 && catchWith(s, inp, other, a.x + (a.x < bx(s) + 25 ? 22 : -22), BY)) m.second = s.t; return; }
+    if (!m.foot) { if (s.t - m.second > 0.3 && plantFoot(s, inp, 3, Math.max(bx(s) + 10, Math.min(bx(s) + 42, s.p[1].x + 6)), BY + 173)) m.foot = s.t; return; }
     m.done = true;
   }
   function flyCatch(s, m, inp, tx, ty) { // 공중: 두 손을 뻗어 먼저 닿는 손으로 잡는다
@@ -69,7 +70,7 @@ const BOTS = (() => {
           if (m.ready && phi > p.rel && c.vx > 0) { m.ph = 1; m.t1 = s.t; }
           return inp;
         }
-        if (m.ph === 1) { if (flyCatch(s, m, inp, BX + 8, BY)) m.ph = 2; return inp; }
+        if (m.ph === 1) { if (flyCatch(s, m, inp, bx(s) + 8, BY)) m.ph = 2; return inp; }
         stabilize(s, m, inp); return inp;
       } },
     // 방법 2: 발판을 디디고 웅크렸다가 다리로 밀며 두 손을 놓는다
@@ -85,13 +86,13 @@ const BOTS = (() => {
           const pushing = t >= 0, released = t >= rel;
           inp.power = pushing || t < 0;
           if (!pushing) { inp.cx = p.lx; inp.cy = p.ly; }        // 손을 먼저 놓은 경우: 아직 웅크린 채
-          else if (released && p.aimT) { inp.cx = BX + 8; inp.cy = BY; } // 놓자마자 다음 턱을 조준(사람이 흔히 하는 방식)
+          else if (released && p.aimT) { inp.cx = bx(s) + 8; inp.cy = BY; } // 놓자마자 다음 턱을 조준(사람이 흔히 하는 방식)
           else { inp.cx = p.ex; inp.cy = p.ey; }
           if (released) inp.hand = [true, true];
           if (t > Math.max(0, rel) + p.pw) m.ph = 1;
           return inp;
         }
-        if (m.ph === 1) { if (flyCatch(s, m, inp, BX + 8, BY)) m.ph = 2; return inp; }
+        if (m.ph === 1) { if (flyCatch(s, m, inp, bx(s) + 8, BY)) m.ph = 2; return inp; }
         stabilize(s, m, inp); return inp;
       } },
     // 방법 3: 작은 반동으로 중간 저그를 잡고, 당겨 올라가 건너편 턱으로 손을 옮긴다
@@ -116,18 +117,18 @@ const BOTS = (() => {
           if (c.y < 345 || s.t - m.t2 > 1.5) { m.ph = 4; m.t2 = s.t; }
           return inp;
         }
-        if (m.ph === 4) { inp.power = true; if (catchWith(s, inp, 1, BX + 8, BY)) { m.ph = 5; m.first = 1; m.tc = s.t; } return inp; }
+        if (m.ph === 4) { inp.power = true; if (catchWith(s, inp, 1, bx(s) + 8, BY)) { m.ph = 5; m.first = 1; m.tc = s.t; } return inp; }
         stabilize(s, m, inp); return inp;
       } },
     // 마무리: 건너편에서 두 손·한 발로 자리 잡고, 발로 밀어 일어서며 목표 턱을 잡는다
     top: { station: 4, title: '마무리 · 발 딛고 일어서며 목표 턱 잡기', p: {}, win: true,
       run(s, m) {
         const inp = idle(), c = s.p[0];
-        if (m.ph === 0) { if (s.t < 0.4) return inp; inp.power = true; if (catchWith(s, inp, 1, BX + 24, BY)) m.ph = 1; return inp; }
-        if (m.ph === 1) { if (plantFoot(s, inp, 3, BX + 58, BY + 108)) { m.ph = 2; m.t2 = s.t; } return inp; }
-        if (m.ph === 2) { inp.power = true; inp.cx = BX + 62; inp.cy = BY - 45; if (c.y < BY - 28 || s.t - m.t2 > 1.6) m.ph = 3; return inp; }
-        if (m.ph === 3) { inp.power = true; if (catchWith(s, inp, 0, BX + 66, BY - 93)) m.ph = 4; return inp; }
-        if (m.ph === 4) { if (catchWith(s, inp, 1, BX + 88, BY - 93)) m.ph = 5; return inp; }
+        if (m.ph === 0) { if (s.t < 0.4) return inp; inp.power = true; if (catchWith(s, inp, 1, bx(s) + 24, BY)) m.ph = 1; return inp; }
+        if (m.ph === 1) { if (plantFoot(s, inp, 3, bx(s) + 58, BY + 108)) { m.ph = 2; m.t2 = s.t; } return inp; }
+        if (m.ph === 2) { inp.power = true; inp.cx = bx(s) + 62; inp.cy = BY - 45; if (c.y < BY - 28 || s.t - m.t2 > 1.6) m.ph = 3; return inp; }
+        if (m.ph === 3) { inp.power = true; if (catchWith(s, inp, 0, bx(s) + 66, BY - 93)) m.ph = 4; return inp; }
+        if (m.ph === 4) { if (catchWith(s, inp, 1, bx(s) + 88, BY - 93)) m.ph = 5; return inp; }
         if (s.won) m.done = true; return inp;
       } },
     // 실패 예: 반동이 모자란 채 일찍 놓는다
