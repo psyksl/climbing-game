@@ -1,6 +1,7 @@
 // 자동 시험: 물리 계산부만으로 각 방법을 끝까지 돌려 본다. 화면·재미와는 무관한 "성립 여부" 검사다.
 'use strict';
 const PH = require('../src/physics.js'), BOTS = require('../src/bots.js');
+if (!process.env.V05) { PH.C.MUSCLE = 0; PH.C.SMOOTH = 0; PH.C.SMOOTH_FOOT = 0; PH.C.LAT_LEG = 0; PH.C.LAT_ARM = 0; } // 회귀 시험: v0.4 물리 그대로
 const dt = 1 / 120;
 function play(name, over, T = 14) {
   const s = PH.create(PH.makeWorld(), BOTS.defs[name].station), b = BOTS.make(name, over), log = [];

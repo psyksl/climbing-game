@@ -5,7 +5,7 @@ const url = 'file://' + path.resolve(process.argv[2] || path.join(__dirname, '..
 (async () => {
   const b = await chromium.launch(); let fail = 0;
   const pg = await b.newPage({ viewport: { width: 960, height: 540 } }); const errs = []; pg.on('pageerror', e => errs.push(e.message));
-  await pg.goto(url + '?mode=hold'); await pg.waitForTimeout(300);
+  await pg.goto(url + '?mode=hold&phys=v04'); await pg.waitForTimeout(300);
   const hands = () => pg.evaluate(() => window.__lab.s.limb.slice(0, 2).map(l => l.mode === 'reach' ? 'R' : l.mode === 'grip' ? 'g' : 'f').join(''));
   const fresh = async () => { await pg.mouse.move(480, 300); await pg.keyboard.press('Digit1'); await pg.waitForTimeout(150); };
   const wait = () => pg.waitForTimeout(120);

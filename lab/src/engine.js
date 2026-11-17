@@ -41,17 +41,17 @@ const G = (() => {
   // 마우스 버튼: 이벤트 종류가 아니라 매 이벤트의 buttons 값(지금 눌린 버튼 전체)으로 맞춘다.
   // 한 버튼을 누른 채 다른 버튼을 누르거나 떼면 브라우저는 pointerdown/up이 아니라 pointermove로 알려 주기 때문이다.
   let guard = false; // 포커스를 잃었다 돌아온 뒤에는 버튼을 모두 뗀 것이 확인될 때까지 누름을 듣지 않는다
-  function setBtn(btn, on) {
+  function setBtn(btn, on, shift) {
     if (mouse.down[btn] === on) return;
     mouse.down[btn] = on;
-    if (on) edge.clicks.push({ x: mouse.x, y: mouse.y, button: btn });
+    if (on) edge.clicks.push({ x: mouse.x, y: mouse.y, button: btn, shift: !!shift }); // 누른 순간 Shift가 눌려 있었는지도 기록
   }
   function syncMouse(e) {
     if (auto || (e.pointerType && e.pointerType !== 'mouse')) return;
     const p = toLogical(e.clientX, e.clientY); mouse.x = p.x; mouse.y = p.y;
     const b = e.buttons;
     if (guard) { if (b === 0) guard = false; else return; }
-    setBtn(0, !!(b & 1)); setBtn(2, !!(b & 2)); setBtn(1, !!(b & 4));
+    setBtn(0, !!(b & 1), e.shiftKey); setBtn(2, !!(b & 2), e.shiftKey); setBtn(1, !!(b & 4), e.shiftKey);
   }
   for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'mousedown', 'mouseup', 'mousemove', 'mouseenter'])
     window.addEventListener(t, e => {

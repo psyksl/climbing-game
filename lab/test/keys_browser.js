@@ -8,7 +8,7 @@ const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), shot = pro
   const modes = pg => pg.evaluate(() => window.__lab.s.limb.map(l => l.mode).join(','));
   { // A안: 2번 자세(오른손 매달림) → A로 왼발 집기 → 커서를 발판 위로 → 좌클릭으로 디디기
     const pg = await b.newPage({ viewport: { width: 960, height: 540 } }); const errs = []; pg.on('pageerror', e => errs.push(e.message));
-    await pg.goto(url + '?mode=pick'); await pg.waitForTimeout(300); await pg.keyboard.press('Digit2'); await pg.waitForTimeout(300);
+    await pg.goto(url + '?mode=pick&phys=v04'); await pg.waitForTimeout(300); await pg.keyboard.press('Digit2'); await pg.waitForTimeout(300);
     await pg.mouse.move(302 + 30, 465 - 130); await pg.keyboard.press('KeyA'); await pg.waitForTimeout(500);
     check('A안: A를 한 번 누르면 왼발이 떼어져 커서를 따라온다(누르고 있지 않음)', (await modes(pg)).split(',')[2] === 'reach');
     if (shot) await pg.screenshot({ path: shot + '_pick.png' });
@@ -23,7 +23,7 @@ const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), shot = pro
     console.log('   페이지 오류:', errs.join(';') || '없음'); await pg.close(); }
   { // B안: Z로 왼발 고르기 → S·A로 이동 → Z로 접촉 시도. 동시에 U가 아닌 M(오른발)을 L로 움직여 좌우 독립 확인
     const pg = await b.newPage({ viewport: { width: 960, height: 540 } }); const errs = []; pg.on('pageerror', e => errs.push(e.message));
-    await pg.goto(url + '?mode=keys'); await pg.waitForTimeout(300); await pg.keyboard.press('Digit2'); await pg.waitForTimeout(300);
+    await pg.goto(url + '?mode=keys&phys=v04'); await pg.waitForTimeout(300); await pg.keyboard.press('Digit2'); await pg.waitForTimeout(300);
     const pos = () => pg.evaluate(() => { const s = window.__lab.s; return [s.p[4].x - s.p[1].x, s.p[4].y - s.p[1].y, s.p[5].x - s.p[1].x, s.p[5].y - s.p[1].y]; });
     await pg.keyboard.press('KeyZ'); await pg.keyboard.press('KeyM'); await pg.waitForTimeout(100); const p0 = await pos();
     await pg.keyboard.down('KeyA'); await pg.keyboard.down('KeyL'); await pg.waitForTimeout(350); await pg.keyboard.up('KeyA'); await pg.keyboard.up('KeyL'); const p1 = await pos();

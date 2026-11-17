@@ -8,6 +8,14 @@ const PH = (() => {
     MC: 28, MP: 22, MH: 2, MF: 6,
     SUB: 8, ITER: 4, FLOOR: 640, GRAB_R: 14, PLANT_R: 10, PLANT_V: 260, FOOT_R: 5, MU: 1.0,
     COUPLE: 0, AIMHOLD: 0, LEG_RANGE: 125, REACT: 0, // 다리가 몸통 아래 방향에서 벗어날 수 있는 각도
+    // v0.5 근육: 힘을 주기 시작하면 활성도가 TA초 시간상수로 차오르고, 힘을 빼면 TD초로 빠진다(0이면 꺼짐 = v0.4)
+    MUSCLE: 1, TA: 0.11, TD: 0.10, ACT0: 0.15, PUSH0: 0.55, LEGPUSH_V05: 2.6,
+    // 다리 힘-속도 관계(Hill): 빨리 펴질수록 약해지고, 눌리며 버틸 때는 최대 ECC배까지 강해진다
+    FV: 1, VMAX: 3000, FV_A: 0.6, ECC: 1.4,
+    // v0.5 손발 궤적: 목표로 바로 튀지 않고 최소 저크 곡선으로(종 모양 속도). 걸리는 시간 = T0 + TK × (거리 / 팔 길이). 0이면 꺼짐
+    SMOOTH: 1, SMOOTH_FOOT: 1, MJ_T0: 0.14, MJ_TK: 0.28,
+    // v0.5 관절 힘: 붙은 팔다리는 자기 축 방향(밀고 당기기)뿐 아니라 옆으로도 몸을 움직일 수 있다(무릎·고관절·어깨 회전력). 체중의 배수, 0이면 꺼짐
+    LAT_LEG: 0.6, LAT_ARM: 0.25, LAT_D: 30, MU_LAT: 0.8,
   };
   const MASS = C.MC + C.MP + 2 * C.MH + 2 * C.MF, W = MASS * C.G;
   // 힘 한계(체중 W의 배수)와 스프링 값
@@ -40,13 +48,13 @@ const PH = (() => {
   }
   const rect = (id, type, x, y, w, h, extra) => poly(id, type, [[x, y], [x + w, y], [x + w, y + h], [x, y + h]], extra);
   function makeWorld(variant) { // variant 'near': 건너편 턱을 18px 가깝게 한 연습용 배치
-    const bx = variant === 'near' ? 452 : 470;
+    const bx = variant === 'near' ? 452 : typeof variant === 'number' ? 470 + variant : 470; // 숫자면 건너편 턱을 그만큼 옮긴 시험용 배치
     const dome = []; for (let a = 200; a <= 340; a += 20) dome.push([400 + 36 * Math.cos(a * Math.PI / 180), 248 + 36 * Math.sin(a * Math.PI / 180)]);
     const hex = []; for (let a = 0; a < 360; a += 60) hex.push([415 + 9 * Math.cos(a * Math.PI / 180), 350 + 9 * Math.sin(a * Math.PI / 180)]);
     return [
       rect('A', 'incut', 180, 300, 150, 16), rect('F1', 'ledge', 258, 468, 56, 40),
       poly('J', 'jug', hex), poly('S', 'sloper', dome),
-      rect('B', 'ledge', bx, 345, 158 - (bx - 452), 16), rect('F3', 'ledge', 510, 455, 40, 10), rect('F4', 'ledge', 474, 520, 44, 10),
+      rect('B', 'ledge', bx, 345, typeof variant === 'number' ? 140 : 158 - (bx - 452), 16), rect('F3', 'ledge', 510, 455, 40, 10), rect('F4', 'ledge', 474, 520, 44, 10),
       rect('G', 'incut', 520, 252, 110, 16, { goal: true }),
       poly('R', 'rock', [[650, 372], [712, 388], [724, 470], [716, 566], [660, 566], [640, 440]]), // 바위 덩어리: 윗면은 비스듬하고 옆면은 가파르다
       poly('R2', 'rock', [[622, 447], [644, 447], [644, 457], [624, 458]]),                // 바위 옆의 작은 돌출부
@@ -97,14 +105,14 @@ const PH = (() => {
   function create(world, station = 1) {
     const st = typeof station === 'object' ? station : STATIONS[station] || STATIONS[1];
     const c = st.c, hp = st.p || [c[0], c[1] + C.T];
-    const s = { world, station, t: 0, dead: false, won: false, winT: 0, pushT: -1, aim: null, wasPower: false, pcx: 0, pcy: 0, events: [], p: [pt(c[0], c[1], C.MC), pt(hp[0], hp[1], C.MP)], limb: [] };
+    const s = { world, station, t: 0, dead: false, won: false, winT: 0, pushT: -1, aim: null, wasPower: false, pcx: 0, pcy: 0, act: 0, events: [], p: [pt(c[0], c[1], C.MC), pt(hp[0], hp[1], C.MP)], limb: [] };
     for (let i = 0; i < 4; i++) {
       const arm = i < 2, root = arm ? 0 : 1, side = i % 2 ? 1 : -1;
       const at = arm ? st.hands[i] : st.feet && st.feet[i - 2];
       const r = s.p[root];
       const pos = at || (arm ? [r.x + side * 8, r.y + C.A * 0.9] : [r.x + side * 7, r.y + C.L * (st.tuck ? 0.45 : 0.95)]);
       s.p.push(pt(pos[0], pos[1], arm ? C.MH : C.MF));
-      const lb = { i, arm, root, end: 2 + i, max: arm ? C.A : C.L, min: arm ? C.AMIN : C.LMIN, mode: 'free', anchor: null, L0: 0, tens: 0, lam: 0, slipT: 0, ang: 0, contact: false, noContactT: 0, poly: null, force: 0, brace: false, ext: 0, cmp: 0, cnx: 0, cny: -1 };
+      const lb = { i, arm, root, end: 2 + i, max: arm ? C.A : C.L, min: arm ? C.AMIN : C.LMIN, mode: 'free', anchor: null, L0: 0, tens: 0, lam: 0, slipT: 0, ang: 0, contact: false, noContactT: 0, poly: null, force: 0, brace: false, ext: 0, cmp: 0, cnx: 0, cny: -1, mj: null };
       if (at && arm) { const g = nearestGrip(world, at[0], at[1]); lb.mode = 'grip'; lb.anchor = g; s.p[2 + i].x = g.x; s.p[2 + i].y = g.y; }
       if (at && !arm) { const q = nearestSurface(world, at[0], at[1]); lb.mode = 'plant'; lb.contact = true; lb.brace = true; lb.poly = q.poly; lb.cnx = q.nx; lb.cny = q.ny; }
       lb.L0 = Math.min(lb.max, Math.hypot(pos[0] - r.x, pos[1] - r.y));
@@ -119,7 +127,7 @@ const PH = (() => {
       if (inp.drop && inp.drop[i] && lb.mode === 'reach') { lb.mode = 'free'; continue; } // 붙이려 하지 않고 힘만 뺀다
       if (held && lb.mode !== 'reach') {
         if (lb.mode === 'grip') s.events.push({ type: 'release', limb: i, x: e.x, y: e.y });
-        lb.mode = 'reach'; lb.anchor = null; lb.tens = 0; lb.slipT = 0;
+        lb.mode = 'reach'; lb.anchor = null; lb.tens = 0; lb.slipT = 0; lb.mj = null;
       } else if (!held && lb.mode === 'reach') {
         if (lb.arm) {
           const g = nearestGrip(s.world, e.x, e.y);
@@ -155,7 +163,13 @@ const PH = (() => {
       lb.force = 0;
       if (lb.mode === 'reach') {
         const tg = inp.t && inp.t[lb.i]; // 손발마다 목표가 따로 주어지면 그것을 쓴다
-        let tx = (tg ? tg[0] : inp.cx) - r.x, ty = (tg ? tg[1] : inp.cy) - r.y, tl = Math.hypot(tx, ty);
+        let gx0 = tg ? tg[0] : inp.cx, gy0 = tg ? tg[1] : inp.cy;
+        if (arm ? C.SMOOTH : C.SMOOTH_FOOT) { // 몸 기준 목표를 최소 저크 곡선으로 따라간다: 천천히 출발해 가운데서 가장 빠르고 천천히 멈춘다
+          let rx = gx0 - r.x, ry = gy0 - r.y; const rl = Math.hypot(rx, ry) || 1, cap = lb.max * 0.97; if (rl > cap) { rx *= cap / rl; ry *= cap / rl; }
+          mjStep(lb, e.x - r.x, e.y - r.y, rx, ry, h);
+          gx0 = r.x + lb.mj.p[0]; gy0 = r.y + lb.mj.p[1];
+        }
+        let tx = gx0 - r.x, ty = gy0 - r.y, tl = Math.hypot(tx, ty);
         if (tl < 1e-3) { tx = 0; ty = 1; tl = 1; }
         if (!arm) { // 다리 가동 범위: 몸통 아래 방향 기준
           const dxn = (hp.x - c.x) / C.T, dyn = (hp.y - c.y) / C.T, lim = C.LEG_RANGE * Math.PI / 180;
@@ -175,13 +189,18 @@ const PH = (() => {
         if (!arm) planted = true;
         const k = arm ? M.armK : M.legK, cc = arm ? M.armC : M.legC, pull = arm ? M.armPull : M.legPull;
         // 팔은 몸이 손보다 면 바깥쪽(위)에 있을 때만 밀 수 있다. 아래에 매달렸을 때는 줄처럼 느슨해진다.
-        const push = arm ? (lb.brace && (r.x - e.x) * lb.anchor.nx + (r.y - e.y) * lb.anchor.ny > 0 ? M.armPush : 0) : M.legPush;
+        let push = arm ? (lb.brace && (r.x - e.x) * lb.anchor.nx + (r.y - e.y) * lb.anchor.ny > 0 ? M.armPush : 0) : M.legPush;
+        const actK = C.MUSCLE ? s.act : 1;
+        if (!arm && C.MUSCLE && lb.brace) { // 다리가 낼 수 있는 힘: 활성도와 펴지는 속도에 따라 달라진다
+          push *= (C.LEGPUSH_V05 / 1.8) * (C.PUSH0 + (1 - C.PUSH0) * actK); // v0.5: 최대 힘은 다리 하나 2.6W, 대신 속도에 따라 줄어든다
+          if (C.FV) push *= rv >= 0 ? Math.max(0.05, (1 - rv / C.VMAX) / (1 + rv / (C.FV_A * C.VMAX))) : Math.min(C.ECC, 1 + (C.ECC - 1) * (-rv) / (0.06 * C.VMAX));
+        }
         let drive = 0;
         if (inp.power) lb.brace = true;
         if (inp.power) { // 힘주기: 붙은 팔다리가 몸을 커서 쪽으로 옮기도록 길이를 바꾼다
           // 몸(팔은 가슴, 다리는 엉덩이)이 가야 할 변위 중 이 팔다리 방향 성분만큼 늘이거나 줄인다
           const gx = s.pcx - r.x, gy = s.pcy + (arm ? 0 : C.T) - r.y;
-          const Ld = Math.max(lb.min, Math.min(lb.max, len - (gx * ux + gy * uy))), rate = (arm ? M.armRate : M.legRate) * h;
+          const Ld = Math.max(lb.min, Math.min(lb.max, len - (gx * ux + gy * uy))), rate = (arm ? M.armRate : M.legRate) * h * (C.MUSCLE ? C.ACT0 + (1 - C.ACT0) * actK : 1) * (inp.gain ?? 1);
           let dL = Math.max(-rate, Math.min(rate, Ld - lb.L0));
           // 도약 연결: 발을 디딘 채 힘을 주기 시작하면, 손이 붙어 있는 동안은 잠깐(COUPLE초) 자세를 버티며 기다렸다가
           // 손을 놓는 순간 또는 시간이 지나면 민다
@@ -212,6 +231,16 @@ const PH = (() => {
         }
         r.fx += Fa * ux; r.fy += Fa * uy; e.fx -= Fa * ux; e.fy -= Fa * uy;
         lb.force = Fa;
+        let latCap = (arm ? C.LAT_ARM : C.LAT_LEG) * W * actK * (inp.gain ?? 1);
+        if (!arm) latCap = Math.min(latCap, C.MU_LAT * Math.max(0, -Fa)); // 발은 누르는 만큼만 옆으로 밀 수 있다(마찰)
+        if (inp.power && latCap > 0 && (arm || lb.brace)) { // 옆으로 미는 힘: 목표 방향 중 팔다리 축에 수직인 성분, 반작용은 손·발이 받는다
+          const gx = s.pcx - r.x, gy = s.pcy + (arm ? 0 : C.T) - r.y, gu = gx * ux + gy * uy, px = gx - gu * ux, py = gy - gu * uy;
+          const vx = (r.vx - e.vx) - rv * -ux, vy = (r.vy - e.vy) - rv * -uy; // 축에 수직인 상대 속도(대략)
+          const vu = vx * ux + vy * uy, vpx = vx - vu * ux, vpy = vy - vu * uy;
+          let Lx = latCap / C.LAT_D * px - latCap / 300 * vpx, Ly = latCap / C.LAT_D * py - latCap / 300 * vpy; const Ll = Math.hypot(Lx, Ly);
+          if (Ll > latCap) { Lx *= latCap / Ll; Ly *= latCap / Ll; }
+          r.fx += Lx; r.fy += Ly; e.fx -= Lx; e.fy -= Ly;
+        }
       } else {
         const cf = M.freeC[lb.i], Fx = -cf * (e.vx - r.vx), Fy = -cf * (e.vy - r.vy);
         e.fx += Fx; e.fy += Fy; r.fx -= Fx; r.fy -= Fy;
@@ -266,6 +295,28 @@ const PH = (() => {
       if (!lb.arm) lb.contact = lb.hit;
     }
   }
+  // 최소 저크 궤적: 지금 위치·속도·가속도에서 목표까지 T초에 매끄럽게 가는 5차 다항식. 목표가 3px 넘게 바뀌면 지금 상태에서 다시 짠다
+  function mjPlan(p0, v0, a0, g, T) {
+    const c = [];
+    for (let k = 0; k < 2; k++) {
+      const d = g[k] - p0[k] - v0[k] * T - 0.5 * a0[k] * T * T, dv = -v0[k] - a0[k] * T, da = -a0[k];
+      const c3 = (10 * d - 4 * dv * T + 0.5 * da * T * T) / (T ** 3), c4 = (-15 * d + 7 * dv * T - da * T * T) / (T ** 4), c5 = (6 * d - 3 * dv * T + 0.5 * da * T * T) / (T ** 5);
+      c.push([p0[k], v0[k], 0.5 * a0[k], c3, c4, c5]);
+    }
+    return c;
+  }
+  function mjStep(lb, hx, hy, gx, gy, h) {
+    let m = lb.mj;
+    if (!m) m = lb.mj = { p: [hx, hy], v: [0, 0], a: [0, 0], g: [hx, hy], t: 0, T: 0, c: null };
+    if (Math.hypot(gx - m.g[0], gy - m.g[1]) > 3 || !m.c) {
+      const d = Math.hypot(gx - m.p[0], gy - m.p[1]), full = C.MJ_T0 + C.MJ_TK * d / C.A;
+      const T = m.c && m.t < m.T ? Math.max(0.06, Math.min(full, m.T - m.t + 0.02)) : full; // 움직이는 중이면 남은 시간을 유지한다
+      m.c = mjPlan(m.p, m.v, m.a, [gx, gy], T); m.g = [gx, gy]; m.t = 0; m.T = T;
+    }
+    m.t = Math.min(m.T, m.t + h); const t = m.t;
+    for (let k = 0; k < 2; k++) { const c = m.c[k]; m.p[k] = c[0] + c[1] * t + c[2] * t * t + c[3] * t ** 3 + c[4] * t ** 4 + c[5] * t ** 5; m.v[k] = c[1] + 2 * c[2] * t + 3 * c[3] * t * t + 4 * c[4] * t ** 3 + 5 * c[5] * t ** 4; m.a[k] = 2 * c[2] + 6 * c[3] * t + 12 * c[4] * t * t + 20 * c[5] * t ** 3; }
+    if (m.t >= m.T) { m.v = [0, 0]; m.a = [0, 0]; }
+  }
   function friction(q, nx, ny, dep) {
     const mx = q.x - q.px, my = q.y - q.py, dn = mx * nx + my * ny, tx = mx - dn * nx, ty = my - dn * ny, tl = Math.hypot(tx, ty);
     if (tl < 1e-9) return;
@@ -285,6 +336,8 @@ const PH = (() => {
     if (!inp.power) s.aim = null; else s.aim.t += dt;
     s.wasPower = inp.power;
     if (s.aim && s.aim.t < C.AIMHOLD) { s.pcx = s.p[0].x + s.aim.dx; s.pcy = s.p[0].y + s.aim.dy; } else { s.pcx = inp.px !== undefined ? inp.px : inp.cx; s.pcy = inp.py !== undefined ? inp.py : inp.cy; }
+    // 근육 활성도: 힘을 주는 동안 차오르고, 빼면 빠진다
+    s.act += inp.power ? (1 - s.act) * (1 - Math.exp(-dt / C.TA)) : -s.act * (1 - Math.exp(-dt / C.TD));
     const h = dt / C.SUB;
     for (let k = 0; k < C.SUB; k++) substep(s, inp, h);
     s.t += dt;
