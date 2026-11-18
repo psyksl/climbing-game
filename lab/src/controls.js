@@ -87,9 +87,10 @@ const CTRL = (() => {
   // ---- D안: 의도 조작. 플레이어는 어느 손발을 어디로, 언제 던질지만 정하고 균형·발 위치·손 놓는 순간은 게임이 채운다
   const OPT = { autoFeet: true, autoShift: true, assist: true, handMode: 1, assistRange: 'near' }; // assistRange: 'near' 커서 근처 구간만 / 'ledge' 겨눈 턱 전체
   const P = { MOVE_STEP: 26, MOVE_GAIN: 0.55, MOVE_MARGIN: 0.95, ANGLE_MARGIN: 10, CATCH_SPAN: 28, REC_MARGIN: 22, REC_HOLD: 0.15, CATCH_R: 45, FOOT_CATCH_R: 30, SHIFT_T: 0.2, THROW_T: 0.32, REL_MIN: 0.03, REL_MAX: 0.14, CROUCH: 40, THROW_D: 250, FEET_V: 150, FULL_CHARGE: 0.6, ROCK_MAX: 0.45, GAIN0: 0.25, CROUCH_MODE: 'away' };
-  function footCandidates(s, i) { // 발을 디딜 만한 곳: 위를 향한 면, 다리가 닿는 곳, 엉덩이보다 아래
+  function footCandidates(s, i, ot = null) { // ot: 다른 발이 가려는 곳(있으면) // 발을 디딜 만한 곳: 위를 향한 면, 다리가 닿는 곳, 엉덩이보다 아래
     const hp = s.p[1], L = PHX.C.L, side = i === 2 ? -1 : 1, other = s.limb[5 - i], op = s.p[2 + (5 - i)];
     const cx = hp.x + side * 12, cy = hp.y + 0.72 * L; let best = null;
+    const ox = other.mode === 'plant' ? op.x : ot && !ot.swing ? ot.x : null;
     for (const pl of s.world) for (const e of pl.edges) {
       if (e.ny > -0.35) continue;
       const len = Math.hypot(e.bx - e.ax, e.by - e.ay), n = Math.max(1, Math.round(len / 6));
@@ -97,6 +98,7 @@ const CTRL = (() => {
         const x = e.ax + (e.bx - e.ax) * k / n, y = e.ay + (e.by - e.ay) * k / n;
         const d = Math.hypot(x - hp.x, y - hp.y); if (d > 0.93 * L || d < 1.2 * PHX.C.LMIN || y < hp.y + 8) continue; // 다리가 접히는 한계보다 가까운 곳은 디딜 수 없다
         if (other.mode === 'plant' && Math.hypot(x - op.x, y - op.y) < 14) continue;
+        if (ox !== null && side * (x - ox) < -4) continue; // 다리를 꼬지 않는다: 왼발은 오른발(또는 오른발이 가려는 곳)보다 오른쪽에 두지 않는다
         let sc = Math.hypot(x - cx, y - cy) + (side * (x - hp.x) < -10 ? 25 : 0) + (other.mode === 'plant' && side * (x - op.x) < 0 ? 30 : 0); // 다리를 꼬지 않는다
         if (sc > 70) continue;
         if (!best || sc < best.sc) best = { x: x + e.nx * PHX.C.FOOT_R, y: y + e.ny * PHX.C.FOOT_R, sx: x, sy: y, sc, poly: pl.id };
@@ -232,10 +234,17 @@ const CTRL = (() => {
       st.move = null;
       const mx = (io.down('moveRight') ? 1 : 0) - (io.down('moveLeft') ? 1 : 0), my = (io.down('moveDown') ? 1 : 0) - (io.down('moveUp') ? 1 : 0);
       if ((mx || my) && st.phase !== 'charge' && st.phase !== 'throw' && anyHold) {
-        const n = Math.hypot(mx, my), ux2 = mx / n, uy2 = my / n; let k = P.MOVE_STEP, why = null;
-        for (const f of [1, 0.6, 0.3, 0.12]) { why = moveOk(s, ux2 * P.MOVE_STEP * f, uy2 * P.MOVE_STEP * f); if (!why) { k = P.MOVE_STEP * f; break; } }
-        st.move = { dx: ux2, dy: uy2, blocked: why };
-        if (!why) { inp.power = true; inp.px = c.x + ux2 * k; inp.py = c.y + uy2 * k; inp.gain = P.MOVE_GAIN; if (st.shift) { detach(s, st.shift.i); st.shift = null; st.phase = 'idle'; } }
+        const n = Math.hypot(mx, my), ux2 = mx / n, uy2 = my / n; let k = P.MOVE_STEP, why = null, dx = ux2, dy = uy2;
+        // 좌우로만 누를 때 팔이 다 펴져 막히면, 다리를 펴서 몸을 조금 들며 옆으로 간다(손 아래 원호를 따라 엉덩이를 빼는 움직임)
+        const dirs = my === 0 ? [0, 0.35, 0.7, 1.2, 2].map(t => [ux2, -t]) : [[ux2, uy2]];
+        search: for (const [a0, b0] of dirs) { const l = Math.hypot(a0, b0); for (const f of [1, 0.6, 0.3, 0.12]) { why = moveOk(s, a0 / l * P.MOVE_STEP * f, b0 / l * P.MOVE_STEP * f); if (!why) { k = P.MOVE_STEP * f; dx = a0 / l; dy = b0 / l; break search; } } }
+        // 위로 올라갈 때 아래 발판에 디딘 자동 발이 다 펴져 막으면, 손이 붙어 있는 한 그 발을 엉덩이 아래로 당겨 올리고 올라간다(자동 발이 곧 새 자리를 고른다)
+        if (why === '다리' && my < 0 && (gripping(s, 0) || gripping(s, 1))) {
+          const lift = [2, 3].filter(i => { const lb = s.limb[i], e = s.p[2 + i]; return lb.mode === 'plant' && !st.manual[i] && Math.hypot(hp.x + ux2 * P.MOVE_STEP * 0.3 - e.x, hp.y + uy2 * P.MOVE_STEP * 0.3 - e.y) > lb.max * P.MOVE_MARGIN; });
+          if (lift.length) { for (const i of lift) { st.auto[i] = { x: hp.x + (i === 2 ? -10 : 10), y: hp.y + 0.5 * C.L }; st.block[i] = s.t + 0.25; } why = null; k = P.MOVE_STEP * 0.3; dx = ux2; dy = uy2; }
+        }
+        st.move = { dx, dy, blocked: why };
+        if (!why) { inp.power = true; inp.move = true; inp.px = c.x + dx * k; inp.py = c.y + dy * k; inp.gain = P.MOVE_GAIN; if (st.shift) { detach(s, st.shift.i); st.shift = null; st.phase = 'idle'; } }
       }
       // 발이 하나도 디뎌지지 않은 채 모으기·던지기: 다리를 접었다가 커서 쪽으로 차서 몸에 반동을 준다(엉덩이·상체 반동)
       st.swingLegs = !anyFoot && (st.phase === 'charge' || st.phase === 'throw') && (gripping(s, 0) || gripping(s, 1));
@@ -251,11 +260,11 @@ const CTRL = (() => {
           const e = s.p[2 + i], len = Math.hypot(e.x - hp.x, e.y - hp.y), bad = len > 0.96 * C.L || Math.abs(e.x - hp.x) > 0.8 * C.L;
           st.staleT[i] = bad ? st.staleT[i] + dt : 0;
           const otherOk = (gripping(s, 0) && gripping(s, 1)) || s.limb[5 - i].mode === 'plant';
-          if (st.staleT[i] > 0.3 && otherOk && s.t > st.cool[i] && calm) { const cand = footCandidates(s, i); if (cand && Math.hypot(cand.x - e.x, cand.y - e.y) > 15) { st.auto[i] = cand; st.cool[i] = s.t + 0.8; st.staleT[i] = 0; } }
+          if (st.staleT[i] > 0.3 && otherOk && s.t > st.cool[i] && calm) { const cand = footCandidates(s, i, st.auto[5 - i]); if (cand && Math.hypot(cand.x - e.x, cand.y - e.y) > 15) { st.auto[i] = cand; st.cool[i] = s.t + 0.8; st.staleT[i] = 0; } }
           continue;
         }
         if (!calm || s.t < st.block[i]) continue;
-        const cand = footCandidates(s, i);
+        const cand = footCandidates(s, i, st.auto[5 - i]);
         if (!cand) { if (st.auto[i]) { st.auto[i] = null; inp.drop[i] = true; } continue; }
         st.auto[i] = cand;
       }
