@@ -21,7 +21,7 @@ function policy(plan, hold, off, rec, tbFix) {
     if (t < 0) return;
     const release = () => { m.relT = s.t; rec.pose = s.p[1].x; rec.poseY = s.p[1].y; rec.v = s.p[1].vx; rec.vy = s.p[1].vy; };
     if (plan === 'none') { const on = t < hold; sp(on); if (on && !m.k && t >= 0.09) { a.click(0); m.k = 1; } if (!on && !m.rel) { m.rel = 1; release(); } return; }
-    if (m.st === 'wait') { m.st = 'tap'; m.ts = t; }
+    if (m.st === 'wait') { if (Math.abs(vx) > 8) return; m.st = 'tap'; m.ts = t; } // 오른손을 보낸 뒤 몸이 가라앉고 나서 반동을 시작한다
     if (m.st === 'tap') { sp(t - m.ts < 0.15); if (t - m.ts >= 0.15) m.st = 'fwd'; return; }
     if (m.st === 'fwd') { sp(false); if (vx < 5) { m.st = 'charge'; m.ts = t; } return; }               // 앞쪽 끝: 모으기 시작
     if (m.st === 'charge') { sp(true); if (!m.k && t - m.ts >= 0.09) { a.click(0); m.k = 1; }

@@ -108,6 +108,7 @@
         if (P_('couple')) C.COUPLE = C.COUPLE ? 0 : 0.15;
         if (P_('layout')) { layout = layout ? null : 'near'; world = PH.makeWorld(layout); tries = 0; reset(); return; }
         if (P_('phys')) { v05 = !v05; setPhys(v05); tries = 0; reset(); return; }
+        if (P_('body')) { PH.setBody(PH.getBody() === 'base' ? 'prop' : 'base'); tries = 0; reset(); return; }
         if (mode === 'intent') {
           if (P_('log')) showLog = !showLog;
           const O = CTRL.OPT;
@@ -428,9 +429,9 @@
     G.panel(8, 6, 716, 84, 'rgba(255,255,255,0.82)');
     G.text(`조작 ${CTRL.MODES[mode]}`, 18, 25, { size: 14, weight: 800, color: '#222' });
     lines.forEach((t, k) => G.text(t, 18, 43 + k * 15, { size: 11.5, color: '#222', weight: 600 }));
-    G.text(`${BIND.first('scheme')} 조작 방식 · ${BIND.first('reset')} 다시 · ${BIND.first('st1')}~${BIND.first('st5')} 시작 자세 · ${BIND.first('slow')} 느리게 · ${BIND.first('couple')} 도약 연결 · ${BIND.first('layout')} 연습 배치 · ${BIND.first('phys')} 물리 ${v05 ? 'v0.6' : 'v0.4'} · ${BIND.label('settings')} 키 설정`, 18, 104, { size: 11, color: '#333', weight: 600, stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
+    G.text(`${BIND.first('scheme')} 조작 방식 · ${BIND.first('reset')} 다시 · ${BIND.first('st1')}~${BIND.first('st5')} 시작 자세 · ${BIND.first('slow')} 느리게 · ${BIND.first('couple')} 도약 연결 · ${BIND.first('layout')} 연습 배치 · ${BIND.first('phys')} 물리 ${v05 ? 'v0.6' : 'v0.4'} · ${BIND.first('body')} 몸 비율 · ${BIND.label('settings')} 키 설정`, 18, 104, { size: 11, color: '#333', weight: 600, stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
     G.text(bot ? bot.def.title : `${station}. ${PH.STATIONS[station].name}   시도 ${tries}${slow ? '   느리게 ×0.5' : ''}`, W - 12, 24, { size: 13, align: 'right', color: '#222', weight: 800, stroke: 'rgba(255,255,255,0.8)' });
-    G.text(`${bot ? '자동 시연(사람과 같은 입력만 사용) · ' : ''}도약 연결 ${C.COUPLE ? '켬' : '끔'} · ${layout ? '연습 배치' : '기존 벽'}`, W - 12, 42, { size: 11, align: 'right', color: '#333', stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
+    G.text(`${bot ? '자동 시연(사람과 같은 입력만 사용) · ' : ''}도약 연결 ${C.COUPLE ? '켬' : '끔'} · ${layout ? '연습 배치' : '기존 벽'} · ${PH.BODIES[PH.getBody()].name}`, W - 12, 42, { size: 11, align: 'right', color: '#333', stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
     const sh = t => t.replace(/^(왼|오른)/, '').replace('클릭', ''), kname = mode === 'intent' ? (O.handMode === 1 ? [B1('sendL'), B1('sendR'), sh(B1('foot')) + '+' + sh(B1('sendL')), sh(B1('foot')) + '+' + sh(B1('sendR'))] : ['추천/다른', '추천/다른', sh(B1('foot')) + '+손', sh(B1('foot')) + '+손']) : mode === 'hold' ? ['좌클릭', '우클릭', kn(K.lf), kn(K.rf)] : [kn(K.lh), kn(K.rh), kn(K.lf), kn(K.rf)];
     for (let i = 0; i < 4; i++) { const m = S.limb[i].mode, on = m === 'reach'; key(c, 10 + i * 126, LIMB[i], on ? (mode === 'intent' && i >= 2 && !ctrl.st.manual[i] ? '자동' : '움직이는 중') : m === 'free' ? '힘 빠짐' : '붙음', on, COL[i], kname[i]); }
     key(c, 514, mode === 'intent' ? '모으기·던지기' : '힘주기', '', last.power, '#ffd166', mode === 'intent' ? B1('power') : sp);

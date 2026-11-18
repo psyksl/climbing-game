@@ -236,6 +236,14 @@ const PH = (() => {
     LAT_LEG: 0.6, LAT_ARM: 0.25, LAT_D: 30, MU_LAT: 0.8,
     PALM: 1, // 손으로 눌러 버틸 때 균형 힘(턱 위로 올라선 자세)
   };
+  // 몸 비율(2단계 비교): 길이만 바꾸고 질량·중력·힘은 그대로 둔다(신체 수치는 한 번에 하나씩). 다리가 접히는 최소 길이는 다리에 비례(26/84 ≈ 0.31)
+  const BODIES = {
+    base: { A: 72, L: 84, LMIN: 26, name: '기존 몸 (팔 72·다리 84)' },
+    prop: { A: 68, L: 98, LMIN: 30, name: '새 비율 (팔 68·다리 98)' },
+  };
+  let body = 'base';
+  function setBody(k) { const b = BODIES[k]; if (!b) return false; body = k; C.A = b.A; C.L = b.L; C.LMIN = b.LMIN; return true; } // 다음 create()부터 적용
+  const getBody = () => body;
   const MASS = C.MC + C.MP + 2 * C.MH + 2 * C.MF, W = MASS * C.G;
   // 힘 한계(체중 W의 배수)와 스프링 값
   const M = {
@@ -335,6 +343,7 @@ const PH = (() => {
       if (at && arm) { const g = nearestGrip(world, at[0], at[1]); lb.mode = 'grip'; lb.anchor = g; s.p[2 + i].x = g.x; s.p[2 + i].y = g.y; }
       if (at && !arm) { const q = nearestSurface(world, at[0], at[1]); lb.mode = 'plant'; lb.contact = true; lb.brace = true; lb.poly = q.poly; lb.cnx = q.nx; lb.cny = q.ny; }
       lb.L0 = Math.min(lb.max, Math.hypot(pos[0] - r.x, pos[1] - r.y));
+      if (at) lb.ext = Math.max(0, Math.hypot(s.p[2 + i].x - r.x, s.p[2 + i].y - r.y) - lb.max); // 시작 자세가 팔다리 길이보다 멀면(몸 비율을 바꿨을 때) 잡는 순간처럼 느슨하게 시작해 천천히 당긴다
       s.limb.push(lb);
     }
     return s;
@@ -594,7 +603,7 @@ const PH = (() => {
     for (const q of s.p) { L += q.m * ((q.x - cx) * (q.vy - py / m) - (q.y - cy) * (q.vx - px / m)); E += 0.5 * q.m * (q.vx * q.vx + q.vy * q.vy) - q.m * C.G * q.y; }
     return { px, py, L, E, cx, cy, m };
   }
-  return { C, M, W, MASS, GRIP, STATIONS, makeWorld, create, step, diag, nearestGrip, nearestSurface };
+  return { C, M, W, MASS, GRIP, STATIONS, BODIES, setBody, getBody, makeWorld, create, step, diag, nearestGrip, nearestSurface };
 })();
 if (typeof module !== 'undefined') module.exports = PH;
 
@@ -789,6 +798,7 @@ const BIND = (() => {
     { id: 'couple', g: '실험실', label: '도약 연결 켬·끔 (A·B·C안 비교용)', def: ['Digit7', null] },
     { id: 'layout', g: '실험실', label: '연습 배치 (건너편 턱 18px 가깝게)', def: ['Digit8', null] },
     { id: 'phys', g: '실험실', label: '물리 v0.6 ↔ v0.4', def: ['Digit9', null] },
+    { id: 'body', g: '실험실', label: '몸 비율 바꾸기 (기존 팔72·다리84 ↔ 새 비율 팔68·다리98)', def: ['Minus', null] },
     { id: 'settings', g: '실험실', label: '키 설정 열기·닫기', def: ['Escape', 'Digit0'] },
   ];
   const BY = Object.fromEntries(ACTIONS.map(a => [a.id, a]));
@@ -1230,6 +1240,7 @@ if (typeof module !== 'undefined') module.exports = CTRL;
         if (P_('couple')) C.COUPLE = C.COUPLE ? 0 : 0.15;
         if (P_('layout')) { layout = layout ? null : 'near'; world = PH.makeWorld(layout); tries = 0; reset(); return; }
         if (P_('phys')) { v05 = !v05; setPhys(v05); tries = 0; reset(); return; }
+        if (P_('body')) { PH.setBody(PH.getBody() === 'base' ? 'prop' : 'base'); tries = 0; reset(); return; }
         if (mode === 'intent') {
           if (P_('log')) showLog = !showLog;
           const O = CTRL.OPT;
@@ -1550,9 +1561,9 @@ if (typeof module !== 'undefined') module.exports = CTRL;
     G.panel(8, 6, 716, 84, 'rgba(255,255,255,0.82)');
     G.text(`조작 ${CTRL.MODES[mode]}`, 18, 25, { size: 14, weight: 800, color: '#222' });
     lines.forEach((t, k) => G.text(t, 18, 43 + k * 15, { size: 11.5, color: '#222', weight: 600 }));
-    G.text(`${BIND.first('scheme')} 조작 방식 · ${BIND.first('reset')} 다시 · ${BIND.first('st1')}~${BIND.first('st5')} 시작 자세 · ${BIND.first('slow')} 느리게 · ${BIND.first('couple')} 도약 연결 · ${BIND.first('layout')} 연습 배치 · ${BIND.first('phys')} 물리 ${v05 ? 'v0.6' : 'v0.4'} · ${BIND.label('settings')} 키 설정`, 18, 104, { size: 11, color: '#333', weight: 600, stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
+    G.text(`${BIND.first('scheme')} 조작 방식 · ${BIND.first('reset')} 다시 · ${BIND.first('st1')}~${BIND.first('st5')} 시작 자세 · ${BIND.first('slow')} 느리게 · ${BIND.first('couple')} 도약 연결 · ${BIND.first('layout')} 연습 배치 · ${BIND.first('phys')} 물리 ${v05 ? 'v0.6' : 'v0.4'} · ${BIND.first('body')} 몸 비율 · ${BIND.label('settings')} 키 설정`, 18, 104, { size: 11, color: '#333', weight: 600, stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
     G.text(bot ? bot.def.title : `${station}. ${PH.STATIONS[station].name}   시도 ${tries}${slow ? '   느리게 ×0.5' : ''}`, W - 12, 24, { size: 13, align: 'right', color: '#222', weight: 800, stroke: 'rgba(255,255,255,0.8)' });
-    G.text(`${bot ? '자동 시연(사람과 같은 입력만 사용) · ' : ''}도약 연결 ${C.COUPLE ? '켬' : '끔'} · ${layout ? '연습 배치' : '기존 벽'}`, W - 12, 42, { size: 11, align: 'right', color: '#333', stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
+    G.text(`${bot ? '자동 시연(사람과 같은 입력만 사용) · ' : ''}도약 연결 ${C.COUPLE ? '켬' : '끔'} · ${layout ? '연습 배치' : '기존 벽'} · ${PH.BODIES[PH.getBody()].name}`, W - 12, 42, { size: 11, align: 'right', color: '#333', stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
     const sh = t => t.replace(/^(왼|오른)/, '').replace('클릭', ''), kname = mode === 'intent' ? (O.handMode === 1 ? [B1('sendL'), B1('sendR'), sh(B1('foot')) + '+' + sh(B1('sendL')), sh(B1('foot')) + '+' + sh(B1('sendR'))] : ['추천/다른', '추천/다른', sh(B1('foot')) + '+손', sh(B1('foot')) + '+손']) : mode === 'hold' ? ['좌클릭', '우클릭', kn(K.lf), kn(K.rf)] : [kn(K.lh), kn(K.rh), kn(K.lf), kn(K.rf)];
     for (let i = 0; i < 4; i++) { const m = S.limb[i].mode, on = m === 'reach'; key(c, 10 + i * 126, LIMB[i], on ? (mode === 'intent' && i >= 2 && !ctrl.st.manual[i] ? '자동' : '움직이는 중') : m === 'free' ? '힘 빠짐' : '붙음', on, COL[i], kname[i]); }
     key(c, 514, mode === 'intent' ? '모으기·던지기' : '힘주기', '', last.power, '#ffd166', mode === 'intent' ? B1('power') : sp);

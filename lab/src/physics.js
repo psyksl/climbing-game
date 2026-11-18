@@ -18,6 +18,14 @@ const PH = (() => {
     LAT_LEG: 0.6, LAT_ARM: 0.25, LAT_D: 30, MU_LAT: 0.8,
     PALM: 1, // 손으로 눌러 버틸 때 균형 힘(턱 위로 올라선 자세)
   };
+  // 몸 비율(2단계 비교): 길이만 바꾸고 질량·중력·힘은 그대로 둔다(신체 수치는 한 번에 하나씩). 다리가 접히는 최소 길이는 다리에 비례(26/84 ≈ 0.31)
+  const BODIES = {
+    base: { A: 72, L: 84, LMIN: 26, name: '기존 몸 (팔 72·다리 84)' },
+    prop: { A: 68, L: 98, LMIN: 30, name: '새 비율 (팔 68·다리 98)' },
+  };
+  let body = 'base';
+  function setBody(k) { const b = BODIES[k]; if (!b) return false; body = k; C.A = b.A; C.L = b.L; C.LMIN = b.LMIN; return true; } // 다음 create()부터 적용
+  const getBody = () => body;
   const MASS = C.MC + C.MP + 2 * C.MH + 2 * C.MF, W = MASS * C.G;
   // 힘 한계(체중 W의 배수)와 스프링 값
   const M = {
@@ -117,6 +125,7 @@ const PH = (() => {
       if (at && arm) { const g = nearestGrip(world, at[0], at[1]); lb.mode = 'grip'; lb.anchor = g; s.p[2 + i].x = g.x; s.p[2 + i].y = g.y; }
       if (at && !arm) { const q = nearestSurface(world, at[0], at[1]); lb.mode = 'plant'; lb.contact = true; lb.brace = true; lb.poly = q.poly; lb.cnx = q.nx; lb.cny = q.ny; }
       lb.L0 = Math.min(lb.max, Math.hypot(pos[0] - r.x, pos[1] - r.y));
+      if (at) lb.ext = Math.max(0, Math.hypot(s.p[2 + i].x - r.x, s.p[2 + i].y - r.y) - lb.max); // 시작 자세가 팔다리 길이보다 멀면(몸 비율을 바꿨을 때) 잡는 순간처럼 느슨하게 시작해 천천히 당긴다
       s.limb.push(lb);
     }
     return s;
@@ -376,6 +385,6 @@ const PH = (() => {
     for (const q of s.p) { L += q.m * ((q.x - cx) * (q.vy - py / m) - (q.y - cy) * (q.vx - px / m)); E += 0.5 * q.m * (q.vx * q.vx + q.vy * q.vy) - q.m * C.G * q.y; }
     return { px, py, L, E, cx, cy, m };
   }
-  return { C, M, W, MASS, GRIP, STATIONS, makeWorld, create, step, diag, nearestGrip, nearestSurface };
+  return { C, M, W, MASS, GRIP, STATIONS, BODIES, setBody, getBody, makeWorld, create, step, diag, nearestGrip, nearestSurface };
 })();
 if (typeof module !== 'undefined') module.exports = PH;

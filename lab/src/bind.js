@@ -38,6 +38,7 @@ const BIND = (() => {
     { id: 'couple', g: '실험실', label: '도약 연결 켬·끔 (A·B·C안 비교용)', def: ['Digit7', null] },
     { id: 'layout', g: '실험실', label: '연습 배치 (건너편 턱 18px 가깝게)', def: ['Digit8', null] },
     { id: 'phys', g: '실험실', label: '물리 v0.6 ↔ v0.4', def: ['Digit9', null] },
+    { id: 'body', g: '실험실', label: '몸 비율 바꾸기 (기존 팔72·다리84 ↔ 새 비율 팔68·다리98)', def: ['Minus', null] },
     { id: 'settings', g: '실험실', label: '키 설정 열기·닫기', def: ['Escape', 'Digit0'] },
   ];
   const BY = Object.fromEntries(ACTIONS.map(a => [a.id, a]));

@@ -55,7 +55,7 @@ const SC = {
       if (t < 0) return;
       if (rocks === 0) { a.space(t < hold); if (!m.k && t >= rc) { a.click(0); m.k = 1; } return; }
       // 반동: 짧게 한 번 눌렀다 떼서 몸을 목표 쪽으로 흔든 뒤, 끝에서 누르고 반대쪽 끝에서 뗀다
-      if (m.st === 'wait') { m.st = 'tap'; m.ts = t; }
+      if (m.st === 'wait') { if (Math.abs(vx) > 8) return; m.st = 'tap'; m.ts = t; } // 오른손을 보낸 뒤 몸이 가라앉고 나서 반동을 시작한다(사람도 흔들림이 멎기를 기다린다)
       if (m.st === 'tap') { a.space(t - m.ts < 0.15); if (t - m.ts >= 0.15 && vx < 0) { m.st = 'fwdEnd'; } }
       if (m.st === 'tap' && t - m.ts >= 0.15 && vx >= 0) m.st = 'toFwd';
       if (m.st === 'toFwd') { a.space(false); if (vx < 5) { m.st = 'charge'; m.ts = t; m.dl = 0.05 * gauss(); m.n++; } }

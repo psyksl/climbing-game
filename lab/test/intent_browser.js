@@ -107,5 +107,13 @@ const sx = x => x - OX, sy = y => y - OY; // 게임 좌표 → 화면 좌표
   check('실패 안내: 가까운 끝을 겨누고 길게 → "지나쳐 … 덜 모으거나"', !jh.m.includes('@B') && jh.h.includes('지나쳐') && jh.h.includes('덜 모으'), jh.h);
   jh = await jumpHint(600, 150);
   check('실패 안내: 먼 끝을 겨누고 짧게 → "못 미쳐 … 더 모으거나"', !jh.m.includes('@B') && jh.h.includes('못 미쳐') && !jh.h.includes('지나'), jh.h);
+  // 몸 비율 바꾸기(- 키): 같은 벽에서 몸만 바뀌고, 다시 누르면 돌아온다
+  await pg.keyboard.press('Minus'); await pg.waitForTimeout(300);
+  let bd = await pg.evaluate(() => [window.__lab.s.limb[0].max, window.__lab.s.limb[2].max].join('/'));
+  check('- 키: 새 비율 몸(팔 68·다리 98)으로 바뀜', bd === '68/98', bd);
+  if (shot) await pg.screenshot({ path: shot + '_body.png' });
+  await pg.keyboard.press('Minus'); await pg.waitForTimeout(300);
+  bd = await pg.evaluate(() => [window.__lab.s.limb[0].max, window.__lab.s.limb[2].max].join('/'));
+  check('- 키 다시: 기존 몸(팔 72·다리 84)으로 돌아옴', bd === '72/84', bd);
   console.log('페이지 오류:', errs.join(';') || '없음', '| 실패', fail); await b.close(); process.exit(fail ? 1 : 0);
 })();
