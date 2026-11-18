@@ -193,8 +193,6 @@ const CTRL = (() => {
         if (which === 'other') side = 1 - (foot ? st.rec.foot : st.rec.hand) % 2;
         const i = foot ? 2 + side : side, lb = s.limb[i];
         st.sent.push({ i, id, t: s.t, mode: lb.mode, phase: st.phase });
-        const pre = io.down('markHand') || io.pressed('markHand'); // 같은 프레임에 눌렀다 뗀 경우도 잡는다 // 놓을 손 미리 지정: 누른 채 손 입력이면 손을 보내지 않고 지정만 한다(뛰기 전까지 계속 잡고 있음)
-        if (pre && i < 2 && st.phase !== 'throw') { if (lb.mode === 'grip') { st.mark[i] = !st.mark[i]; st.last = st.mark[i] ? `${['왼손', '오른손'][i]}: 도약할 때 놓음(미리 지정)` : `${['왼손', '오른손'][i]}: 놓기 지정 취소`; } continue; }
         if (st.phase === 'charge' && i < 2 && lb.mode === 'grip') { st.mark[i] = !st.mark[i]; st.last = st.mark[i] ? `${['왼손', '오른손'][i]}: 도약할 때 놓음` : `${['왼손', '오른손'][i]}: 놓기 지정 취소`; continue; }
         if (lb.mode === 'grip' || lb.mode === 'plant') {
           const other = 1 - i;

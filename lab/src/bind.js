@@ -9,7 +9,6 @@ const BIND = (() => {
     { id: 'sendR', g: '손', hm: 1, label: '오른손 보내기 · (모으는 중) 오른손 놓기 지정/취소', def: ['Mouse2', 'KeyE'] },
     { id: 'sendBest', g: '손', hm: 2, label: '추천 손 보내기 · (모으는 중) 추천 손 놓기 지정/취소', def: ['Mouse0', 'KeyQ'] },
     { id: 'sendOther', g: '손', hm: 2, label: '다른 손 보내기 · (모으는 중) 다른 손 놓기 지정/취소', def: ['Mouse2', 'KeyE'] },
-    { id: 'markHand', g: '손', label: '놓을 손 미리 지정 (누른 채 손 입력 = 지정/취소, 뛰기 전까지 잡고 있음)', def: ['KeyC', null] },
     { id: 'foot', g: '발', label: '발 직접 조작 (누른 채 손 입력 = 발)', def: ['ShiftLeft', 'ShiftRight'] },
     { id: 'power', g: '몸', label: '힘 모으기 (떼면 던지기)', def: ['Space', null] },
     { id: 'cancel', g: '몸', label: '취소 (모으는 중: 놓을 손 지정 모두 취소 / 평소: 든 손발 힘 빼기)', def: ['KeyX', null] },
