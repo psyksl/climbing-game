@@ -26,6 +26,7 @@ const BIND = (() => {
     { id: 'assist', g: '보조', label: '닿으면 잡기 켬·끔', def: ['KeyV', null] },
     { id: 'autoFeet', g: '보조', label: '자동 발 켬·끔', def: ['KeyF', null] },
     { id: 'autoShift', g: '보조', label: '자동 체중 이동 켬·끔', def: ['KeyG', null] },
+    { id: 'autoLoad', g: '보조', label: '모을 때 자동 싣기 켬·끔 (관절 몸 비교용: 끔 = Space는 아래로 웅크리기만, 좌우는 A/D)', def: ['KeyN', null] },
     { id: 'log', g: '보조', label: '플레이 기록 보기', def: ['KeyL', null] },
     { id: 'reset', g: '실험실', label: '같은 자세로 다시', def: ['KeyR', null] },
     { id: 'scheme', g: '실험실', label: '조작 방식 바꾸기 (D·A·B·C안)', def: ['Tab', null] },
@@ -38,7 +39,7 @@ const BIND = (() => {
     { id: 'couple', g: '실험실', label: '도약 연결 켬·끔 (A·B·C안 비교용)', def: ['Digit7', null] },
     { id: 'layout', g: '실험실', label: '연습 배치 (건너편 턱 18px 가깝게)', def: ['Digit8', null] },
     { id: 'phys', g: '실험실', label: '물리 v0.6 ↔ v0.4', def: ['Digit9', null] },
-    { id: 'body', g: '실험실', label: '몸 비율 바꾸기 (기존 팔72·다리84 ↔ 새 비율 팔68·다리98)', def: ['Minus', null] },
+    { id: 'body', g: '실험실', label: '몸 바꾸기 (기존 → 새 비율 → 관절 몸)', def: ['Minus', null] },
     { id: 'settings', g: '실험실', label: '키 설정 열기·닫기', def: ['Escape', 'Digit0'] },
   ];
   const BY = Object.fromEntries(ACTIONS.map(a => [a.id, a]));

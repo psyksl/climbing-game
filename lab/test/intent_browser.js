@@ -7,7 +7,7 @@ const sx = x => x - OX, sy = y => y - OY; // 게임 좌표 → 화면 좌표
   const b = await chromium.launch(); let fail = 0;
   const check = (n, c, x = '') => { console.log(`${c ? 'PASS' : 'FAIL'}  ${n} ${x}`); if (!c) fail++; };
   const pg = await b.newPage({ viewport: { width: 960, height: 540 } }); const errs = []; pg.on('pageerror', e => errs.push(e.message));
-  await pg.goto(url); await pg.waitForTimeout(300);
+  await pg.goto(url + '?body=base'); await pg.waitForTimeout(300); // 기존 몸 기준 확인(관절 몸은 아래에서 따로)
   const modes = () => pg.evaluate(() => window.__lab.s.limb.map(l => l.mode + (l.anchor ? '@' + l.anchor.poly : '')).join(','));
   const fresh = async k => { await pg.keyboard.press('Digit' + k); await pg.waitForTimeout(250); };
   // 1. 자동 발
@@ -119,7 +119,11 @@ const sx = x => x - OX, sy = y => y - OY; // 게임 좌표 → 화면 좌표
   check('- 키: 새 비율 몸(팔 68·다리 98)으로 바뀜', bd === '68/98', bd);
   if (shot) await pg.screenshot({ path: shot + '_body.png' });
   await pg.keyboard.press('Minus'); await pg.waitForTimeout(300);
+  bd = await pg.evaluate(() => [window.__lab.s.limb[0].max, window.__lab.s.limb[2].max, window.__lab.s.limb[0].k !== 0].join('/'));
+  check('- 키 다시: 관절 몸(팔 66·다리 96, 어깨에서 팔이 나옴)으로 바뀜', bd === '66/96/true', bd);
+  if (shot) await pg.screenshot({ path: shot + '_joint.png' });
+  await pg.keyboard.press('Minus'); await pg.waitForTimeout(300);
   bd = await pg.evaluate(() => [window.__lab.s.limb[0].max, window.__lab.s.limb[2].max].join('/'));
-  check('- 키 다시: 기존 몸(팔 72·다리 84)으로 돌아옴', bd === '72/84', bd);
+  check('- 키 한 번 더: 기존 몸(팔 72·다리 84)으로 돌아옴', bd === '72/84', bd);
   console.log('페이지 오류:', errs.join(';') || '없음', '| 실패', fail); await b.close(); process.exit(fail ? 1 : 0);
 })();

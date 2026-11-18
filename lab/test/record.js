@@ -7,7 +7,7 @@ const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), out = path
   // 2) 자동 시연 녹화
   for (const name of (process.argv[2] ? process.argv[2].split(' ') : ['swing', 'jump', 'jug', 'top', 'early', 'late', 'footpos'])) {
     const ctx = await b.newContext({ viewport: { width: 960, height: 540 }, recordVideo: { dir: out, size: { width: 960, height: 540 } } });
-    const pg = await ctx.newPage(); await pg.goto(url + '?auto=' + name);
+    const pg = await ctx.newPage(); await pg.goto(url + '?body=base&auto=' + name);
     await pg.waitForFunction(() => window.__lab.s.dead || window.__lab.bot.m.done, null, { timeout: 40000 });
     await pg.waitForTimeout(900); await pg.screenshot({ path: path.join(out, name.replace(',', '+') + '.png') });
     await pg.waitForFunction(() => window.__lab.finished, null, { timeout: 40000 });

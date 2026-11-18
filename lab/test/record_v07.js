@@ -5,7 +5,7 @@ const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), out = path
 const sx = x => x + 30, sy = y => y - 130;
 async function clip(name, act) {
   const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 960, height: 540 }, recordVideo: { dir: out, size: { width: 960, height: 540 } } });
-  const pg = await ctx.newPage(); await pg.goto(url); await pg.waitForTimeout(500); await pg.keyboard.press('Digit3'); await pg.waitForTimeout(600);
+  const pg = await ctx.newPage(); await pg.goto(url + '?body=base'); await pg.waitForTimeout(500); await pg.keyboard.press('Digit3'); await pg.waitForTimeout(600);
   const res = await act(pg); await pg.waitForTimeout(400); const v = pg.video(); await ctx.close(); await b.close();
   fs.renameSync(await v.path(), path.join(out, name + '.webm')); console.log(name, res);
 }
