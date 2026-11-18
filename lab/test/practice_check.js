@@ -8,13 +8,20 @@ function run(l) { PH.setBody('joint'); Object.assign(CTRL.OPT, LESSON.BASE.opt);
   const s = PH.create(world, l.station), ctl = CTRL.make('intent'), pl = LESSON.player(l), tr = P.track(), all = []; let first = null;
   while (s.t < l.T && !s.dead) { const io = pl.step(s.t), out = ctl.step(s, io, dt); if (first === null && (io.down('power') || io.down('moveUp') || ctl.st.sent.length)) first = s.t; PH.step(s, out, dt);
     all.push({ t: s.t, p: s.p.map(q => [q.x, q.y]) }); first === null ? tr.hold(s) : tr.push(s); }
-  tr.push(s, null, true); return { s, tr, all, first }; }
+  tr.finish(s); return { s, tr, all, first }; }
 const L = LESSON.LIST.find(l => l.id === 'wjump'), R = run(L), fr = R.tr.frames;
 check('자취: 첫 입력 전에는 한 장만, 그 뒤로 1/60초마다 한 장', fr.length > 100 && Math.abs((fr[5].t - fr[4].t) - 1 / 60) < 1e-9 && fr[0].t <= R.first + dt + 1e-9, `${fr.length}장 · 첫 장 ${fr[0].t.toFixed(3)}초 · 첫 입력 ${R.first.toFixed(3)}초`);
 // 자취의 모습은 그 시각에 실제로 계산된 모습과 완전히 같다
 let worst = 0; for (const f of fr) { const a = R.all.find(q => Math.abs(q.t - f.t) < 1e-9); if (!a) { worst = 1e9; break; } f.s.p.forEach((q, i) => { worst = Math.max(worst, Math.hypot(q.x - a.p[i][0], q.y - a.p[i][1])); }); }
 check('자취의 모습이 그때 계산된 모습과 같다(리플레이 = 실제로 한 플레이)', worst === 0, `가장 큰 차이 ${worst}px`);
-check('자취의 끝은 시도가 끝난 순간', Math.abs(R.tr.t1() - R.s.t) < 1e-9 && fr[fr.length - 1].s.p[3].y === R.s.p[3].y);
+check('자취의 끝은 시도가 끝난 순간(제한 시간 안에서 끝났을 때)', Math.abs(R.tr.end() - R.s.t) < 1e-9 && fr[fr.length - 1].s.p[3].y === R.s.p[3].y && Math.abs(R.tr.final.t - R.tr.end()) < 1e-9 && !R.tr.full);
+// 제한 시간을 넘긴 시도: 연속으로 적힌 데까지만 재생 범위이고, 끝난 순간의 모습은 따로 들고 있다(빈 구간을 건너뛰어 재생하지 않는다)
+{ const tr = P.track(), q = { t: 0, world: {}, events: [], p: [{ x: 0, y: 0 }] }; for (let i = 0; i < 130 * 120; i++) { q.t += 1 / 120; q.p[0].x = q.t; tr.push(q); } tr.finish(q);
+  let gap = 0; for (let i = 1; i < tr.frames.length; i++) gap = Math.max(gap, tr.frames[i].t - tr.frames[i - 1].t);
+  check('2분 제한: 130초 시도의 재생 범위는 약 120초까지, 빈 구간 없음', tr.full && tr.end() < 120.1 && tr.end() > 119.9 && gap < 1 / 60 + 1e-6, `끝 ${tr.end().toFixed(3)}초 · ${tr.frames.length}장 · 가장 큰 간격 ${gap.toFixed(4)}초`);
+  check('끝난 순간(130초)의 모습은 따로 들고 있다', Math.abs(tr.final.t - 130) < 0.01 && tr.final.s.p[0].x > 129.9 && tr.at(125).t <= tr.end());
+  const bytes = JSON.stringify(R.tr.frames[10].s, (k, v) => k === 'world' ? undefined : v).length; console.log(`참고  자취 한 장은 약 ${bytes}바이트(글자로 적었을 때) → 2분 = 7201장 ≈ ${(bytes * 7201 / 1e6).toFixed(0)}MB, 시범 유령이 있으면 그 두 배`);
+  const t3 = P.track(3); for (let i = 0; i < 10 * 120; i++) { q.t += 1 / 120; t3.push(q); } check('제한 시간은 연습마다 정할 수 있다(3초로 주면 3초까지만)', t3.full && Math.abs((t3.end() - t3.t0()) - 3) < 0.02, `${(t3.end() - t3.t0()).toFixed(3)}초`); }
 check('자취는 계산 중인 몸과 따로다(나중에 몸이 바뀌어도 자취는 그대로)', (() => { const y = fr[10].s.p[0].y; R.s.p[0].y += 50; fr[10].s.limb[0].mode = fr[10].s.limb[0].mode; return fr[10].s.p[0].y === y && fr[10].s.world === R.s.world; })());
 check('어느 시각이든 그 시각까지의 마지막 모습을 준다', R.tr.at(-5) === fr[0] && R.tr.at(1e9) === fr[fr.length - 1] && R.tr.at(fr[40].t + 0.004) === fr[40] && R.tr.at(fr[40].t) === fr[40]);
 // 재생 시계

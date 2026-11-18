@@ -4,7 +4,7 @@
 const BIND = (() => {
   const STORE = 'climbBind_v1';
   // hm: 손 선택 방식(1 = 버튼마다 손이 정해짐, 2 = 게임이 추천하는 손). 없으면 두 방식 공통
-  // ctx: 그 동작이 쓰이는 때('replay' = 리플레이를 보는 동안만). 없으면 플레이 중. 때가 다르면 같은 키를 써도 겹침이 아니다
+  // ctx: 'replay' = 리플레이 도구(아래 PHASES의 rp). 동작마다 쓰이는 단계는 아래 phasesOf가 한곳에서 정한다(겹침 검사와 실제 실행이 같은 기준을 쓴다)
   const ACTIONS = [
     { id: 'sendL', g: '손', hm: 1, label: '왼손 보내기 · (모으는 중) 왼손 놓기 지정/취소', def: ['Mouse0', 'KeyQ'] },
     { id: 'sendR', g: '손', hm: 1, label: '오른손 보내기 · (모으는 중) 오른손 놓기 지정/취소', def: ['Mouse2', 'KeyE'] },
@@ -58,6 +58,13 @@ const BIND = (() => {
     { id: 'settings', g: '실험실', label: '키 설정 열기·닫기', def: ['Escape', 'Digit0'] },
   ];
   const BY = Object.fromEntries(ACTIONS.map(a => [a.id, a]));
+  // 시도의 단계: live(하는 중) · ended(결과 화면) · replay(리플레이). 동작이 실제로 실행되는 단계를 여기 한곳에서 정한다.
+  //   all = 언제나(다시하기·리플레이·다음 과제·시범·차트·설정·시작 자세), opt = 하는 중과 결과 화면(보조 설정·실험실 전환), rp = 리플레이 도구, 나머지(손발·몸·조준) = 하는 중에만
+  const PHASES = { all: ['live', 'ended', 'replay'], opt: ['live', 'ended'], rp: ['replay'], play: ['live'] };
+  const ALL_IDS = ['settings', 'reset', 'replay', 'lessonNext', 'demo', 'chart', 'chartLeft', 'chartRight', 'chartZoomOut', 'chartZoomIn', 'chartFit', 'st1', 'st2', 'st3', 'st4', 'st5'];
+  const OPT_IDS = ['handMode', 'assistRange', 'assist', 'autoFeet', 'autoShift', 'autoLoad', 'log', 'ghost', 'slow', 'scheme', 'couple', 'layout', 'phys', 'body'];
+  const kindOf = id => BY[id] && BY[id].ctx === 'replay' ? 'rp' : ALL_IDS.includes(id) ? 'all' : OPT_IDS.includes(id) ? 'opt' : 'play';
+  const phasesOf = id => PHASES[kindOf(id)];
   let map = {};
   function defaults() { map = Object.fromEntries(ACTIONS.map(a => [a.id, [a.def[0] || null, a.def[1] || null]])); }
   function load() {
@@ -69,10 +76,11 @@ const BIND = (() => {
   function set(id, slot, code) { map[id][slot] = code; save(); }
   const get = id => map[id] || [null, null];
   // 같은 입력을 쓰는 동작들(같은 손 선택 방식에서 함께 쓰이는 것끼리만). "발 + 손 입력"처럼 의도된 조합은 겹침이 아니다
+  // 겹침: 같은 손 선택 방식에서, 함께 쓰이는 단계가 하나라도 있는 두 동작이 같은 입력을 쓰면 겹친 것이다(예: 리플레이 재생을 R에 두면 다시하기와 겹친다. Space는 모으기와 단계가 달라 겹치지 않는다)
   function conflicts(hm) {
-    const use = {};
-    for (const a of ACTIONS) { if (a.hm && a.hm !== hm) continue; for (const c of map[a.id]) if (c) { const k = (a.ctx || 'play') + ' ' + c; (use[k] = use[k] || []).push(a.id); } }
-    const out = {}; for (const c in use) if (use[c].length > 1) for (const id of use[c]) (out[id] = out[id] || []).push(...use[c].filter(x => x !== id));
+    const use = {}, out = {};
+    for (const a of ACTIONS) { if (a.hm && a.hm !== hm) continue; for (const c of map[a.id]) if (c) (use[c] = use[c] || []).push(a.id); }
+    for (const c in use) { const ids = use[c]; for (const x of ids) for (const y of ids) if (x !== y && phasesOf(x).some(ph => phasesOf(y).includes(ph)) && !(out[x] || []).includes(y)) (out[x] = out[x] || []).push(y); }
     return out;
   }
   // 엔진 입력(raw)에 대해: 지금 눌려 있나 / 이번 프레임에 새로 눌렸나
@@ -81,6 +89,16 @@ const BIND = (() => {
   const mouseBtn = c => c && c.startsWith('Mouse') ? +c.slice(5) : -1;
   function down(id, raw) { for (const c of get(id)) { if (!c) continue; const b = mouseBtn(c); if (b >= 0 && mouseBlocked) continue; if (b >= 0 ? raw.mouse.down[b] : raw.key(c)) return true; } return false; }
   function pressed(id, raw) { for (const c of get(id)) { if (!c) continue; const b = mouseBtn(c); if (b >= 0 && mouseBlocked) continue; if (b >= 0 ? raw.clicks.some(k => k.button === b) : raw.pressed(c)) return true; } return false; }
+  // 단계에 맞는 실행: 그 단계에서 쓰이는 동작만 반응한다. 리플레이에서는 리플레이 도구가 먼저다 — 겹치게 지정했더라도 같은 입력으로 다른 동작(다시하기·설정 등)이 함께 실행되지 않는다
+  const codeHit = (c, raw, edge) => { const b = mouseBtn(c); if (b >= 0 && mouseBlocked) return false; return b >= 0 ? (edge ? raw.clicks.some(k => k.button === b) : !!raw.mouse.down[b]) : (edge ? raw.pressed(c) : !!raw.key(c)); };
+  function hitIn(id, raw, phase, edge) {
+    if (!BY[id] || !phasesOf(id).includes(phase)) return false;
+    for (const c of get(id)) { if (!c || !codeHit(c, raw, edge)) continue;
+      if (phase === 'replay' && kindOf(id) !== 'rp' && ACTIONS.some(a => kindOf(a.id) === 'rp' && map[a.id].includes(c))) continue; // 리플레이 도구가 쓰는 입력
+      return true; }
+    return false;
+  }
+  const pressedIn = (id, raw, phase) => hitIn(id, raw, phase, true), downIn = (id, raw, phase) => hitIn(id, raw, phase, false);
   // 그 동작의 두 칸(주·보조) 가운데 지금 실제로 쓰이고 있는 입력: 이번 프레임에 새로 눌린 것이 먼저, 없으면 눌려 있는 것. 기록과 화면이 "실제로 누른 키"를 보이는 데 쓴다
   function active(id, raw) { let dn = null; for (const c of get(id)) { if (!c) continue; const b = mouseBtn(c); if (b >= 0 && mouseBlocked) continue; if (b >= 0 ? raw.clicks.some(k => k.button === b) : raw.pressed(c)) return c; if (!dn && (b >= 0 ? raw.mouse.down[b] : raw.key(c))) dn = c; } return dn; }
   const codeDown = (c, raw) => { if (!c) return false; const b = mouseBtn(c); return b >= 0 ? !!raw.mouse.down[b] : !!raw.key(c); };
@@ -94,6 +112,6 @@ const BIND = (() => {
   const label = id => { const b = get(id).filter(Boolean); return b.length ? b.map(name).join(' / ') : '없음'; };
   const first = id => name(get(id).find(Boolean) || null);
   load();
-  return { ACTIONS, BY, load, save, resetAll, set, get, conflicts, down, pressed, pressedWithShift, active, codeDown, setMouseBlocked, name, label, first, STORE };
+  return { ACTIONS, BY, load, save, resetAll, set, get, conflicts, down, pressed, pressedWithShift, pressedIn, downIn, phasesOf, kindOf, active, codeDown, setMouseBlocked, name, label, first, STORE };
 })();
 if (typeof module !== 'undefined') module.exports = BIND;

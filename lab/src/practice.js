@@ -1,5 +1,6 @@
 // 연습 공용 부품: 어떤 연습(연습 과제, 자유 연습, 앞으로 만들 연습장)에서든 같은 방법으로 쓴다. 게임 화면(game.js)은 이 부품들을 이어 붙이기만 한다.
-//   track  : 시도하는 동안 몸의 모습을 걸음마다 적어 두는 자취 → 리플레이는 이것을 그대로 다시 보인다(다시 계산하지 않으므로 어느 시각으로든 바로 간다)
+//   track  : 시도하는 동안 몸의 모습을 걸음마다 적어 두는 자취 → 리플레이는 이것을 그대로 다시 보인다(다시 계산하지 않으므로 어느 시각으로든 바로 간다).
+//            정해 둔 시간(기본 2분)까지만 연속으로 적고, 리플레이는 그 연속 구간만 재생한다
 //   clock  : 리플레이의 재생 시계(재생·멈춤, 시각 옮기기, 조금씩 넘기기, 속도)
 //   view   : 입력 비교 차트의 시야(보이는 시작 시각과 폭, 따라가기, 확대·축소, 옮기기, 전체 보기)
 //   zone·drag·fitRect : 창처럼 옮기고 가장자리로 크기를 바꾸는 사각형
@@ -10,17 +11,22 @@ const PRACTICE = (() => {
   const lim = (v, a, b) => Math.max(a, Math.min(b, v));
   // 몸 상태를 통째로 베낀다(벽은 바뀌지 않으므로 같이 쓴다)
   function clone(s) { const w = s.world; s.world = null; let c; try { c = structuredClone(s); } finally { s.world = w; } c.world = w; c.events = []; return c; }
-  function track() {
-    const tr = { frames: [], full: false };
+  // maxS초까지 연속으로 적는다. 그 뒤로는 적지 않는다(tr.full). 리플레이는 연속으로 적힌 데(tr.end())까지만 재생한다 — 빠진 구간을 건너뛰어 재생하지 않는다.
+  // 시도가 끝난 순간의 모습은 finish가 따로 들고 있는다(tr.final). 연속 기록 안에서 끝났다면 마지막 장으로도 넣는다
+  function track(maxS = MAX_S) {
+    const tr = { frames: [], full: false, final: null, maxS };
     const frame = (s, extra) => ({ t: s.t, s: clone(s), ...(extra || {}) });
     tr.hold = (s, extra) => { tr.frames = [frame(s, extra)]; };                        // 첫 입력 전: 마지막 모습 하나만 들고 있는다
-    tr.push = (s, extra, force) => { const fr = tr.frames, last = fr[fr.length - 1];    // 첫 입력 뒤: 1/60초마다 한 장. force = 끝나는 순간의 모습은 꼭 적는다
-      if (last && s.t <= last.t + 1e-9) return false;
-      if (!force && last && s.t - last.t < 1 / HZ - 1e-9) return false;
-      if (fr.length >= HZ * MAX_S) { tr.full = true; if (!force) return false; }
+    tr.push = (s, extra) => { const fr = tr.frames, last = fr[fr.length - 1];           // 첫 입력 뒤: 1/60초마다 한 장
+      if (tr.full || (last && s.t - last.t < 1 / HZ - 1e-9)) return false;
+      if (fr.length >= Math.round(HZ * maxS) + 1) { tr.full = true; return false; }
       fr.push(frame(s, extra)); return true; };
+    tr.finish = (s, extra) => { const fr = tr.frames, last = fr[fr.length - 1]; tr.final = frame(s, extra);
+      if (!tr.full && last && s.t > last.t + 1e-9 && fr.length < Math.round(HZ * maxS) + 2) fr.push(tr.final); return tr.final; };
     tr.at = t => { const fr = tr.frames; if (!fr.length) return null; let a = 0, b = fr.length - 1; while (a < b) { const m = (a + b + 1) >> 1; if (fr[m].t <= t + 1e-9) a = m; else b = m - 1; } return fr[a]; }; // 그 시각까지의 마지막 모습
-    tr.t0 = () => tr.frames.length ? tr.frames[0].t : 0; tr.t1 = () => tr.frames.length ? tr.frames[tr.frames.length - 1].t : 0;
+    tr.t0 = () => tr.frames.length ? tr.frames[0].t : 0;
+    tr.end = () => tr.frames.length ? tr.frames[tr.frames.length - 1].t : 0;             // 연속으로 적힌 끝(리플레이할 수 있는 끝)
+    tr.t1 = tr.end;
     return tr;
   }
   function clock(from, to) {

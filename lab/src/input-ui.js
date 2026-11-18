@@ -3,7 +3,9 @@
    - loadFrom(주소 표): 한 파일 빌드에 묻어 둔 그림(data 주소)을 불러온다. ready(): 그림이 준비됐는지
    - options.press(0~1): 눌림 정도. 게임 쪽에서 짧게 보간해 넘긴다(없으면 state대로 0 또는 1)
    - options.big: 작게 그리는 키캡에서 글자를 키 면에 맞춰 크게 쓴다
-   - 역할 색이 neutral이 아닌 마우스는 그 색을, any는 어느 손인지 정해지지 않았다는 뜻의 회갈색을 쓴다 */
+   - 역할 색이 neutral이 아닌 마우스는 그 색을, any는 어느 손인지 정해지지 않았다는 뜻의 회갈색을 쓴다
+   - renderSmall·smallSize(v0.11.2, GPT 검토 반영): 작은 크기(높이 26 미만) 전용. 재질·그림자 대신 또렷한 윤곽과 큰 글자로 그린다. 형태(키캡·마우스)는 같게 둔다.
+     Space는 긴 원화를 줄이지 않고 짧은 가로형 키캡에 SPACE라고 쓴다. options.ghost = 흐리게(지금 설정 기준 안내), options.outline = 윤곽만(시범) */
 (function(root){
   'use strict';
   const catalog=typeof module!=='undefined'?require('./input-catalog.js'):root.ClimbInputCatalog;
@@ -76,6 +78,47 @@
     ctx.restore();
     return{code:item.code,shape,state,role,label:item.label,fallback:!!item.fallback,labelBox};
   }
+  // ---- 작은 크기 전용
+  const em=ch=>ch.charCodeAt(0)<128?(/[A-Z0-9]/.test(ch)?.66:/[a-z]/.test(ch)?.56:.36):1;
+  const textEm=t=>[...t].reduce((a,ch)=>a+em(ch),0);
+  function smallSize(code,h,options={}){
+    const item=catalog.resolve(code,options);
+    if(item.shape==='mouse'||item.shape==='mouseSide')return[h*.72,h];
+    const label=String(options.label??item.label);
+    if([...label].length<=1)return[h,h];
+    return[Math.max(h*1.2,textEm(label)*h*.42+h*.5),h];
+  }
+  function mix(a,b,t){const p=x=>[parseInt(x.slice(1,3),16),parseInt(x.slice(3,5),16),parseInt(x.slice(5,7),16)],A=p(a),B=p(b);return`rgb(${A.map((v,i)=>Math.round(v+(B[i]-v)*t)).join(',')})`;}
+  function renderSmall(ctx,code,bounds,options={}){
+    const item=catalog.resolve(code,options),role=options.role||'neutral',tint=catalog.roles[role]||catalog.roles.neutral;
+    const press=options.press==null?(options.state==='pressed'?1:0):Math.max(0,Math.min(1,options.press));
+    const [w,h]=smallSize(code,bounds.h,options),x=bounds.x+(bounds.w-w)/2,y=bounds.y;
+    const mouse=item.shape==='mouse'||item.shape==='mouseSide',label=String(options.label??item.label),ink='#3a3428',lw=Math.max(1,h*.055);
+    ctx.save();if(options.state==='disabled')ctx.globalAlpha*=.4;else if(options.ghost)ctx.globalAlpha*=.62;
+    ctx.lineJoin='round';ctx.lineWidth=lw;ctx.strokeStyle=options.outline?(role==='neutral'?'#f1e5cc':tint):ink;
+    if(mouse){
+      const mx=x+lw,my=y+lw+press*h*.04,mw=w-2*lw,mh=h-2*lw,r=mw/2,split=my+mh*.42;
+      const body=()=>{ctx.beginPath();ctx.moveTo(mx,my+r);ctx.arc(mx+r,my+r,r,Math.PI,0);ctx.lineTo(mx+mw,my+mh-r);ctx.arc(mx+r,my+mh-r,r,0,Math.PI);ctx.closePath();};
+      if(!options.outline){body();ctx.fillStyle='#efe6d2';ctx.fill();}
+      const col=role==='neutral'?({Mouse0:'#f58b78',Mouse2:'#6abfe6',Mouse1:'#edc266',Mouse3:'#b7a1d5',Mouse4:'#b7a1d5'}[item.code]||tint):tint;
+      ctx.save();body();ctx.clip();ctx.fillStyle=col;
+      if(item.code==='Mouse0')ctx.fillRect(mx,my,mw/2,split-my);
+      else if(item.code==='Mouse2')ctx.fillRect(mx+mw/2,my,mw/2,split-my);
+      else if(item.code==='Mouse3'||item.code==='Mouse4')ctx.fillRect(mx,item.code==='Mouse4'?split:split+mh*.2,mw*.3,mh*.2);
+      ctx.restore();
+      body();ctx.stroke();ctx.beginPath();ctx.moveTo(mx,split);ctx.lineTo(mx+mw,split);ctx.moveTo(mx+r,my);ctx.lineTo(mx+r,split);ctx.stroke();
+      if(item.code==='Mouse1'){rr(ctx,mx+r-mw*.14,my+mh*.1,mw*.28,mh*.26,mw*.12);ctx.fillStyle=col;ctx.fill();ctx.stroke();}
+    }else{
+      const depth=h*.14*(1-press),cy=y+lw/2+h*.14*press,ch=h-lw-h*.14,r=Math.min(h*.22,5);
+      if(!options.outline){rr(ctx,x+lw/2,cy+depth,w-lw,ch,r);ctx.fillStyle='#8c8371';ctx.fill();ctx.stroke();}
+      rr(ctx,x+lw/2,cy,w-lw,ch,r);if(!options.outline){ctx.fillStyle=role==='neutral'?'#f3ead6':mix('#f3ead6',tint,.5);ctx.fill();}ctx.stroke();
+      const one=[...label].length<=1;let fs=one?h*.6:h*.42;ctx.font=`800 ${fs}px ${font}`;
+      while(ctx.measureText(label).width>w-h*.3&&fs>5){fs-=.5;ctx.font=`800 ${fs}px ${font}`;}
+      ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle=options.outline?(role==='neutral'?'#f1e5cc':tint):'#2a251c';ctx.fillText(label,x+w/2,cy+ch/2+fs*.04);
+    }
+    ctx.restore();
+    return{code:item.code,shape:item.shape,state:options.state==='disabled'?'disabled':press>.5?'pressed':'idle',role,label,fallback:!!item.fallback,small:true,width:w};
+  }
   function drawBinding(ctx,bind,action,bounds,options={}){
     const codes=bind.get(action);
     const preferred=codes.includes(options.lastUsedCode)&&options.lastUsedCode?options.lastUsedCode:
@@ -88,6 +131,6 @@
     const unit=(bounds.w-gap*(list.length-1))/weights.reduce((a,b)=>a+b,0);let x=bounds.x;
     return list.map((code,i)=>{const w=unit*weights[i],result=render(ctx,code,{x,y:bounds.y,w,h:bounds.h},options);x+=w+gap;return result;});
   }
-  const api={sizes,catalog,configure,load,loadFrom,ready,render,drawBinding,drawChord};
+  const api={sizes,catalog,configure,load,loadFrom,ready,render,renderSmall,smallSize,drawBinding,drawChord};
   if(typeof module!=='undefined')module.exports=api;else root.ClimbInputUI=api;
 })(typeof window!=='undefined'?window:globalThis);
