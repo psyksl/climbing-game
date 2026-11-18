@@ -2281,7 +2281,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
   const INK = '#f3ecd6', DIM = 'rgba(243,236,214,0.6)';
   const CHART_NEXT = { mini: 'full', full: 'off', off: 'mini' }, CHART_VERB = { mini: '펼치기', full: '끄기', off: '켜기' };
   // 손대지 않은 차트는 줄 수에 맞춰 아래쪽에 붙여 그린다(작게·펼침). 옮기거나 크기를 바꾸면 그 사각형(CHR)을 기억한다(다시 실행해도 남는다)
-  const CH_DEF = { mini: { x: 378, w: 438, bottom: 498, lane: 20, span: 4 }, full: { x: 14, w: 932, bottom: 498, lane: 50, span: 3 } }, CH_STORE = 'climbChart_v1', CHR = { mini: null, full: null };
+  const CH_DEF = { mini: { x: 378, w: 438, bottom: 498, lane: 24, span: 4 }, full: { x: 14, w: 932, bottom: 498, lane: 50, span: 3 } }, CH_STORE = 'climbChart_v1', CHR = { mini: null, full: null };
   try { const sv = JSON.parse(localStorage.getItem(CH_STORE) || 'null'); if (sv) for (const k of ['mini', 'full']) if (sv[k] && [sv[k].x, sv[k].y, sv[k].w, sv[k].h].every(Number.isFinite)) CHR[k] = { x: sv[k].x, y: sv[k].y, w: sv[k].w, h: sv[k].h }; } catch (e) {}
   const saveChart = () => { try { localStorage.setItem(CH_STORE, JSON.stringify(CHR)); } catch (e) {} };
   let chartMode = ['mini', 'full', 'off'].includes(G.params.get('chart')) ? G.params.get('chart') : 'mini', tlTop = 540;
@@ -2320,7 +2320,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
   function drawChart(master, mine, now) {
     const c = G.ctx, model = tlModel(master, mine), lanes = model.lanes.length ? model.lanes : [{ key: 'power', kind: 'hold', id: 'power', ...ACT.HOLD.power, m: [], i: [] }], n = lanes.length;
     const g = chartGeom(n), { r, m, big, laneH } = g, x = r.x, y = r.y, w = r.w, h = r.h, l = lesson(), ref = l ? '시범' : '이전 시도', mineT = l ? '내 입력' : '이번 시도', replaying = phase === 'replay';
-    const mh = big ? Math.min(24, laneH / 2 - 1) : Math.min(20, laneH - 2);                         // 시작 표식의 높이(고정 크기, 누른 시간과 상관없음)
+    const mh = big ? Math.min(24, laneH / 2 - 1) : Math.min(22, laneH - 2);                         // 시작 표식의 높이(고정 크기, 누른 시간과 상관없음)
     const labW = Math.max(big ? 64 : 34, Math.min(big ? 116 : 84, laneH * 2.2)), lab = labW + (big ? 34 : 14), ax = x + lab, aw = Math.max(40, w - lab - (big ? 22 : 8));
     let mwMax = mh; for (const L of lanes) for (const e of L.m.concat(L.i)) mwMax = Math.max(mwMax, keysW(eventKeys(L, e).codes, mh)); // 0초의 표식이 잘리지 않게 왼쪽을 비운다
     const pad = Math.min(72, mwMax) + 8, pps = Math.max(1, aw - pad - 10) / VIEW.span, top = y + m.head + m.axis, X = t => ax + pad + (t - VIEW.start) * pps;
@@ -2369,7 +2369,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     lanes.forEach((L, k) => { const ly = top + k * laneH, K = laneKeys(L);
       if (k % 2 === 0) { c.fillStyle = 'rgba(243,236,214,0.035)'; c.fillRect(ax, ly, aw, laneH); }
       // 줄 머리: 키캡만(그 줄에서 실제로 누른 키. 없으면 지금 설정 기준 안내를 흐리게)
-      const area = lab - (big ? 34 : 14), kh0 = Math.max(8, Math.min(laneH - 4, 44)), kh = Math.min(kh0, kh0 * area / keysW(K.codes, kh0)), kw = keysW(K.codes, kh);
+      const area = lab - (big ? 34 : 14), kh0 = Math.max(8, Math.min(laneH - (big ? 4 : 2), 44)), kh = Math.min(kh0, kh0 * area / keysW(K.codes, kh0)), kw = keysW(K.codes, kh);
       drawKeys(K.codes, x + (big ? 24 : 8) + (area - kw) / 2, ly + (laneH - kh) / 2, kh, { role: K.role, ghost: K.guide, where: 'chart', action: K.action, forceDown: replaying ? laneWasDown(L, now) : undefined, down: L.kind === 'tap' && L.limb < 2 ? BIND.codeDown(K.codes[0], G.input) && !footDown : undefined });
       c.save(); c.beginPath(); c.rect(ax, ly, aw, laneH); c.clip();
       if (big) { drawRow(L, L.m, 'm', ly + 1, laneH / 2 - 1, true); drawRow(L, L.i, 'i', ly + laneH / 2, laneH / 2 - 1, true); }
@@ -2401,18 +2401,18 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
   // 리플레이 도구: 차트 바로 위(자리가 없으면 아래)에 붙어 함께 움직인다. 재생 그림이 주 표시이고 키캡은 단축키를 알려 주는 작은 보조 표시다.
   // 시각을 옮기는 축은 차트의 시간축 하나다. 차트를 껐을 때만 도구 줄 안에 같은 재생 시계의 얇은 진행 축을 보인다
   function drawReplayTools() {
-    CH.tools = null; CH.bar = null; if (phase !== 'replay') return; const c = G.ctx, R = CH.rect, h = 28, d = CH_DEF.mini, w = R ? Math.max(R.w, 400) : 620, x = Math.max(4, Math.min(W - w - 4, R ? R.x : d.x + d.w - w)), y = R ? (R.y - h - 4 >= 4 ? R.y - h - 4 : Math.min(H - h - 40, R.y + R.h + 4)) : d.bottom - h;
+    CH.tools = null; CH.bar = null; if (phase !== 'replay') return; const c = G.ctx, R = CH.rect, h = 32, KH = 22, d = CH_DEF.mini, w = R ? Math.max(R.w, 500) : 660, x = Math.max(4, Math.min(W - w - 4, R ? R.x : d.x + d.w - w)), y = R ? (R.y - h - 4 >= 4 ? R.y - h - 4 : Math.min(H - h - 40, R.y + R.h + 4)) : d.bottom - h;
     CH.tools = { x, y, w, h }; if (R) tlTop = Math.min(tlTop, y - 2);
     c.beginPath(); G.roundRect(x, y, w, h, 8); c.fillStyle = 'rgba(28,35,29,0.95)'; c.fill(); c.strokeStyle = '#636a4b'; c.lineWidth = 1.5; c.stroke();
-    let bx = x + 6; const tool = (id, act, ic, o = {}) => { const kc = firstCode(act), kw = keyW(kc, 15), bw = (o.text ? G.textW(o.text, 10.5, 900) + 4 : 16) + kw + 14; hudBtn(id, bx, y + 4, bw, h - 8, null, { primary: o.primary });
+    let bx = x + 6; const tool = (id, act, ic, o = {}) => { const kc = firstCode(act), kw = keyW(kc, KH), bw = (o.text ? G.textW(o.text, 10.5, 900) + 4 : 16) + kw + 14; hudBtn(id, bx, y + 3, bw, h - 6, null, { primary: o.primary });
       if (o.text) G.text(o.text, bx + 7, y + h / 2 + 3.8, { size: 10.5, weight: 900, color: INK }); else icon(c, ic, bx + 13, y + h / 2, 5, o.primary ? '#1c231d' : INK);
-      drawKey(kc, bx + bw - kw - 5, y + (h - 15) / 2, 15, { where: 'replay', action: act, down: false }); bx += bw + 4; };
+      drawKey(kc, bx + bw - kw - 4, y + (h - KH) / 2, KH, { where: 'replay', action: act, down: false }); bx += bw + 4; };
     tool('rp_play', 'rpPlay', rp.playing ? 'pause' : 'play', { primary: true }); tool('rp_back', 'rpBack', 'back'); tool('rp_fwd', 'rpFwd', 'fwd'); tool('rp_speed', 'rpSpeed', null, { text: `${rp.speed}×` });
     const tt = `${(rp.t - rp.from).toFixed(2)} / ${(rp.to - rp.from).toFixed(2)}초`; G.text(tt, bx + 4, y + h / 2 + 4.2, { size: 11.5, weight: 900, color: INK }); bx += G.textW('00.00 / 00.00초', 11.5, 900) + 12;
-    let ex = x + w - 6; const tail = (id, act, ic) => { const kc = firstCode(act), kw = keyW(kc, 15), bw = 16 + kw + 14; ex -= bw; hudBtn(id, ex, y + 4, bw, h - 8); icon(c, ic, ex + 13, y + h / 2, 5, INK); drawKey(kc, ex + bw - kw - 5, y + (h - 15) / 2, 15, { where: 'replay', action: act, down: false }); ex -= 4; };
+    let ex = x + w - 6; const tail = (id, act, ic) => { const kc = firstCode(act), kw = keyW(kc, KH), bw = 16 + kw + 14; ex -= bw; hudBtn(id, ex, y + 3, bw, h - 6); icon(c, ic, ex + 13, y + h / 2, 5, INK); drawKey(kc, ex + bw - kw - 4, y + (h - KH) / 2, KH, { where: 'replay', action: act, down: false }); ex -= 4; };
     tail('retry', 'reset', 'retry'); tail('replay', 'replay', 'close');
     if (trk.full) { const t = `처음 ${Math.round(trk.maxS)}초까지 적혔습니다`; if (bx + G.textW(t, 9, 700) < ex) G.text(t, bx, y + h / 2 + 3.5, { size: 9, weight: 700, color: '#ff9c8a' }); }
-    else if (!R && ex - bx > 60) { const px = bx + 4, pw = ex - bx - 8, py = y + h / 2 - 2, f = (rp.t - rp.from) / Math.max(1e-6, rp.to - rp.from); CH.bar = { x: px, y: y + 4, w: pw, h: h - 8 }; // 차트가 꺼져 있을 때의 얇은 진행 축(같은 재생 시계)
+    else if (!R && ex - bx > 60) { const px = bx + 4, pw = ex - bx - 8, py = y + h / 2 - 2, f = (rp.t - rp.from) / Math.max(1e-6, rp.to - rp.from); CH.bar = { x: px, y: y + 3, w: pw, h: h - 6 }; // 차트가 꺼져 있을 때의 얇은 진행 축(같은 재생 시계)
       c.fillStyle = 'rgba(243,236,214,0.2)'; c.fillRect(px, py, pw, 4); c.fillStyle = '#ffd166'; c.fillRect(px, py, pw * f, 4); c.fillRect(px + pw * f - 1, py - 4, 2, 12); }
   }
   function drawChartPanel() { // 과제 중에는 시범과 나, 자유 연습에서는 이전 시도와 이번 시도. 리플레이에서는 내 기록 전체 위로 재생 시각이 지나간다
@@ -2519,14 +2519,14 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
   function drawResult() {
     if (phase !== 'ended' || !ended) return; const c = G.ctx, col = ended.kind === 'ok' ? '#7dff9a' : ended.kind === 'fail' ? '#ff9c8a' : INK;
     const btns = [['retry', 'reset', '다시하기', true], ['replay', 'replay', '리플레이', false]].concat(lesson() ? [['next', 'lessonNext', lessonI === LESSON.LIST.length - 1 ? '자유 연습' : '다음 과제', false]] : []);
-    const w = Math.max(250, btns.reduce((a, q) => a + G.textW(q[2], 11.5, 800) + keyW(firstCode(q[1]), 16) + 18 + 6, 18)), tw = w - 24; // 너비는 단추 줄에 맞춘다
+    const w = Math.max(250, btns.reduce((a, q) => a + G.textW(q[2], 11.5, 800) + keyW(firstCode(q[1]), 20) + 18 + 6, 18)), tw = w - 24; // 너비는 단추 줄에 맞춘다
     const lines = [{ t: ended.sub, c: INK }].concat(ended.reason ? wrap(ended.reason, tw, 10.5, 700).map(t => ({ t, c: '#ffd9a0' })) : []).concat(ended.more && ended.hint ? wrap(ended.hint, tw, 10, 600).map(t => ({ t, c: DIM })) : []);
     const h = 30 + lines.length * 15 + (ended.hint ? 18 : 4) + 36; if (!ended.pos || ended.pos.h !== h) ended.pos = { ...placeCard(w, h), h }; const x = ended.pos.x, y = ended.pos.y;
     ended.rect = { x, y, w, h }; c.beginPath(); G.roundRect(x, y, w, h, 10); c.fillStyle = 'rgba(28,35,29,0.96)'; c.fill(); c.strokeStyle = '#636a4b'; c.lineWidth = 1.5; c.stroke(); c.fillStyle = col; c.beginPath(); G.roundRect(x, y + 10, 3, 18, 2); c.fill();
     G.text(ended.title, x + 12, y + 24, { size: 15, weight: 900, color: col }); let yy = y + 30; for (const q of lines) { G.text(q.t, x + 12, yy + 11, { size: 10.5, weight: 700, color: q.c }); yy += 15; }
     if (ended.hint) { const t = ended.more ? '접기' : '자세히', bw = G.textW(t, 9.5, 800) + 14; hudBtn('more', x + 12, yy + 2, bw, 14, t, { size: 9.5 }); yy += 18; } else yy += 4;
-    let bx = x + 12; for (const [id, act, text, primary] of btns) { const kc = firstCode(act), kw = keyW(kc, 16), off = id === 'replay' && trk.frames.length < 2, bw = G.textW(text, 11.5, 800) + kw + 18; hudBtn(id, bx, yy + 4, bw, 26, null, { primary, off });
-      G.text(text, bx + 7, yy + 21, { size: 11.5, weight: 800, color: primary ? '#1c231d' : off ? DIM : INK }); drawKey(kc, bx + bw - kw - 5, yy + 9, 16, { where: 'result', action: act, disabled: off, down: false }); bx += bw + 6; }
+    let bx = x + 12; for (const [id, act, text, primary] of btns) { const kc = firstCode(act), kw = keyW(kc, 20), off = id === 'replay' && trk.frames.length < 2, bw = G.textW(text, 11.5, 800) + kw + 18; hudBtn(id, bx, yy + 4, bw, 26, null, { primary, off });
+      G.text(text, bx + 7, yy + 21, { size: 11.5, weight: 800, color: primary ? '#1c231d' : off ? DIM : INK }); drawKey(kc, bx + bw - kw - 5, yy + 7, 20, { where: 'result', action: act, disabled: off, down: false }); bx += bw + 6; }
   }
   // ---- 아래 키 안내(조작 D안): 키캡 = 지금 설정된 입력(실제로 누르고 있는 칸 우선), 옆 = 동작 이름과 그 손발의 상태. 손 선택 2번에서는 지금 추천된 손의 색을 쓴다
   function drawKeyBar() {
