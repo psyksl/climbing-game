@@ -1,4 +1,4 @@
-// v0.8 영상 겸 실제 브라우저 확인: 관절 몸으로 매달리기·좌우 체중 이동·손 교차·도약 후 잡기·턱 위로 올라서기.
+// v0.8 영상 겸 실제 브라우저 확인: 관절 몸으로 매달리기·좌우 체중 이동·손 교차·도약 후 잡기·팔 힘으로 허리까지 올라가기.
 // 실제 브라우저에 키·마우스 입력을 넣는다(사람 손이 아니라 스크립트 입력). 사용: node test/record_v08.js
 'use strict';
 const { chromium } = require('playwright'), fs = require('fs'), path = require('path');
@@ -27,18 +27,18 @@ async function clip(name, station, act) {
     await pg.mouse.move(sx(210), sy(298), { steps: 8 }); await pg.waitForTimeout(300); await pg.mouse.click(sx(210), sy(298)); await pg.waitForTimeout(1600); let e = await st(pg);
     check('이어서 왼손을 더 왼쪽으로: 교차가 풀림', e.modes[0] === 'grip@A' && e.hands[0] < e.hands[1] && !e.dead, `왼손 ${Math.round(e.hands[0])}, 오른손 ${Math.round(e.hands[1])}`);
   });
-  // 2) 발판에서 오른손을 먼저 보내고(세 점) Space로 모아 뛰어 잡기 → W로 턱 위로 올라서기
+  // 2) 발판에서 오른손을 먼저 보내고(세 점) Space로 모아 뛰어 잡기 → W로 허리까지 올라가 버티기(턱 위에 올라서지는 않는다)
   await clip('v08_joint_jump_mantle', 3, async pg => {
     await pg.mouse.move(sx(400), sy(330), { steps: 8 }); await pg.waitForTimeout(300); await pg.mouse.move(sx(545), sy(348), { steps: 12 }); await pg.waitForTimeout(400);
     await pg.mouse.click(sx(545), sy(348), { button: 'right' }); await pg.waitForTimeout(900);
-    await pg.keyboard.down('Space'); await pg.waitForTimeout(120); await pg.mouse.click(sx(545), sy(348)); await pg.waitForTimeout(580); await pg.keyboard.up('Space'); await pg.waitForTimeout(1800); let a = await st(pg);
+    await pg.keyboard.down('Space'); await pg.waitForTimeout(120); await pg.mouse.click(sx(545), sy(348)); await pg.waitForTimeout(380); await pg.keyboard.up('Space'); await pg.waitForTimeout(1800); let a = await st(pg);
     check('도약 후 건너편 턱을 잡음', !a.dead && (a.modes[1] === 'grip@B' || a.modes[0] === 'grip@B'), a.modes.join(','));
     if (a.modes[0] !== 'grip@B' || a.modes[1] !== 'grip@B') { const i = a.modes[0] === 'grip@B' ? 1 : 0; await pg.mouse.move(sx(520), sy(346), { steps: 6 }); await pg.mouse.click(sx(520), sy(346), { button: i ? 'right' : 'left' }); await pg.waitForTimeout(1200); }
     // 두 손이 거의 같은 자리를 잡았으면 왼손을 어깨 폭만큼 왼쪽으로 옮겨 잡는다(어깨 폭이 있는 몸은 두 손을 모은 채로는 올라서기 어렵다)
     a = await st(pg); if (Math.abs(a.hands[0] - a.hands[1]) < 24) { const tx = Math.max(480, Math.min(a.hands[0], a.hands[1]) - 40); await pg.mouse.move(sx(tx), sy(346), { steps: 8 }); await pg.waitForTimeout(200); await pg.mouse.click(sx(tx), sy(346)); await pg.waitForTimeout(1300); }
     a = await st(pg); check('올라서기 전에 두 손을 벌려 잡음(12px 이상)', a.modes[0] === 'grip@B' && a.modes[1] === 'grip@B' && Math.abs(a.hands[0] - a.hands[1]) >= 12, `손 x ${Math.round(a.hands[0])}/${Math.round(a.hands[1])}`);
     await pg.mouse.move(sx(600), sy(240), { steps: 8 }); await pg.keyboard.down('KeyW'); await pg.waitForTimeout(3000); await pg.keyboard.up('KeyW'); await pg.waitForTimeout(1500); let b = await st(pg);
-    check('W로 턱 위로 올라섬(가슴이 턱 위 40px 이상)', !b.dead && 345 - b.chest[1] >= 40, `가슴 턱 위 ${Math.round(345 - b.chest[1])}px · ${b.modes.join(',')}`);
+    check('W로 팔 힘으로 허리까지 올라가 버팀(가슴이 턱 위 40px 이상), 잡은 턱 위에 올라서지 않음', !b.dead && 345 - b.chest[1] >= 40 && !b.modes[2].endsWith('@B') && !b.modes[3].endsWith('@B'), `가슴 턱 위 ${Math.round(345 - b.chest[1])}px · ${b.modes.join(',')}`);
   });
   console.log('실패', fail); process.exit(fail ? 1 : 0);
 })();

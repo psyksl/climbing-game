@@ -10,10 +10,10 @@ for (const body of ['base', 'prop']) { PH.setBody(body); const B = body === 'bas
     const s = r.s, dx = s.p[1].x - h0[0], up = h0[1] - s.p[1].y;
     check(`${B} · 자세 ${st} · ${key === 'moveLeft' ? 'A' : 'D'}: 엉덩이가 ${sg < 0 ? '왼' : '오른'}쪽으로, 조금 들림, 두 발 디딘 채, 꼬임 없음`, sg * dx >= 5 && up >= 0 && up <= 60 && s.limb[2].mode === 'plant' && s.limb[3].mode === 'plant' && !crossed && !s.dead,
       `옆 ${Math.round(dx)}px · 위 ${Math.round(up)}px · 발 ${s.limb[2].mode}/${s.limb[3].mode}${crossed ? ' · 꼬임' : ''}`); }
-  // 2) 건너편 턱에 두 손 → W 3초: 가슴이 턱 위로 40px 이상, 턱 위에 디딘 발 1개 이상
+  // 2) 건너편 턱에 두 손 → W 3초: 팔 힘으로 가슴이 턱 위 40px 이상(허리가 턱 높이)까지 올라가 버틴다. 손으로 잡은 턱에 발을 올려 서지는 않는다(v0.8.1, 사용자 지적)
   { const r = run({ c: [490, 417], hands: [[480, 345], [500, 345]] }, a => { a.io.mx = 560; a.io.my = 220; a.hold('moveUp', a.s.t < 3); }, 5, {});
     const onB = [2, 3].filter(i => r.s.limb[i].mode === 'plant' && r.s.limb[i].poly === 'B').length;
-    check(`${B} · W로 턱 위에 올라서기`, !r.s.dead && 345 - r.s.p[0].y >= 40 && onB >= 1, `가슴 턱 위 ${Math.round(345 - r.s.p[0].y)}px · 턱 위 발 ${onB}개`); }
+    check(`${B} · W로 허리까지 올라가 버팀(턱 위에 올라서지 않음)`, !r.s.dead && 345 - r.s.p[0].y >= 40 && onB === 0 && r.s.limb[0].mode === 'grip' && r.s.limb[1].mode === 'grip', `가슴 턱 위 ${Math.round(345 - r.s.p[0].y)}px · 엉덩이 턱 위 ${Math.round(345 - r.s.p[1].y)}px · 잡은 턱 위 발 ${onB}개`); }
   // 3) 시작 자세 1~5에서 3초: 두 발이 디뎌져 있으면 왼발이 오른발보다 오른쪽에 있지 않다
   for (const st of [1, 2, 3, 4, 5]) { let crossed = false; run(st, a => { const s = a.s; if (s.limb[2].mode === 'plant' && s.limb[3].mode === 'plant' && s.p[4].x > s.p[5].x + 4) crossed = true; }, 3, {});
     check(`${B} · 자세 ${st}: 자동 발이 꼬이지 않음`, !crossed); }

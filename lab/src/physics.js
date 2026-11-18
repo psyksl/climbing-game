@@ -22,9 +22,10 @@ const PH = (() => {
     JOINT: 0, SW: 0, HW: 0,            // SW·HW: 어깨·골반 연결점이 몸통 중심선에서 옆으로 떨어진 거리(반폭)
     JCAP: 1.5,                          // 관절 힘 곡선의 상한(관절이 90°일 때 힘의 배수)
     ARM_K: 1, LEG_K: 1,                 // 관절 몸에서 팔·다리 기준 힘 배율
-    HIP_OUT: 150, HIP_IN: 45,           // 허벅지가 몸통 아래 방향에서 바깥쪽·안쪽으로 벗어날 수 있는 각도(바깥쪽은 무릎을 가슴 옆까지 올리는 높은 디딤 포함)
+    HIP_OUT: 130, HIP_IN: 45,           // 허벅지가 몸통 아래 방향에서 바깥쪽·안쪽으로 벗어날 수 있는 각도
     SW_RATE: 5,                         // 팔꿈치가 꺾이는 쪽을 바꾸는 빠르기(1/초). 뒤집힘 없이 팔을 돌려 넘기는 동작
     STAND_V: 60, STAND_ARM: 0.25,        // 서 있기: 발이 몸 아래에 있는데 팔이 체중의 STAND_ARM배 넘게 지고 있으면 다리를 STAND_V(px/s)로 펴서 발이 체중을 받게 한다
+    ELEV_ONE: 20, ELEV_BOTH: 2, ELEV_V: 110, // 어깨 올림: 한 팔만 위로 뻗거나 잡으면 그쪽 어깨가 ELEV_ONE px까지 올라간다(몸통이 옆으로 늘어나는 것). 두 팔을 다 올리면 ELEV_BOTH까지만. 빠르기 ELEV_V px/s
     ROT_C: 70, ROT_MAX: 0.4,            // 매달렸을 때 어깨·몸통 근육이 몸통이 도는 것을 줄이는 힘(감쇠 계수, 가슴·엉덩이에 걸리는 짝힘의 상한 = 체중의 배수)
     CROUCH_V: 160,                      // 웅크릴 때 다리가 접히는 최대 빠르기(px/s). 다리가 체중을 받친 채 내려간다(한꺼번에 접혀 몸이 떨어지지 않게)
   };
@@ -34,8 +35,8 @@ const PH = (() => {
     prop: { A: 68, L: 98, LMIN: 30, name: '새 비율 (팔 68·다리 98)', short: '새 비율 몸' },
     // 관절 몸: 팔은 어깨에서, 다리는 골반 양옆에서 나온다. 팔꿈치·무릎은 위·아래 마디 길이가 같은 관절이다.
     // 다리: 무릎은 벽 때문에 옆으로만 벌어지므로 가장 많이 접은 각도(35°)가 가장 짧은 길이를 정한다(2 × 마디 × sin(각/2) ≈ 29).
-    // 팔: 팔꿈치가 화면 앞뒤로 빠질 수 있어, 정면에서 본 손–어깨 거리는 손이 겨드랑이 옆에 올 때(약 8px)까지 줄어든다(턱 위로 올라설 때 어깨가 손 옆을 지나간다).
-    joint: { A: 66, L: 96, AMIN: 8, LMIN: 29, SW: 18, HW: 8, JOINT: 1, ARM_K: 0.8, LEG_K: 1, name: '관절 몸 (어깨 폭 36·골반 폭 16·팔 66·다리 96)', short: '관절 몸' },
+    // 팔: 팔꿈치가 화면 앞뒤로 빠질 수 있어, 정면에서 본 손–어깨 거리는 0까지 줄어든다(팔로 눌러 올라갈 때 손이 어깨 바로 앞을 지나간다. 8px로 두었더니 손 간격에 따라 어깨가 손 옆에 걸려 몸이 옆으로 튕겼다).
+    joint: { A: 66, L: 96, AMIN: 0, LMIN: 29, SW: 18, HW: 8, JOINT: 1, ARM_K: 0.8, LEG_K: 1, name: '관절 몸 (어깨 폭 36·골반 폭 16·팔 66·다리 96)', short: '관절 몸' },
   };
   let body = 'base';
   function setBody(k) { const b = BODIES[k]; if (!b) return false; body = k; // 다음 create()부터 적용
@@ -125,12 +126,13 @@ const PH = (() => {
   function rootOf(s, lb) {
     const b = s.p[lb.root];
     if (!lb.k) return b;
-    const c = s.p[0], hp = s.p[1], k = lb.k;
-    return { x: b.x - k * (c.y - hp.y), y: b.y + k * (c.x - hp.x), vx: b.vx - k * (c.vy - hp.vy), vy: b.vy + k * (c.vx - hp.vx), fx: 0, fy: 0, proxy: true };
+    // 어깨 올림(lb.elev px)은 연결점을 몸통 축 방향(머리 쪽)으로 더 옮긴다: + j·(가슴 − 엉덩이), j = elev/T. 이것도 1차식이라 같은 방식으로 나눌 수 있다
+    const c = s.p[0], hp = s.p[1], k = lb.k, j = (lb.elev || 0) / C.T;
+    return { x: b.x - k * (c.y - hp.y) + j * (c.x - hp.x), y: b.y + k * (c.x - hp.x) + j * (c.y - hp.y), vx: b.vx - k * (c.vy - hp.vy) + j * (c.vx - hp.vx), vy: b.vy + k * (c.vx - hp.vx) + j * (c.vy - hp.vy), fx: 0, fy: 0, proxy: true };
   }
   function flushRoot(s, lb, r) { // 연결점에 모인 힘을 가슴·엉덩이에 나눈다: 밑점에는 힘 그대로, 가슴·엉덩이에는 몸통을 돌리는 짝힘 ±k·Rᵀ(F)
     if (!r.proxy) return;
-    const b = s.p[lb.root], c = s.p[0], hp = s.p[1], k = lb.k, tx = k * r.fy, ty = -k * r.fx;
+    const b = s.p[lb.root], c = s.p[0], hp = s.p[1], k = lb.k, j = (lb.elev || 0) / C.T, tx = k * r.fy + j * r.fx, ty = -k * r.fx + j * r.fy;
     b.fx += r.fx; b.fy += r.fy; c.fx += tx; c.fy += ty; hp.fx -= tx; hp.fy -= ty;
   }
   const rootPos = (s, i) => rootOf(s, s.limb[i]);
@@ -155,6 +157,13 @@ const PH = (() => {
     return { x, y, h, len, rx: r.x, ry: r.y };
   }
   // 팔꿈치가 가고 싶은 쪽: 몸 기준 바깥쪽·아래쪽. 두 쪽의 차이가 뚜렷할 때만(6px) 바꾸고, 바꿀 때는 SW_RATE 빠르기로 넘어간다
+  // 어깨 올림: 손이 어깨보다 위(몸통 축 방향으로 팔 길이의 20% 넘게)에 있으면 그 팔은 "올린 팔"이다.
+  // 한 팔만 올렸으면 그쪽 어깨가 많이 올라가고(반대쪽으로 몸통이 기울며 늘어나는 것), 두 팔을 다 올렸으면 조금만 올라간다. 그래서 한 팔로 뻗으면 두 팔보다 멀리 닿는다.
+  function updateElev(s, dt) {
+    const c = s.p[0], hp = s.p[1], ax = (c.x - hp.x) / C.T, ay = (c.y - hp.y) / C.T;
+    const up = [0, 1].map(i => { const lb = s.limb[i], e = s.p[lb.end], bx = c.x - lb.k * (c.y - hp.y), by = c.y + lb.k * (c.x - hp.x); return lb.mode !== 'free' && (e.x - bx) * ax + (e.y - by) * ay > 0.2 * lb.max; });
+    for (const i of [0, 1]) { const lb = s.limb[i], want = !up[i] ? 0 : up[1 - i] ? C.ELEV_BOTH : C.ELEV_ONE; lb.elev = (lb.elev || 0) + Math.max(-C.ELEV_V * dt, Math.min(C.ELEV_V * dt, want - (lb.elev || 0))); }
+  }
   function updateSwivel(s, dt) {
     const c = s.p[0], hp = s.p[1], ax = (c.x - hp.x) / C.T, ay = (c.y - hp.y) / C.T; // 몸통 축(엉덩이→가슴)
     for (const lb of s.limb) {
@@ -188,11 +197,11 @@ const PH = (() => {
       return { lb, e, mx: Math.max(lb.max * (lb.arm ? (press ? Math.min(am, 0.95) : am) : lm), Math.min(cur, lb.max)), mn: Math.min(lb.arm ? lb.min + 1 : lb.min * 1.15, cur) }; }); // 이미 한계 밖이면 지금 길이까지는 허용
     const hard = last => {
       { const dx = cx - hx, dy = cy - hy, l = Math.hypot(dx, dy) || 1e-6, d = (l - C.T) / l, ws = wc + wh; cx -= dx * d * wc / ws; cy -= dy * d * wc / ws; hx += dx * d * wh / ws; hy += dy * d * wh / ws; }
-      for (const a of att) { const lb = a.lb, k = lb.k, ac = lb.arm ? 1 : 0, ah = 1 - ac;
-        const rx = (lb.arm ? cx : hx) - k * (cy - hy), ry = (lb.arm ? cy : hy) + k * (cx - hx), dx = a.e.x - rx, dy = a.e.y - ry, l = Math.hypot(dx, dy) || 1e-6;
+      for (const a of att) { const lb = a.lb, k = lb.k, j = (lb.elev || 0) / C.T, ac = (lb.arm ? 1 : 0) + j, ah = (lb.arm ? 0 : 1) - j;
+        const rx = (lb.arm ? cx : hx) - k * (cy - hy) + j * (cx - hx), ry = (lb.arm ? cy : hy) + k * (cx - hx) + j * (cy - hy), dx = a.e.x - rx, dy = a.e.y - ry, l = Math.hypot(dx, dy) || 1e-6;
         const over = l > a.mx ? l - a.mx : l < a.mn ? l - a.mn : 0; if (!over) continue;
         if (last) { if (lb.arm) hitArm++; else hitLeg++; }
-        const ux = dx / l, uy = dy / l, lam = over / (wc * (ac + k * k) + wh * (ah + k * k)), qx = k * uy, qy = -k * ux;
+        const ux = dx / l, uy = dy / l, lam = over / (wc * (ac * ac + k * k) + wh * (ah * ah + k * k)), qx = k * uy, qy = -k * ux;
         cx += lam * wc * (ac * ux + qx); cy += lam * wc * (ac * uy + qy); hx += lam * wh * (ah * ux - qx); hy += lam * wh * (ah * uy - qy); }
       if (C.JOINT) for (const a of att) { const lb = a.lb; if (lb.arm) continue; // 고관절 가동 범위: 디딘 다리가 범위를 넘으면 몸통을 그 발 쪽으로 되돌린다
         const k = lb.k, ax = (cx - hx) / C.T, ay = (cy - hy) / C.T, rx = hx - k * (cy - hy), ry = hy + k * (cx - hx), dx = a.e.x - rx, dy = a.e.y - ry;
@@ -214,7 +223,7 @@ const PH = (() => {
       hard(false); hard(it >= 28);
     }
     const g = [null, null, null, null];
-    for (const a of att) { const lb = a.lb, k = lb.k, r = rootOf(s, lb); g[lb.i] = [(lb.arm ? cx : hx) - k * (cy - hy) - r.x, (lb.arm ? cy : hy) + k * (cx - hx) - r.y]; }
+    for (const a of att) { const lb = a.lb, k = lb.k, j = (lb.elev || 0) / C.T, r = rootOf(s, lb); g[lb.i] = [(lb.arm ? cx : hx) - k * (cy - hy) + j * (cx - hx) - r.x, (lb.arm ? cy : hy) + k * (cx - hx) + j * (cy - hy) - r.y]; }
     return { c: [cx, cy], hp: [hx, hy], g, hitArm, hitLeg };
   }
 
@@ -423,14 +432,14 @@ const PH = (() => {
         const r = rootOf(s, lb), e = p[lb.end], pin = lb.mode === 'grip';
         const dx = e.x - r.x, dy = e.y - r.y, l = Math.hypot(dx, dy) || 1e-6;
         const mx = lb.max + lb.ext, mn = lb.min - lb.cmp, over = l > mx ? l - mx : l < mn ? l - mn : 0;
-        if (over && !lb.k) {
+        if (over && !lb.k && !lb.elev) {
           const wr = 1 / r.m, we = pin ? 0 : 1 / e.m, ws = wr + we, d = over / l;
           r.x += dx * d * wr / ws; r.y += dy * d * wr / ws; e.x -= dx * d * we / ws; e.y -= dy * d * we / ws;
           if (pin) lb.lam += over;
           if (lb.mode === 'plant' && l > mx) lb.taut = true;
         } else if (over) { // 연결점이 몸통 옆에 있을 때: 길이 보정을 가슴·엉덩이에 나눈다(연결점 = 밑점 + k·R(가슴 − 엉덩이)의 기울기대로)
-          const ux = dx / l, uy = dy / l, k = lb.k, ac = lb.arm ? 1 : 0, ah = 1 - ac, wc = 1 / c.m, wh = 1 / hp.m, we = pin ? 0 : 1 / e.m;
-          const lam = over / (wc * (ac + k * k) + wh * (ah + k * k) + we), qx = k * uy, qy = -k * ux; // (qx, qy) = k·Rᵀ(u)
+          const ux = dx / l, uy = dy / l, k = lb.k, j = (lb.elev || 0) / C.T, ac = (lb.arm ? 1 : 0) + j, ah = (lb.arm ? 0 : 1) - j, wc = 1 / c.m, wh = 1 / hp.m, we = pin ? 0 : 1 / e.m;
+          const lam = over / (wc * (ac * ac + k * k) + wh * (ah * ah + k * k) + we), qx = k * uy, qy = -k * ux; // (qx, qy) = k·Rᵀ(u)
           c.x += lam * wc * (ac * ux + qx); c.y += lam * wc * (ac * uy + qy); hp.x += lam * wh * (ah * ux - qx); hp.y += lam * wh * (ah * uy - qy);
           e.x -= lam * we * ux; e.y -= lam * we * uy;
           if (pin && over > 0) lb.lam += over; // 팔이 가장 짧은 길이에 닿아 눌리는 것(어깨가 손 옆을 지나갈 때)은 손을 밀어내는 힘으로 치지 않는다
@@ -502,7 +511,7 @@ const PH = (() => {
     const h = dt / C.SUB;
     for (let k = 0; k < C.SUB; k++) substep(s, inp, h);
     s.t += dt;
-    if (C.JOINT) updateSwivel(s, dt);
+    if (C.JOINT) { updateSwivel(s, dt); updateElev(s, dt); }
     for (const lb of s.limb) {
       const e = s.p[lb.end];
       if (lb.mode === 'grip') { // 손이 버티는 방향 검사: 면을 누르는 방향에서 한계각을 넘게 당기면 미끄러진다
@@ -532,6 +541,6 @@ const PH = (() => {
     for (const q of s.p) { L += q.m * ((q.x - cx) * (q.vy - py / m) - (q.y - cy) * (q.vx - px / m)); E += 0.5 * q.m * (q.vx * q.vx + q.vy * q.vy) - q.m * C.G * q.y; }
     return { px, py, L, E, cx, cy, m };
   }
-  return { C, M, W, MASS, GRIP, STATIONS, BODIES, setBody, getBody, rootPos, jointPos, jointCap, hipAngle, solvePose, makeWorld, create, step, diag, nearestGrip, nearestSurface };
+  return { rect, C, M, W, MASS, GRIP, STATIONS, BODIES, setBody, getBody, rootPos, jointPos, jointCap, hipAngle, solvePose, makeWorld, create, step, diag, nearestGrip, nearestSurface };
 })();
 if (typeof module !== 'undefined') module.exports = PH;

@@ -8,9 +8,10 @@ let seed = 7; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; re
 const gauss = () => { let u = 0; for (let i = 0; i < 12; i++) u += rnd(); return u - 6; };
 const react = () => Math.max(0.15, 0.238 + 0.053 * gauss());
 // 한 번 실행: policy(api)가 매 프레임 키·마우스 상태를 정한다
-function run(station, policy, T = 5, opt = {}, variant) {
+function run(station, policy, T = 5, opt = {}, variant, extra) { // extra: 시험용으로 벽에 더할 지형 [[id, type, x, y, w, h], ...]
   Object.assign(CTRL.OPT, { autoFeet: true, autoShift: true, assist: true, handMode: 1, assistRange: 'near', autoLoad: true }, opt); // autoLoad: 기존 측정과 이어지도록 시험 기본값은 자동 싣기 켬. 끈 것은 opt로 따로 잰다
-  const s = PH.create(PH.makeWorld(variant), station), ctl = CTRL.make('intent'), held = new Set();
+  const world = PH.makeWorld(variant); if (extra) for (const r of extra) world.push(PH.rect(...r));
+  const s = PH.create(world, station), ctl = CTRL.make('intent'), held = new Set();
   let pressedNow = new Set(), footNow = false;
   // 입력은 동작 이름으로 준다(키 설정과 무관). 1번 방식: sendL/sendR, 2번 방식: sendBest/sendOther
   const io = { mx: 0, my: 0, down: id => held.has(id) || (id === 'foot' && footNow), pressed: id => pressedNow.has(id), pressedShift: () => false };

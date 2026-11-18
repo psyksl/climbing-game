@@ -1,4 +1,4 @@
-// 3단계 관절 몸 점검: 다섯 동작(매달리기·좌우 체중 이동·손 교차·도약 후 한 손 잡기·턱 위로 올라서기)을 돌리며
+// 3단계 관절 몸 점검: 다섯 동작(매달리기·좌우 체중 이동·손 교차·도약 후 한 손 잡기·팔 힘으로 허리까지 올라가기)을 돌리며
 // 관절 뒤집힘·과도한 늘어남·관통을 센다. 오차 없는 고정 입력(사람 결과 아님). 사용: node test/joint_check.js [-v]
 'use strict';
 const PH = require('../src/physics.js'), { run } = require('./intent.js');
@@ -49,6 +49,17 @@ const SC = {
     if (a.m.t0 === undefined) { if (s.t < 0.5 || Math.abs(s.p[1].vx) > 8) return; a.m.t0 = s.t; }
     const t = s.t - a.m.t0; a.space(t < hold); if (!a.m.k && t >= 0.09) { a.click(0); a.m.k = 1; }
     if (a.m.catchT === undefined && s.limb[1].mode === 'grip') a.m.catchT = s.t; }, 5.5, { ...O, assistRange: 'ledge' }, variant),
+  // 위로 뛰어 잡기: 3번 자세에서 머리 위 h px 높이에 시험용 턱 H를 두고 겨눈다. mode 'two' = 두 손을 다 놓고 뻗음, 'one' = 오른손을 먼저 위로 보내고 왼손만 놓음(한 팔 도약)
+  // kind 'space' = Space만, 'w' = 떼기 직전부터 W(팔로 끌어 올림), 'sw' = 모으는 동안 S로 가라앉았다가 W
+  up: (mode, kind, h, hold = 0.7) => { const res = {};
+    const r = run(3, a => { const s = a.s, t = s.t - 1.1; a.io.mx = s.p[0].x; a.io.my = 300 - h + 3;
+      if (mode === 'one' && !a.m.r && s.t > 0.1) { a.m.r = 1; a.click(1); return; }
+      if (t < 0) return; a.space(t < hold); if (!a.m.k && t >= 0.09) { a.click(0); if (mode === 'two') a.click(1); a.m.k = 1; }
+      if (kind === 'sw') a.hold('moveDown', t >= 0.1 && t < hold - 0.03);
+      if (kind !== 'space') a.hold('moveUp', t >= hold - 0.03 && t < hold + 0.6);
+      if (t > hold) res.top = Math.min(res.top ?? 1e9, s.p[2].y, s.p[3].y);
+    }, 4.5, { ...O, assistRange: 'ledge' }, undefined, [['H', 'ledge', 247, 300 - h, 120, 12]]);
+    res.ok = !r.s.dead && [0, 1].some(i => r.s.limb[i].mode === 'grip' && r.s.limb[i].anchor.poly === 'H'); return res; },
   mantle: () => go({ c: [490, 417], hands: [[480, 345], [500, 345]] }, a => { a.io.mx = 560; a.io.my = 220; a.hold('moveUp', a.s.t < 3); }, 5),
 };
 module.exports = { SC, monitor, go };
@@ -67,8 +78,16 @@ if (require.main === module) {
       rows.push(`${hold}초 ${ok ? '잡음' : s.dead ? '떨어짐' : '못 잡음'}`); if (ok && (!best || hold === 0.7)) best = r; }
     console.log('   ' + rows.join(' · '));
     check('잡고 1.5초 넘게 버티는 모은 시간이 있음, 관절 이상 없음', !!best && best.mon.clean(), best ? `${modes(best.s)} · ${best.mon.text()}` : ''); }
-  console.log('5) 잡은 턱 위로 몸을 끌어 올리고 발 올리기 (W 3초)');
+  console.log('5) 잡은 턱에서 팔 힘으로 허리까지 올라가 버티기 (W 3초). 손으로 잡은 턱에 발을 올려 서지는 않는다');
   { const r = SC.mantle(), s = r.s, onB = [2, 3].filter(i => s.limb[i].mode === 'plant' && s.limb[i].poly === 'B').length;
-    check('가슴이 턱 위 40px 이상, 턱 위에 디딘 발 1개 이상', !s.dead && 345 - s.p[0].y >= 40 && onB >= 1 && r.mon.clean(), `가슴 턱 위 ${Math.round(345 - s.p[0].y)}px · 턱 위 발 ${onB}개 · ${modes(s)} · ${r.mon.text()}`); }
+    check('가슴이 턱 위 40px 이상, 두 손 잡은 채, 잡은 턱 위에 발 없음', !s.dead && 345 - s.p[0].y >= 40 && onB === 0 && s.limb[0].mode === 'grip' && s.limb[1].mode === 'grip' && r.mon.clean(), `가슴 턱 위 ${Math.round(345 - s.p[0].y)}px · 엉덩이 턱 위 ${Math.round(345 - s.p[1].y)}px · ${modes(s)} · ${r.mon.text()}`); }
+  console.log('6) 위로 뛰어 잡기: 한 팔과 두 팔, Space만과 W(팔로 끌어 올리기) 비교 — 잡은 가장 높은 턱(잡고 있던 턱에서 위로 px, 5px 간격)');
+  { const best = (mode, kind) => { let b = 0; for (let h = 150; h <= 250; h += 5) if (SC.up(mode, kind, h).ok) b = h; return b; };
+    const t = {}; for (const m of ['two', 'one']) for (const k of ['space', 'w', 'sw']) t[m + k] = best(m, k);
+    console.log(`   두 팔: Space만 +${t.twospace} · Space+W +${t.twow} · Space+S→W +${t.twosw}   |   한 팔: Space만 +${t.onespace} · Space+W +${t.onew} · Space+S→W +${t.onesw}`);
+    check('한 팔 도약이 두 팔 도약보다 높은 턱을 잡는다(Space만, 5px 이상)', t.onespace >= t.twospace + 5, `+${t.onespace} vs +${t.twospace}`);
+    check('W를 누르며 뛰면(팔로 끌어 올림) Space만보다 10px 이상 높은 턱을 잡는다 — 두 팔', t.twow >= t.twospace + 10, `+${t.twow} vs +${t.twospace}`);
+    check('W를 누르며 뛰면 Space만보다 10px 이상 높은 턱을 잡는다 — 한 팔', t.onew >= t.onespace + 10, `+${t.onew} vs +${t.onespace}`);
+    check('S로 가라앉았다가 W를 눌러도 Space만보다 낮아지지 않는다', t.twosw >= t.twospace && t.onesw >= t.onespace, `두 팔 +${t.twosw}, 한 팔 +${t.onesw}`); }
   PH.setBody('base'); process.exit(fail ? 1 : 0);
 }
