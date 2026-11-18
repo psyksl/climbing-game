@@ -27,12 +27,12 @@ const LESSON = (() => {
       tips: ['건너편 턱을 겨누고 우클릭 → 오른손이 먼저 뻗는다', 'Space를 누른 채 좌클릭 → 왼손이 "놓을 손"이 된다', 'Space를 0.5초쯤에 뗀다. 덜 모으면 못 미치고 더 모으면 지나친다'],
       steps: [[0.3, 'aim', 545, 348], [0.7, 'press', 'sendR'], [1.7, 'down', 'power'], [1.82, 'press', 'sendL'], [2.2, 'up', 'power']], T: 4.2,
       done: s => grips(s, 1, 'B') },
-    { id: 'onearm', name: '한 팔로 높이 뛰어 잡기', station: 3, extra: [['H', 'ledge', 247, 105, 120, 12]],
+    { id: 'onearm', name: '한 팔로 높이 뛰어 잡기', station: 3, view: 40, extra: [['H', 'ledge', 247, 105, 120, 12]],
       goal: '머리 위 높은 턱을 한 팔로 잡는다. 두 손을 다 놓고 뛰면 닿지 않는 높이다',
       tips: ['높은 턱을 겨누고 우클릭 → 오른손을 먼저 올린다', 'Space를 누른 채 좌클릭(왼손만 놓음), 0.8초 모았다 뗀다', '한 팔만 뻗으면 어깨가 올라가 더 높이 닿는다'],
       steps: [[0.3, 'aim', 307, 108], [0.7, 'press', 'sendR'], [1.7, 'down', 'power'], [1.82, 'press', 'sendL'], [2.5, 'up', 'power']], T: 4.5,
       done: s => grips(s, 1, 'H') },
-    { id: 'wjump', name: '온몸 도약: 떼면서 W', station: 3, extra: [['H', 'ledge', 247, 95, 120, 12]],
+    { id: 'wjump', name: '온몸 도약: 떼면서 W', station: 3, view: 40, extra: [['H', 'ledge', 247, 95, 120, 12]],
       goal: '더 높은 턱. Space를 떼는 순간 W를 누르고 있어 팔로도 몸을 끌어 올린다',
       tips: ['한 팔 도약과 같은 순서로 준비한다', 'Space를 떼기 직전에 W를 누르고, 뜬 뒤까지 누르고 있는다', '왼팔이 끝까지 당기고 밀어 준 뒤 놓인다'],
       steps: [[0.3, 'aim', 307, 98], [0.7, 'press', 'sendR'], [1.7, 'down', 'power'], [1.82, 'press', 'sendL'], [2.47, 'down', 'moveUp'], [2.5, 'up', 'power'], [3.1, 'up', 'moveUp']], T: 4.5,
@@ -55,9 +55,11 @@ const LESSON = (() => {
       for (const id of HOLD) { const on = io.down(id); if (on && rec.open[id] === undefined) { rec.open[id] = t; if (rec.t0 === null) rec.t0 = t; } if (!on && rec.open[id] !== undefined) { rec.bars.push({ id, a: rec.open[id], b: t }); delete rec.open[id]; } }
       for (const sd of sent || []) { rec.taps.push({ limb: sd.i, t, phase: sd.phase }); if (rec.t0 === null) rec.t0 = t; } };
     rec.all = () => rec.bars.concat(Object.keys(rec.open).map(id => ({ id, a: rec.open[id], b: rec.end, live: true })));
-    rec.zero = () => { const p = rec.all().filter(b => b.id === 'power').sort((x, y) => x.a - y.a)[0]; return p ? p.a : rec.t0 ?? 0; }; // 차트의 0초 = Space를 처음 누른 순간(없으면 첫 입력)
+    rec.zero = () => rec.t0 ?? 0; // 차트의 0초 = 첫 입력(키를 누르거나 손을 보낸 순간)
     return rec;
   }
-  return { LIST, player, recorder, HOLD };
+  // 시범에서 조준점 옮기기를 뺀 첫 입력의 시각(유령을 내 첫 입력에 맞춰 출발시킬 때 쓴다)
+  const firstInput = lesson => (lesson.steps.find(st => st[1] !== 'aim') || [0])[0];
+  return { LIST, player, recorder, HOLD, firstInput };
 })();
 if (typeof module !== 'undefined') module.exports = LESSON;

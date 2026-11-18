@@ -31,6 +31,7 @@ const BIND = (() => {
     { id: 'demo', g: '연습', label: '시범 보기 (지금 연습 과제의 시범을 재생)', def: ['KeyP', null] },
     { id: 'lessonNext', g: '연습', label: '다음 연습 과제 (끝까지 가면 자유 연습)', def: ['KeyO', null] },
     { id: 'chart', g: '연습', label: '입력 기록 차트 켬·끔', def: ['KeyT', null] },
+    { id: 'ghost', g: '연습', label: '시범 유령 켬·끔 (내 첫 입력에 맞춰 시범 캐릭터가 흐릿하게 함께 움직임)', def: ['KeyU', null] },
     { id: 'reset', g: '실험실', label: '같은 자세로 다시', def: ['KeyR', null] },
     { id: 'scheme', g: '실험실', label: '조작 방식 바꾸기 (D·A·B·C안)', def: ['Tab', null] },
     { id: 'st1', g: '실험실', label: '시작 자세 1 · 두 손 매달리기', def: ['Digit1', null] },

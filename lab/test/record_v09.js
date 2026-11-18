@@ -2,7 +2,7 @@
 'use strict';
 const { chromium } = require('playwright'), fs = require('fs'), path = require('path');
 const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), out = path.join(__dirname, '..', 'recordings');
-const sx = x => x + 30, sy = y => y - 130;
+const sx = x => x + 30, sy = y => y - 40; // 6번 과제는 높은 턱이 보이게 화면 세로 기준이 40이다(lessons.js의 view)
 (async () => {
   const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 960, height: 540 }, recordVideo: { dir: out, size: { width: 960, height: 540 } } });
   const pg = await ctx.newPage(); await pg.goto(url); await pg.waitForTimeout(500);
