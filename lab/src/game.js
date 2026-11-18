@@ -33,7 +33,8 @@
     const foot = BIND.down('foot', inp);
     for (const id of CTRL.OPT.handMode === 1 ? ['sendL', 'sendR'] : ['sendBest', 'sendOther']) if (BIND.pressed(id, inp)) {
       const code = BIND.get(id).find(c => c && (c.startsWith('Mouse') ? inp.clicks.some(k => 'Mouse' + k.button === c) : inp.pressed(c)));
-      add(`${foot || BIND.pressedWithShift(id, inp) ? BIND.first('foot') + '+' : ''}${BIND.name(code)} (${BIND.BY[id].label.split(' ·')[0]})`); }
+      const pre = BIND.down('markHand', inp) || BIND.pressed('markHand', inp);
+      add(pre ? `${BIND.first('markHand')}+${BIND.name(code)} (놓을 손 지정/취소)` : `${foot || BIND.pressedWithShift(id, inp) ? BIND.first('foot') + '+' : ''}${BIND.name(code)} (${BIND.BY[id].label.split(' ·')[0]})`); }
     for (const [id, t] of [['moveUp', '위'], ['moveDown', '아래'], ['moveLeft', '왼쪽'], ['moveRight', '오른쪽']]) if (BIND.pressed(id, inp)) add(`${BIND.first(id)} (몸통 ${t})`);
     const sp = BIND.down('power', inp); if (sp !== spWas) add(`${BIND.first('power')} ${sp ? '누름 (모으기)' : '뗌 (던지기)'}`); spWas = sp;
     if (BIND.pressed('cancel', inp)) add(`${BIND.first('cancel')} (취소)`);
@@ -212,11 +213,9 @@
       if (mode === 'intent' && !bot) {
         const st = ctrl.st;
         if (i < 2 && st.mark[i]) { G.circle(e.x, e.y, 16 + Math.sin(S.t * 18) * 2, null, '#ffb020', 3);
-          if (!(i === 1 && st.mark[0])) { const both = st.mark[0] && st.mark[1], lx = both ? (p[2].x + p[3].x) / 2 : e.x, ly = both ? Math.min(p[2].y, p[3].y) : e.y;
-            G.text(both ? '두 손 · 도약 때 놓음' : '도약 때 놓음', lx, ly - 46, { size: 11, weight: 800, align: 'center', color: '#7a4a00', stroke: 'rgba(255,255,255,0.85)', strokeW: 3 }); } }
+          } 
         if (i >= 2 && st.auto[i] && !st.auto[i].swing) { const a = st.auto[i]; G.circle(a.sx, a.sy, 6, null, 'rgba(40,40,40,0.55)', 2); }
-        if (st.act[i] && lb.mode === 'reach' && (st.phase === 'charge' || st.phase === 'throw')) { G.circle(e.x, e.y, 15, null, '#29d3e8', 3); G.text('이동 중', e.x, e.y + 26, { size: 11, weight: 800, align: 'center', color: '#0b5d68', stroke: 'rgba(255,255,255,0.85)', strokeW: 3 }); }
-        if (st.shift && st.shift.i === i) G.text('체중 옮기는 중', e.x, e.y - 18, { size: 11, weight: 800, align: 'center', color: '#333', stroke: 'rgba(255,255,255,0.85)', strokeW: 3 });
+        if (st.act[i] && lb.mode === 'reach' && (st.phase === 'charge' || st.phase === 'throw')) { G.circle(e.x, e.y, 15, null, '#29d3e8', 3); }
       }
       if (lb.mode === 'reach') {
         const r = p[lb.root];
@@ -268,9 +267,31 @@
     if (st.move) { // 몸통 이동(WASD) 방향과 막힌 이유
       const ch = S.p[0], ex = ch.x + st.move.dx * 34, ey = ch.y + st.move.dy * 34, a = Math.atan2(st.move.dy, st.move.dx), col = st.move.blocked ? '#ff5a5a' : '#111';
       G.line(ch.x, ch.y, ex, ey, col, 4); G.line(ex, ey, ex - 10 * Math.cos(a - 0.5), ey - 10 * Math.sin(a - 0.5), col, 4); G.line(ex, ey, ex - 10 * Math.cos(a + 0.5), ey - 10 * Math.sin(a + 0.5), col, 4);
-      if (st.move.blocked) G.text(`더 못 감 — ${st.move.blocked} ${st.move.blocked === '손 각도' ? '한계(더 가면 미끄러짐)' : '길이 한계'}`, ch.x, ch.y - 40, { size: 12, weight: 800, align: 'center', color: '#a01010', stroke: 'rgba(255,255,255,0.9)', strokeW: 3 });
     }
-    if (charge && (st.mark[0] || st.mark[1])) { const t = `${BIND.first('cancel')}: 놓기 지정 모두 취소`; G.text(t, ax, ay + 52, { size: 11, weight: 800, align: 'center', color: '#333', stroke: 'rgba(255,255,255,0.85)', strokeW: 3 }); }
+  }
+  // 왼쪽 아래 상태 칸: 모으기 세기, 놓을 손·이동 중인 손, 체중 이동, 몸통이 막힌 이유, 최근 경고를 한곳에 모은다(캐릭터 주변에 글이 겹치지 않게)
+  function drawStatus() {
+    const st = ctrl.st, rows = [], L2 = i => ['왼손', '오른손'][i];
+    const marks = [0, 1].filter(i => st.mark[i]), moving = [0, 1].filter(i => st.act[i] && S.limb[i].mode === 'reach');
+    let meter = null;
+    if (st.phase === 'charge' || st.phase === 'throw') {
+      const full = marks.length > 0 || !(S.limb[0].mode === 'grip' || S.limb[1].mode === 'grip');
+      const pw = st.phase === 'charge' ? Math.max(0.15, Math.min(1, (st.pt - 0.04) / CTRL.P.FULL_CHARGE)) : st.power;
+      meter = { pw: full ? pw : Math.min(pw, CTRL.P.ROCK_MAX), act: S.act, text: st.phase === 'throw' ? '던지는 중' : full ? '모으는 중 → 떼면 뜀' : '모으는 중 → 놓을 손이 없어 몸만 실음' };
+    }
+    if (marks.length) rows.push({ t: `놓을 손: ${marks.map(L2).join('·')} (주황 고리) · ${BIND.first('cancel')} 모두 취소`, c: '#ffb020' });
+    if (moving.length && (st.phase === 'charge' || st.phase === 'throw')) rows.push({ t: `이동 중: ${moving.map(L2).join('·')} (하늘색 고리)`, c: '#29d3e8' });
+    if (st.shift) rows.push({ t: `체중 옮기는 중 — 곧 ${L2(st.shift.i)}을 뗌`, c: '#e8e8e4' });
+    if (st.move && st.move.blocked) rows.push({ t: `몸통: 더 못 감 — ${st.move.blocked} ${st.move.blocked === '손 각도' ? '한계(더 가면 미끄러짐)' : '길이 한계'}`, c: '#ff8a8a' });
+    const warns = fx.filter(f => f.kind === 'text').slice(-3);
+    for (const f of warns) rows.push({ t: f.text, c: '#ff8a8a', a: Math.min(1, f.t * 2) });
+    if (!rows.length && !meter) return;
+    const lh = 18, w = Math.max(250, ...rows.map(r => G.textW(r.t, 12, 700) + 16)), h = rows.length * lh + (meter ? 30 : 0) + 8, x = 10, y = H - 32 - h;
+    G.panel(x, y, w, h, 'rgba(10,12,16,0.82)');
+    let yy = y + 6;
+    if (meter) { const c = G.ctx; G.text(meter.text, x + 8, yy + 11, { size: 12, weight: 800, color: '#ffd166' }); c.fillStyle = '#ffd166'; c.fillRect(x + 8, yy + 16, 150 * meter.pw, 6); c.fillStyle = '#7dffb0'; c.fillRect(x + 8, yy + 24, 150 * meter.act, 3);
+      G.text('세기 · 근육', x + 164, yy + 25, { size: 10, weight: 600, color: 'rgba(255,255,255,0.6)' }); yy += 30; }
+    for (const r of rows) { G.ctx.globalAlpha = r.a ?? 1; G.text(r.t, x + 8, yy + 13, { size: 12, weight: 700, color: r.c }); G.ctx.globalAlpha = 1; yy += lh; }
   }
   function drawLog() {
     const l = plog, avg = l.lag.length ? l.lag.reduce((a, b) => a + b, 0) / l.lag.length : 0, mx = l.lag.length ? Math.max(...l.lag) : 0, slowN = l.lag.filter(x => x > 0.15).length;
@@ -346,7 +367,8 @@
     drawWorld(c); drawBody(c);
     for (const f of fx) {
       if (f.kind === 'ring') G.circle(f.x, f.y, 12 + (0.4 - f.t) * 40, null, `rgba(255,255,255,${Math.min(1, f.t * 3)})`, 3);
-      else { c.globalAlpha = Math.min(1, f.t * 2); const w = G.textW(f.text, 13, 800) + 14; G.panel(f.x + 14, f.y - 30, w, 22, 'rgba(120,16,16,0.9)'); G.text(f.text, f.x + 21, f.y - 14, { size: 13, weight: 800 }); c.globalAlpha = 1; }
+      else if (f.t > 1.0) G.circle(f.x, f.y, 10, null, '#ff4a4a', 2.5); // 경고 글은 왼쪽 아래 상태 칸으로, 그 자리에는 작은 빨간 고리만
+      else if (false) { c.globalAlpha = Math.min(1, f.t * 2); const w = G.textW(f.text, 13, 800) + 14; G.panel(f.x + 14, f.y - 30, w, 22, 'rgba(120,16,16,0.9)'); G.text(f.text, f.x + 21, f.y - 14, { size: 13, weight: 800 }); c.globalAlpha = 1; }
     }
     if (jump && jump.off) { // 이륙 순간의 속도와 그 뒤 가슴이 지나간 길
       const o = jump.off; for (const q of trail) G.circle(q[0], q[1], 2, 'rgba(20,20,20,0.45)');
@@ -360,14 +382,6 @@
       for (const sg of [-1, 1]) G.line(swing.ax + Math.sin(sg * pk) * (r - 8), swing.ay + Math.cos(pk) * (r - 8), swing.ax + Math.sin(sg * pk) * (r + 8), swing.ay + Math.cos(pk) * (r + 8), '#111', 3);
       const tr = swing.prev ? (swing.peak > swing.prev + 1 ? ' ▲ 커지는 중' : swing.peak < swing.prev - 1 ? ' ▼ 줄어드는 중' : ' ─') : '';
       G.text(`반동 ${Math.round(Math.max(swing.peak, swing.cur))}°${tr}`, swing.ax, swing.ay - 14, { size: 13, weight: 800, align: 'center', color: '#111', stroke: 'rgba(255,255,255,0.7)', strokeW: 3 });
-    }
-    if (mode === 'intent' && !bot && (ctrl.st.phase === 'charge' || ctrl.st.phase === 'throw')) { // 모으기 표시: 근육 활성도와 던질 세기
-      const st = ctrl.st, ch = S.p[0], full = st.mark[0] || st.mark[1] || !(S.limb[0].mode === 'grip' || S.limb[1].mode === 'grip');
-      const pw = st.phase === 'charge' ? Math.max(0.15, Math.min(1, (st.pt - 0.04) / CTRL.P.FULL_CHARGE)) : st.power, shown = full ? pw : Math.min(pw, CTRL.P.ROCK_MAX);
-      const hp2 = S.p[1], mx = hp2.x - 140, my = hp2.y - 8; // 엉덩이 왼쪽 옆
-      G.panel(mx, my, 96, 26, 'rgba(0,0,0,0.6)');
-      c.fillStyle = '#ffd166'; c.fillRect(mx + 4, my + 4, 88 * shown, 7); c.fillStyle = '#7dffb0'; c.fillRect(mx + 4, my + 15, 88 * S.act, 5);
-      G.text(st.phase === 'throw' ? '던지는 중' : full ? '모으는 중 → 떼면 뜀' : '모으는 중 → 반동(놓을 손 없음)', mx + 48, my - 5, { size: 11, weight: 800, align: 'center', color: '#111', stroke: 'rgba(255,255,255,0.85)', strokeW: 3 });
     }
     if (mode === 'intent' && !bot && !S.dead && !ui) drawIntentHelp(c);
     if (!S.dead && (bot || mode !== 'keys')) { G.line(last.cx - 9, last.cy, last.cx + 9, last.cy, '#111', 2); G.line(last.cx, last.cy - 9, last.cx, last.cy + 9, '#111', 2); G.circle(last.cx, last.cy, 5, null, '#fff', 1.5); }
@@ -402,10 +416,11 @@
     for (let i = 0; i < 4; i++) { const m = S.limb[i].mode, on = m === 'reach'; key(c, 10 + i * 126, LIMB[i], on ? (mode === 'intent' && i >= 2 && !ctrl.st.manual[i] ? '자동' : '움직이는 중') : m === 'free' ? '힘 빠짐' : '붙음', on, COL[i], kname[i]); }
     key(c, 514, mode === 'intent' ? '모으기·던지기' : '힘주기', '', last.power, '#ffd166', mode === 'intent' ? B1('power') : sp);
     if (mode === 'intent' && recent.length && !ui) recent.forEach((r, k) => { const y = H - 40 - (recent.length - 1 - k) * 20, w = G.textW(r.text, 12, 800) + 14; G.ctx.globalAlpha = Math.min(1, r.t * 2); G.panel(W - 12 - w, y - 15, w, 19, 'rgba(10,12,16,0.8)'); G.text(r.text, W - 12 - w + 7, y, { size: 12, weight: 800, color: '#ffd166' }); G.ctx.globalAlpha = 1; });
+    if (mode === 'intent' && !bot && !ui) drawStatus();
     if (showLog && mode === 'intent') drawLog();
     if (ui) drawSettings();
     if (remap) { G.panel(W / 2 - 220, 200, 440, 70, 'rgba(20,30,60,0.95)', '#fff'); G.text(`키 다시 지정 (${remap.i + 1}/${remap.list.length}) — Esc 그만`, W / 2, 226, { size: 13, align: 'center', weight: 600 }); G.text(`「${CTRL.LABEL[remap.list[remap.i]]}」에 쓸 키를 누르세요`, W / 2, 252, { size: 18, align: 'center', weight: 800 }); }
-    G.text('실험 빌드 v0.6.1', W - 10, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
+    G.text('실험 빌드 v0.6.2', W - 10, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
     if (endT > 0) G.banner('매트에 떨어짐 — 바로 다시', why && (!air || why.t >= air.t - 0.05) ? why.text : hint() ? '도약이 다음 턱에 이어지지 않았다' : air && air.gap > 0 && air.gap < 1e8 ? `손이 잡을 곳에 닿지 못했다 — 가장 가까웠을 때 ${Math.ceil(air.gap)}px 모자람` : air && air.gap <= 0 ? '손이 닿는 거리였지만 잡지 않았다(버튼을 떼야 잡는다)' : '붙잡은 곳 없이 떨어졌다', 'fail', 380);
     if (endT > 0 && hint()) { const t = hint(), w = G.textW(t, 14, 800) + 28; G.panel(W / 2 - w / 2, 458, w, 28, 'rgba(255,214,102,0.96)'); G.text(t, W / 2, 477, { size: 14, weight: 800, align: 'center', color: '#111' }); }
     else if (S.won) G.banner('목표 도달!', `${S.t.toFixed(1)}초 · 시도 ${tries} — R 또는 스페이스로 다시`, 'win', 400);

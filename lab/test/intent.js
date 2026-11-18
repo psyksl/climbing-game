@@ -40,17 +40,21 @@ const SC = {
   // 사람이 거리에 맞춰 누르는 시간을 고른다고 본다: 겨눈 곳(턱 왼쪽 끝에서 ax px)에 맞는 시간 ± 0.07초(가정), 조준 오차 ±12px
   dyno: (o = {}) => { const ax = o.ax ?? 14, ex = 12 * gauss(), ey = 6 * gauss(), t0 = 0.3 + 0.3 * rnd(), rc = react();
     const plan = Math.max(0.04, 0.09 + 0.03 * gauss()); // Space를 누르고 곧바로 손을 클릭하는 것은 반응이 아니라 계획된 연속 동작으로 본다(가정)
-    const ideal = o.hold ?? (ax < 30 ? 0.14 : ax < 55 ? 0.17 : 0.45), hold = Math.max(plan + 0.04, ideal + 0.07 * gauss());
+    gauss.cached = gauss();
+    // 거리에 맞는 모으기 시간(v0.6.2 성공 지도의 가운데)
+    const ideal = o.hold ?? (ax < 30 ? 0.2 : ax < 55 ? 0.34 : 0.55), hold = Math.max(plan + 0.04, ideal + 0.07 * gauss.cached);
     return { station: 3, T: 3.5, variant: o.variant, opt: o.opt, policy: a => { const [bx, by] = BT(a.s); a.io.mx = bx + ax + ex; a.io.my = by + 3 + ey; const t = a.s.t - t0;
+      if (o.pre) { if (!a.m.k && t >= -0.4) { a.hold('markHand', true); a.click(0); a.click(1); a.m.k = 1; } else a.hold('markHand', false); a.space(t >= 0 && t < Math.max(0.05, ideal + 0.07 * gauss.cached)); return; } // 미리 지정: Space 전에 C+클릭
       a.space(t >= 0 && t < hold); if (!a.m.k && t >= plan) { a.click(0); a.click(1); a.m.k = 1; } },
       ok: r => !r.s.dead && onB(r.s) >= 1 }; },
   // 사용자 동작: 왼손·두 발로 버티고 오른손을 먼저 보내 둔 뒤, (반동 n번) 모았다 던지며 오른손으로 건너편을 잡는다.
   // 반동이 있을 때 사람은 고정된 박자가 아니라 몸의 흔들림에 맞춰 누르고 뗀다고 본다: 엉덩이가 목표 쪽 끝에 이르면 누르고(모으기 = 뒤로 싣기),
   // 반대쪽 끝에서 돌아서는 순간 뗀다(던지기). 그 순간을 맞히는 오차는 ±0.05초(가정, 반응이 아니라 박자 예측)
-  reach3: (o = {}) => { const ax = o.ax ?? 70, ex = 12 * gauss(), ey = 6 * gauss(), t0 = 0.4 + 0.2 * rnd(), rc = react(), rocks = o.rocks || 0, hold = Math.max(rc + 0.08, (o.hold ?? 0.5) + 0.12 * gauss());
+  reach3: (o = {}) => { const ax = o.ax ?? 70, ex = 12 * gauss(), ey = 6 * gauss(), t0 = 0.4 + 0.2 * rnd(), rc = react(), rocks = o.rocks || 0, hold = Math.max(rc + 0.08, (o.hold ?? 0.75) + 0.12 * gauss()); // +70px을 겨눌 때 맞는 모으기 시간(v0.6.2 성공 지도: 0.6초 이상)
     return { station: 3, T: 5, opt: o.opt, policy: a => { const [bx, by] = BT(a.s); a.io.mx = bx + ax + ex; a.io.my = by + 3 + ey; const t = a.s.t - t0, m = a.m, s = a.s, vx = s.p[1].vx;
       if (!m.r) { m.r = 1; a.click(1); m.n = 0; m.st = 'wait'; }
       if (t < 0) return;
+      if (rocks === 0 && o.pre) { if (!m.k) { a.hold('markHand', true); a.click(0); m.k = 1; return; } a.hold('markHand', false); a.space(t >= 0.25 && t < 0.25 + hold); return; } // 미리 지정
       if (rocks === 0) { a.space(t < hold); if (!m.k && t >= rc) { a.click(0); m.k = 1; } return; }
       // 반동: 짧게 한 번 눌렀다 떼서 몸을 목표 쪽으로 흔든 뒤, 끝에서 누르고 반대쪽 끝에서 뗀다
       if (m.st === 'wait') { m.st = 'tap'; m.ts = t; }
@@ -73,11 +77,13 @@ if (require.main === module) {
   for (const range of ['near', 'ledge']) {
     const nm = range === 'near' ? '커서 근처(±' + CTRL.P.CATCH_SPAN + 'px)' : '턱 전체';
     console.log(`-- 잡기 보조 범위: ${nm}`);
-    show('③ 두 손 다이노 · 턱 가까운 끝을 겨누고 짧게(0.14초)', rate(() => SC.dyno({ ax: 14, opt: { assistRange: range } }), N));
-    show('③ 두 손 다이노 · 턱 가운데를 겨누고 길게(0.45초)', rate(() => SC.dyno({ ax: 75, opt: { assistRange: range } }), N));
-    show('③ 두 손 다이노 · 가까운 끝을 겨누고 길게(세기 잘못 고름)', rate(() => SC.dyno({ ax: 14, hold: 0.45, opt: { assistRange: range } }), N));
+    show('③ 두 손 다이노 · 턱 가까운 끝을 겨누고 짧게(0.2초)', rate(() => SC.dyno({ ax: 14, opt: { assistRange: range } }), N));
+    show('③ 두 손 다이노 · 턱 가운데를 겨누고 길게(0.55초)', rate(() => SC.dyno({ ax: 75, opt: { assistRange: range } }), N));
+    show('③ 두 손 다이노 · 가까운 끝을 겨누고 길게(0.6초, 세기 잘못 고름)', rate(() => SC.dyno({ ax: 14, hold: 0.6, opt: { assistRange: range } }), N));
     show('세 점 → 오른손 멀리 잡기 · 반동 없이', rate(() => SC.reach3({ rocks: 0, opt: { assistRange: range } }), N));
     show('세 점 → 오른손 멀리 잡기 · 반동 1번', rate(() => SC.reach3({ rocks: 1, opt: { assistRange: range } }), N));
+    show('세 점 → 오른손 멀리 잡기 · 왼손을 미리 지정(C+클릭)한 뒤 Space만', rate(() => SC.reach3({ rocks: 0, pre: true, opt: { assistRange: range } }), N));
+    show('③ 두 손 다이노 · 두 손 미리 지정 뒤 Space만 짧게(0.2초, 가까운 끝)', rate(() => SC.dyno({ ax: 14, pre: true, opt: { assistRange: range } }), N));
   }
   show('③ 두 손 다이노 · 닿으면 잡기 끔(초록 고리를 보고 클릭)', rate(() => { const sc = SC.dyno({ ax: 75 }), pol = sc.policy; sc.opt = { assist: false };
     sc.policy = a => { pol(a); const s = a.s; for (const i of [0, 1]) { const inR = s.limb[i].mode === 'reach' && CTRL.inRange(s, i); if (inR && a.m['seen' + i] === undefined) { a.m['seen' + i] = s.t; a.m['rc' + i] = react(); }

@@ -168,10 +168,11 @@ const CTRL = (() => {
       st.sent.length = 0; st.miss.length = 0;
       // (보조 켜고 끄기는 화면 쪽에서 항상 받는다: 떨어지는 중에도 놓치지 않게)
       if (io.pressed('cancel')) {
-        if (st.phase === 'charge' && (st.mark[0] || st.mark[1])) { st.mark = [false, false]; st.last = '놓을 손 지정 모두 취소'; }
+        if (st.mark[0] || st.mark[1]) { st.mark = [false, false]; st.last = '놓을 손 지정 모두 취소'; }
         else for (let i = 0; i < 4; i++) if (st.act[i]) { st.act[i] = false; st.manual[i] = false; inp.drop[i] = true; }
       }
       updateRec(s, io, dt);
+      for (const i of [0, 1]) if (st.mark[i] && s.limb[i].mode !== 'grip') st.mark[i] = false;
       // Space: 누르고 있으면 힘 모으기, 떼면 던지기
       const sp = io.down('power');
       const spDown = sp && !st.spPrev; st.spPrev = sp;
@@ -182,7 +183,7 @@ const CTRL = (() => {
         if (!st.jump) st.power = Math.min(st.power, P.ROCK_MAX); st.phase = 'throw'; st.pt = 0; st.tAnchor = [c.x, c.y]; } // 짧게 누르면 작은 반동, 오래 누르면 힘껏 던지기
       // 클릭: 손발 하나에 대한 의도
       // 입력 → 손발: 1번 방식은 입력마다 손이 정해져 있고, 2번 방식은 누르는 순간의 추천 손(또는 그 반대 손)으로 확정한다
-      const footMod = io.down('foot');
+      const footMod = io.down('foot') || io.pressed('foot');
       const ins = OPT.handMode === 1 ? [['sendL', 0], ['sendR', 1]] : [['sendBest', 'best'], ['sendOther', 'other']];
       for (const [id, which] of ins) {
         if (!io.pressed(id)) continue;
@@ -192,6 +193,8 @@ const CTRL = (() => {
         if (which === 'other') side = 1 - (foot ? st.rec.foot : st.rec.hand) % 2;
         const i = foot ? 2 + side : side, lb = s.limb[i];
         st.sent.push({ i, id, t: s.t, mode: lb.mode, phase: st.phase });
+        const pre = io.down('markHand') || io.pressed('markHand'); // 같은 프레임에 눌렀다 뗀 경우도 잡는다 // 놓을 손 미리 지정: 누른 채 손 입력이면 손을 보내지 않고 지정만 한다(뛰기 전까지 계속 잡고 있음)
+        if (pre && i < 2 && st.phase !== 'throw') { if (lb.mode === 'grip') { st.mark[i] = !st.mark[i]; st.last = st.mark[i] ? `${['왼손', '오른손'][i]}: 도약할 때 놓음(미리 지정)` : `${['왼손', '오른손'][i]}: 놓기 지정 취소`; } continue; }
         if (st.phase === 'charge' && i < 2 && lb.mode === 'grip') { st.mark[i] = !st.mark[i]; st.last = st.mark[i] ? `${['왼손', '오른손'][i]}: 도약할 때 놓음` : `${['왼손', '오른손'][i]}: 놓기 지정 취소`; continue; }
         if (lb.mode === 'grip' || lb.mode === 'plant') {
           const other = 1 - i;
@@ -206,7 +209,9 @@ const CTRL = (() => {
       const anyFoot = s.limb[2].mode === 'plant' || s.limb[3].mode === 'plant', anyHold = s.limb.some(l => l.mode === 'grip' || l.mode === 'plant');
       if (st.phase === 'charge') { st.pt += dt; inp.power = true; const A = st.anchor; if (P.CROUCH_MODE === 'down') { inp.px = A[0]; inp.py = A[1] + P.CROUCH; } else { inp.px = A[0] - ux * P.CROUCH * 0.6; inp.py = A[1] + P.CROUCH * 0.8; } } // 누른 순간의 자리 기준으로 목표 쪽 반대·아래로 몸을 싣는다
       else if (st.phase === 'throw') {
-        st.pt += dt; inp.power = true; const jumpT = st.jump, D = jumpT ? P.THROW_D : 10 + (P.THROW_D - 10) * st.power ** 3, A = st.tAnchor, ax = io.mx - A[0], ay = io.my - A[1], al = Math.hypot(ax, ay) || 1; inp.px = A[0] + ax / al * D; inp.py = A[1] + ay / al * D; // 뗀 순간의 자리 기준 inp.gain = jumpT ? P.GAIN0 + (1 - P.GAIN0) * st.power : 0.3 + 0.7 * st.power; // 뛸 때는 다리를 끝까지 펴되, 미는 빠르기를 모은 정도에 비례시킨다
+        st.pt += dt; inp.power = true; const jumpT = st.jump, D = jumpT ? P.THROW_D : 10 + (P.THROW_D - 10) * st.power ** 3, A = st.tAnchor, ax = io.mx - A[0], ay = io.my - A[1], al = Math.hypot(ax, ay) || 1; inp.px = A[0] + ax / al * D; inp.py = A[1] + ay / al * D; // 뗀 순간의 자리 기준
+        inp.gain = jumpT ? P.GAIN0 + (1 - P.GAIN0) * st.power : 0.3 + 0.7 * st.power; // 뛸 때는 다리를 끝까지 펴되, 미는 빠르기를 모은 정도에 비례시킨다
+        st.lastGain = inp.gain; // 시험용: 실제로 물리에 넘긴 값
         for (const i of [0, 1]) if (st.mark[i] && gripping(s, i)) { // 표시한 손은 게임이 놓는 순간을 고른다: 팔이 몸을 붙잡기 시작하거나, 늦어도 REL_MAX초
           const restrain = st.pt > 0.04 && s.limb[i].tens > 0.15 * PHX.W, feetOff = !anyFoot;
           if (st.pt >= P.REL_MIN && (restrain || feetOff || st.pt >= P.REL_MAX)) { st.mark[i] = false; detach(s, i); }

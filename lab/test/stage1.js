@@ -27,7 +27,7 @@ function jump(charge) { const s = PH.create(PH.makeWorld(), 3); for (let i = 0; 
   console.log('\n건너편 턱을 오른쪽으로 옮긴 거리(px):', dxs.join(' '));
   // 물리로 얼마나 멀리 가는지를 보려는 표라 잡기 보조는 턱 전체, 길게 모으기로 잰다(겨냥 정확도 영향 제외)
   const L = { assistRange: 'ledge' };
-  for (const [n, mk] of [['두 손 다이노', () => SC.dyno({ ax: 75, hold: 0.45, opt: L })], ['세 점 → 오른손, 반동 없이', () => SC.reach3({ rocks: 0, opt: L })], ['세 점 → 오른손, 반동 1번', () => SC.reach3({ rocks: 1, opt: L })], ['세 점 → 오른손, 반동 2번', () => SC.reach3({ rocks: 2, opt: L })]])
+  for (const [n, mk] of [['두 손 다이노(0.8초 가득 모음)', () => SC.dyno({ ax: 75, hold: 0.8, opt: L })], ['세 점 → 오른손, 반동 없이', () => SC.reach3({ rocks: 0, opt: L })], ['세 점 → 오른손, 반동 1번', () => SC.reach3({ rocks: 1, opt: L })], ['세 점 → 오른손, 반동 2번', () => SC.reach3({ rocks: 2, opt: L })]])
     console.log('  ' + n.padEnd(22), dxs.map(dx => String(rate(mk, dx)).padStart(4) + '%').join('')); }
 // 4) 자동 체중 이동: 넓게 매달린 자세에서 오른손을 보낼 때 남은 손 아래 흔들림
 { const st = { c: [285, 360], hands: [[252, 300], [318, 300]] };
