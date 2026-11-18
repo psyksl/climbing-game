@@ -759,7 +759,8 @@ const PH = (() => {
     for (const q of s.p) { L += q.m * ((q.x - cx) * (q.vy - py / m) - (q.y - cy) * (q.vx - px / m)); E += 0.5 * q.m * (q.vx * q.vx + q.vy * q.vy) - q.m * C.G * q.y; }
     return { px, py, L, E, cx, cy, m };
   }
-  return { rect, C, M, W, MASS, GRIP, STATIONS, BODIES, setBody, getBody, rootPos, jointPos, jointCap, hipAngle, solvePose, makeWorld, create, step, diag, nearestGrip, nearestSurface };
+  const VERSION = 'v0.8.1'; // 물리 판 번호: 계산 결과가 달라지는 변경을 하면 올린다(시범·기록이 어느 물리에서 만든 것인지 적는 데 쓴다)
+  return { VERSION, rect, C, M, W, MASS, GRIP, STATIONS, BODIES, setBody, getBody, rootPos, jointPos, jointCap, hipAngle, solvePose, makeWorld, create, step, diag, nearestGrip, nearestSurface };
 })();
 if (typeof module !== 'undefined') module.exports = PH;
 
@@ -1415,6 +1416,12 @@ if (typeof module !== 'undefined') module.exports = CTRL;
 // 시범은 사람이 한 것이 아니라 시뮬레이션에서 되는 값을 찾아 적어 둔 스크립트 입력이다(test/lessons_check.js가 모두 성공하는지 확인한다).
 'use strict';
 const LESSON = (() => {
+  const VERSION = 2;       // 과제·시범 묶음의 판 번호: 시범 입력, 연습용 턱, 성공 조건, 기준 설정을 바꾸면 올린다
+  const PHYS = 'v0.8.1';   // 이 시범 시각을 찾았을 때의 물리 판(PH.VERSION). 물리 판이 달라지면 시범을 다시 확인하고 이 값을 맞춘다(test/lessons_check.js가 확인)
+  // 시범의 기준 설정: 시범과 유령은 플레이어 설정과 상관없이 늘 이 설정으로 계산한다
+  const BASE = { opt: { autoFeet: true, autoShift: true, assist: true, handMode: 1, assistRange: 'near', autoLoad: false }, body: 'joint', mode: 'intent', layout: null, physOn: true, couple: 0 };
+  // 같은 입력이라도 결과를 바꾸는 보조 설정: 과제에 들어올 때 기준에 맞추고 나갈 때 되돌린다. 손 선택 방식(handMode)은 입력 방법일 뿐이라 플레이어 것을 그대로 둔다
+  const TUNED = ['autoFeet', 'autoShift', 'assist', 'assistRange', 'autoLoad'];
   const B = s => s.world.find(p => p.id === 'B');
   const grips = (s, i, poly) => s.limb[i].mode === 'grip' && s.limb[i].anchor.poly === poly;
   const LIST = [
@@ -1437,41 +1444,52 @@ const LESSON = (() => {
       goal: '오른손을 먼저 보내고, Space를 0.5초 모았다 떼어 건너편 턱을 오른손으로 잡는다',
       tips: ['건너편 턱을 겨누고 우클릭 → 오른손이 먼저 뻗는다', 'Space를 누른 채 좌클릭 → 왼손이 "놓을 손"이 된다', 'Space를 0.5초쯤에 뗀다. 덜 모으면 못 미치고 더 모으면 지나친다'],
       steps: [[0.3, 'aim', 545, 348], [0.7, 'press', 'sendR'], [1.7, 'down', 'power'], [1.82, 'press', 'sendL'], [2.2, 'up', 'power']], T: 4.2,
-      done: s => grips(s, 1, 'B') },
+      done: s => grips(s, 1, 'B'), mark: ['B', '과제 목표: 오른손으로 잡기'] },
     { id: 'onearm', name: '한 팔로 높이 뛰어 잡기', station: 3, view: 40, extra: [['H', 'ledge', 247, 105, 120, 12]],
       goal: '머리 위 높은 턱을 한 팔로 잡는다. 두 손을 다 놓고 뛰면 닿지 않는 높이다',
       tips: ['높은 턱을 겨누고 우클릭 → 오른손을 먼저 올린다', 'Space를 누른 채 좌클릭(왼손만 놓음), 0.8초 모았다 뗀다', '한 팔만 뻗으면 어깨가 올라가 더 높이 닿는다'],
       steps: [[0.3, 'aim', 307, 108], [0.7, 'press', 'sendR'], [1.7, 'down', 'power'], [1.82, 'press', 'sendL'], [2.5, 'up', 'power']], T: 4.5,
-      done: s => grips(s, 1, 'H') },
+      done: s => grips(s, 1, 'H'), mark: ['H', '과제 목표: 한 팔로 잡기'] },
     { id: 'wjump', name: '온몸 도약: 떼면서 W', station: 3, view: 40, extra: [['H', 'ledge', 247, 95, 120, 12]],
       goal: '더 높은 턱. Space를 떼는 순간 W를 누르고 있어 팔로도 몸을 끌어 올린다',
       tips: ['한 팔 도약과 같은 순서로 준비한다', 'Space를 떼기 직전에 W를 누르고, 뜬 뒤까지 누르고 있는다', '왼팔이 끝까지 당기고 밀어 준 뒤 놓인다'],
       steps: [[0.3, 'aim', 307, 98], [0.7, 'press', 'sendR'], [1.7, 'down', 'power'], [1.82, 'press', 'sendL'], [2.47, 'down', 'moveUp'], [2.5, 'up', 'power'], [3.1, 'up', 'moveUp']], T: 4.5,
-      done: s => grips(s, 1, 'H') },
+      done: s => grips(s, 1, 'H'), mark: ['H', '과제 목표: 한 팔로 잡기'] },
   ];
   // 시범 입력을 조작층이 읽는 입력(io)으로 바꿔 주는 재생기. step(t)는 지난 호출 뒤부터 t까지의 입력을 반영한다
   function player(lesson) {
-    const held = new Set(); let k = 0, pressed = new Set(), mx = 0, my = 0;
-    const io = { get mx() { return mx; }, get my() { return my; }, down: id => held.has(id), pressed: id => pressed.has(id), pressedShift: () => false };
-    return { io, step(t) { pressed = new Set();
+    const held = new Set(); let k = 0, pressed = new Set(), pshift = new Set(), mx = 0, my = 0;
+    const io = { get mx() { return mx; }, get my() { return my; }, down: id => held.has(id), pressed: id => pressed.has(id), pressedShift: id => pshift.has(id) };
+    return { io, step(t) { pressed = new Set(); pshift = new Set();
       while (k < lesson.steps.length && lesson.steps[k][0] <= t + 1e-9) { const [, kind, a, b] = lesson.steps[k++];
-        if (kind === 'aim') { mx = a; my = b; } else if (kind === 'press') pressed.add(a); else if (kind === 'down') held.add(a); else if (kind === 'up') held.delete(a); }
+        if (kind === 'aim') { mx = a; my = b; } else if (kind === 'press') pressed.add(a); else if (kind === 'pressShift') pshift.add(a); else if (kind === 'down') held.add(a); else if (kind === 'up') held.delete(a); }
       return io; } };
   }
-  // 입력 기록: 차트에 그릴 수 있게 "누르고 있던 구간"과 "한 번 누른 순간"을 모은다. 시범도 사람 입력도 같은 방법으로 기록한다
-  const HOLD = ['power', 'moveUp', 'moveDown', 'moveLeft', 'moveRight', 'foot'];
-  function recorder() {
-    const rec = { bars: [], taps: [], open: {}, t0: null, end: 0 };
-    rec.tick = (t, io, sent) => { rec.end = t;
-      for (const id of HOLD) { const on = io.down(id); if (on && rec.open[id] === undefined) { rec.open[id] = t; if (rec.t0 === null) rec.t0 = t; } if (!on && rec.open[id] !== undefined) { rec.bars.push({ id, a: rec.open[id], b: t }); delete rec.open[id]; } }
+  // 입력 기록: 차트에 그릴 수 있게 "누르고 있던 구간"(bars)과 "손발을 보낸 순간"(taps)을 모은다. 시범도 사람 입력도 같은 방법으로 기록한다.
+  // 다시 재생할 수 있게 날것의 입력도 계산 걸음 번호(초당 120걸음)와 함께 남긴다: ev = 누름·뗌, aim = 조준점이 바뀐 걸음, optLog = 보조 설정이 바뀐 걸음. meta = 출발 상태·설정·판 번호(게임이 채운다)
+  const HOLD = ['power', 'moveUp', 'moveDown', 'moveLeft', 'moveRight', 'foot'], TAP = ['sendL', 'sendR', 'sendBest', 'sendOther', 'cancel', 'foot'];
+  function recorder(meta) {
+    const rec = { bars: [], taps: [], open: {}, t0: null, end: 0, meta: meta || null, ev: [], aim: [], optLog: [] }; let ax = null, ay = null, ok = '';
+    rec.tick = (t, io, sent, opt) => { rec.end = t; const f = Math.round(t * 120);
+      if (io.mx !== ax || io.my !== ay) { ax = io.mx; ay = io.my; rec.aim.push([f, ax, ay]); }
+      if (opt) { const k = JSON.stringify(opt); if (k !== ok) { ok = k; rec.optLog.push([f, JSON.parse(k)]); } }
+      for (const id of HOLD) { const on = io.down(id);
+        if (on && rec.open[id] === undefined) { rec.open[id] = t; rec.ev.push([f, 'down', id]); if (rec.t0 === null) rec.t0 = t; }
+        if (!on && rec.open[id] !== undefined) { rec.bars.push({ id, a: rec.open[id], b: t }); rec.ev.push([f, 'up', id]); delete rec.open[id]; } }
+      for (const id of TAP) { if (io.pressed(id)) rec.ev.push([f, 'press', id]); if (id.startsWith('send') && io.pressedShift(id)) rec.ev.push([f, 'pressShift', id]); }
       for (const sd of sent || []) { rec.taps.push({ limb: sd.i, t, phase: sd.phase }); if (rec.t0 === null) rec.t0 = t; } };
     rec.all = () => rec.bars.concat(Object.keys(rec.open).map(id => ({ id, a: rec.open[id], b: rec.end, live: true })));
     rec.zero = () => rec.t0 ?? 0; // 차트의 0초 = 첫 입력(키를 누르거나 손을 보낸 순간)
     return rec;
   }
+  // 기록 → 재생 입력: 같은 출발 상태·설정·물리에서 이 입력을 넣으면 같은 결과가 나온다(test/lessons_check.js가 확인). 같은 걸음에서는 조준점을 먼저 옮긴다
+  function toSteps(rec) {
+    const out = rec.aim.map(([f, x, y]) => [f / 120, 'aim', x, y]).concat(rec.ev.map(([f, kind, id]) => [f / 120, kind, id]));
+    return out.map((st, k) => [st, k]).sort((a, b) => a[0][0] - b[0][0] || (a[0][1] === 'aim' ? 0 : 1) - (b[0][1] === 'aim' ? 0 : 1) || a[1] - b[1]).map(q => q[0]);
+  }
   // 시범에서 조준점 옮기기를 뺀 첫 입력의 시각(유령을 내 첫 입력에 맞춰 출발시킬 때 쓴다)
   const firstInput = lesson => (lesson.steps.find(st => st[1] !== 'aim') || [0])[0];
-  return { LIST, player, recorder, HOLD, firstInput };
+  return { LIST, player, recorder, toSteps, HOLD, firstInput, VERSION, PHYS, BASE, TUNED };
 })();
 if (typeof module !== 'undefined') module.exports = LESSON;
 
@@ -1480,7 +1498,7 @@ if (typeof module !== 'undefined') module.exports = LESSON;
 // 등반 조작 실험실 · 화면과 입력
 'use strict';
 (() => {
-  const W = G.W, H = G.H, OX = -30, OY0 = 130, C = PH.C;
+  const W = G.W, H = G.H, OX = -30, OY0 = 130, C = PH.C, BUILD = 'v0.9.2';
   let OY = OY0; // 화면 세로 기준. 과제가 정하면(view) 그 값을 쓴다: 높은 턱이 화면 밖으로 나가지 않게
   const LIMB = ['왼손', '오른손', '왼발', '오른발'], COL = ['#e86a5a', '#4fb3e8', '#e86a5a', '#4fb3e8'], DARK = ['#8a3b3b', '#2a6f97', '#8a3b3b', '#2a6f97'];
   let world = PH.makeWorld(), layout = null;
@@ -1501,24 +1519,46 @@ if (typeof module !== 'undefined') module.exports = LESSON;
   setPhys(v05);
   const kn = c => (c || '?').replace('Key', '').replace('Digit', '').replace('Arrow', '');
   let recent = [], spWas = false, lastMiss = null, showLog = false, S, station = 1, tries = 0, fx = [], why = null, endT = 0, slow = false, tick = 0, bot = null, autoI = 0, doneT = 0, air = null, jump = null, trail = [], swing = null, last = BOTS.idle();
-  window.__lab = { lesson: () => ({ i: lessonI, demo: !!demo, ok: lessonOkT, demoOk, rec, demoRec, lastRec, ghost: ghost ? { t: ghost.S.t, x: ghost.S.p[0].x, y: ghost.S.p[0].y, dead: ghost.S.dead } : null }), hint: () => hint(), jump: () => jump, ctrlState: () => ctrl.st, opt: () => CTRL.OPT, aim, plog, ui: () => ui, bind: BIND, raw: () => { const m = G.input.mouse; return (m.down[0] || G.input.key('KeyQ') ? 'L' : '-') + (m.down[2] || G.input.key('KeyE') ? 'R' : '-'); }, get s() { return S; }, get bot() { return bot; }, finished: false, results: [] };
+  window.__lab = { lesson: () => ({ i: lessonI, demo: !!demo, ok: lessonOkT, demoOk, rec, demoRec, lastRec, kept, note: lessonNote, ghost: ghost ? { t: ghost.S.t, x: ghost.S.p[0].x, y: ghost.S.p[0].y, dead: ghost.S.dead } : null }), hint: () => hint(), jump: () => jump, ctrlState: () => ctrl.st, opt: () => CTRL.OPT, aim, plog, ui: () => ui, bind: BIND, raw: () => { const m = G.input.mouse; return (m.down[0] || G.input.key('KeyQ') ? 'L' : '-') + (m.down[2] || G.input.key('KeyE') ? 'R' : '-'); }, get s() { return S; }, get bot() { return bot; }, finished: false, results: [] };
 
   // ---- 연습 과제·시범·입력 기록
   // 입력 기록(rec): 이번 시도에서 누른 것. 시범을 재생하는 동안에는 시범 입력이 같은 방법으로 기록되어 demoRec에 남는다. 그래서 시범 차트와 내 차트를 같은 눈금으로 견줄 수 있다
   let lessonI = -1, demo = null, rec = LESSON.recorder(), demoRec = null, lastRec = null, chartOn = true, lmem = {}, lessonOkT = null, demoMsgT = 0, demoOk = null, ghost = null, ghostOn = true;
   const lesson = () => lessonI >= 0 ? LESSON.LIST[lessonI] : null;
-  function setLesson(i) { // i = -1이면 자유 연습(연습용 턱을 치운다)
-    lessonI = i; const l = lesson(); world = PH.makeWorld(layout); OY = l && l.view !== undefined ? l.view : OY0; aim.mx = null;
-    if (l) { for (const r of l.extra || []) world.push(PH.rect(...r)); PH.setBody('joint'); mode = 'intent'; CTRL.OPT.autoLoad = false; CTRL.OPT.assist = true; station = l.station; }
+  // 과제에 들어올 때: 지금 설정을 보관하고(kept), 결과를 바꾸는 것들을 시범 기준에 맞춘다. 나갈 때 보관한 설정으로 되돌린다.
+  // 시범·유령은 withBase로 늘 기준 설정에서 계산하므로, 과제 안에서 플레이어가 보조 설정을 바꿔도 영향을 받지 않는다
+  let kept = null, lessonNote = [], lockT = 0;
+  const OPT_NAME = { autoFeet: ['자동 발', v => v ? '켬' : '끔'], autoShift: ['체중 이동', v => v ? '켬' : '끔'], assist: ['닿으면 잡기', v => v ? '켬' : '끔'], assistRange: ['잡기 범위', v => v === 'near' ? '커서 근처' : '턱 전체'], autoLoad: ['자동 싣기', v => v ? '켬' : '끔'] };
+  function enterLessons() {
+    const B = LESSON.BASE, O = CTRL.OPT; kept = { opt: { ...O }, body: PH.getBody(), mode, layout, v05, couple: C.COUPLE, station }; lessonNote = [];
+    for (const k of LESSON.TUNED) if (O[k] !== B.opt[k]) { lessonNote.push(`${OPT_NAME[k][0]} ${OPT_NAME[k][1](O[k])} → ${OPT_NAME[k][1](B.opt[k])}`); O[k] = B.opt[k]; }
+    if (PH.getBody() !== B.body) { lessonNote.push(`몸 ${PH.BODIES[PH.getBody()].short} → ${PH.BODIES[B.body].short}`); PH.setBody(B.body); }
+    if (mode !== B.mode) { lessonNote.push('조작 방식 → D안'); mode = B.mode; }
+    if (layout !== B.layout) { lessonNote.push('벽 → 기존 벽'); layout = B.layout; }
+    if (v05 !== B.physOn) { lessonNote.push('물리 → v0.6'); v05 = B.physOn; setPhys(v05); }
+    if (C.COUPLE !== B.couple) { lessonNote.push('도약 연결 → 끔'); C.COUPLE = B.couple; }
+  }
+  function leaveLessons() {
+    if (!kept) return; for (const k of LESSON.TUNED) CTRL.OPT[k] = kept.opt[k];
+    PH.setBody(kept.body); mode = kept.mode; layout = kept.layout; v05 = kept.v05; setPhys(v05); C.COUPLE = kept.couple; station = kept.station; kept = null; lessonNote = [];
+  }
+  function withBase(fn) { const keep = { ...CTRL.OPT }; Object.assign(CTRL.OPT, LESSON.BASE.opt); try { return fn(); } finally { Object.assign(CTRL.OPT, keep); } }
+  function setLesson(i) { // i = -1이면 자유 연습(연습용 턱을 치우고 들어오기 전 설정으로 되돌린다)
+    const was = lessonI >= 0; lessonI = i; const l = lesson();
+    if (l && !was) enterLessons(); if (!l && was) leaveLessons();
+    world = PH.makeWorld(layout); OY = l && l.view !== undefined ? l.view : OY0; aim.mx = null;
+    if (l) { for (const r of l.extra || []) world.push(PH.rect(...r)); station = l.station; }
     demo = null; demoRec = null; lastRec = null; tries = 0; reset();
   }
-  function startDemo() { if (!lesson()) return; reset(); demo = { pl: LESSON.player(lesson()) }; demoRec = rec; tries--; }
+  function startDemo() { if (!lesson()) return; reset(); demo = { pl: LESSON.player(lesson()) }; demoRec = rec; rec.meta.demo = true; rec.meta.opt = { ...LESSON.BASE.opt }; tries--; }
+  // 기록에 붙이는 것: 어느 판에서, 어떤 설정·출발 상태로 한 시도인지(나중에 저장·재생할 때 같은 조건인지 확인하는 데 쓴다)
+  const recMeta = () => ({ build: BUILD, phys: PH.VERSION, lessons: LESSON.VERSION, lesson: lesson() ? lesson().id : null, station, body: PH.getBody(), mode, layout, physOn: v05, couple: C.COUPLE, opt: { ...CTRL.OPT }, extra: lesson() ? lesson().extra || [] : [], start: S.p.map(q => [+q.x.toFixed(3), +q.y.toFixed(3)]) });
   function reset(st) {
     if (rec.t0 !== null && !demo) lastRec = rec; // 방금 한 시도는 "이전 시도"로 남긴다
     rec = LESSON.recorder(); demo = null; ghost = null; lmem = {}; lessonOkT = null;
     if (st) station = st;
     if (autoList.length) { bot = BOTS.make(autoList[autoI % autoList.length]); station = bot.def.station; }
-    S = PH.create(world, station); tries++; fx = []; why = null; endT = 0; doneT = 0; air = null; jump = null; trail = []; swing = null; lastMiss = null; ctrl = CTRL.make(mode);
+    S = PH.create(world, station); tries++; fx = []; why = null; endT = 0; doneT = 0; air = null; jump = null; trail = []; swing = null; lastMiss = null; ctrl = CTRL.make(mode); rec.meta = recMeta();
   }
   // 최근 입력 표시(영상에서 어떤 입력을 썼는지 보이게)
   function noteInputs(inp) {
@@ -1547,8 +1587,8 @@ if (typeof module !== 'undefined') module.exports = LESSON;
     } else {
       const m = inp.mouse; io = { mx: m.x + OX, my: m.y + OY, lheld: m.down[0], rheld: m.down[2], lmb: inp.clicks.some(c => c.button === 0), rmb: inp.clicks.some(c => c.button === 2), lshift: inp.clicks.some(c => c.button === 0 && c.shift), rshift: inp.clicks.some(c => c.button === 2 && c.shift), key: c => inp.key(c), pressed: c => inp.pressed(c) };
     }
-    const out = ctrl.step(S, io, 1 / 120);
-    if (mode === 'intent') rec.tick(S.t, io, ctrl.st.sent);
+    const out = demo ? withBase(() => ctrl.step(S, io, 1 / 120)) : ctrl.step(S, io, 1 / 120); // 시범은 플레이어 설정과 상관없이 기준 설정으로
+    if (mode === 'intent') rec.tick(S.t, io, ctrl.st.sent, demo ? LESSON.BASE.opt : CTRL.OPT);
     for (const i of ctrl.st.air) fx.push({ x: S.p[2 + i].x, y: S.p[2 + i].y, t: 0.9, kind: 'text', text: `${LIMB[i]}: 닿은 곳이 없다 — 그대로 들고 있음` });
     if (mode === 'intent') {
       for (const m of ctrl.st.miss || []) { lastMiss = { d: m.d, t: S.t, x: m.x, y: m.y }; } for (const m of ctrl.st.miss || []) if (!fx.some(f => f.miss === m.i && f.t > 0.6)) fx.push({ x: m.x, y: m.y, t: 1.0, kind: 'text', miss: m.i, text: `${LIMB[m.i]}: 겨눈 구간 밖에 닿음 (${Math.ceil(m.d)}px 벗어남)` });
@@ -1578,7 +1618,7 @@ if (typeof module !== 'undefined') module.exports = LESSON;
     else if (e.type === 'slip') { plog.slips++; say(e, `${n} 미끄러짐 — 당기는 방향 ${Math.round(e.ang)}°, 이 ${PH.GRIP[e.kind].name}의 한계 ${e.lim}°`); G.sfx.fail(); }
     else if (e.type === 'footoff') say(e, e.hang ? `${n} 떨어짐 — 발에 매달릴 수는 없다(몸이 발 아래에 있다)` : `${n} 접촉 끊김 — 누르는 힘이 없어 발이 떴다`, !e.hang);
     else if (e.type === 'mat') { if (S.t - plog.sendT < 1.5) plog.fallAfterSend++; endT = bot ? 2.6 : 1.6; G.sfx.thud(); G.shake(5, 0.2); }
-    else if (e.type === 'win') G.sfx.win();
+    else if (e.type === 'win') { if (lessonI < 0) G.sfx.win(); }
   }
   function say(e, text, minor) { fx.push({ x: e.x, y: e.y, t: 1.6, kind: 'text', text }); if (!minor) why = { text, t: S.t }; }
 
@@ -1601,13 +1641,16 @@ if (typeof module !== 'undefined') module.exports = LESSON;
         if (P_('chart')) chartOn = !chartOn;
         if (P_('ghost')) { ghostOn = !ghostOn; if (!ghostOn) ghost = null; }
         if (P_('reset')) { reset(); return; }
-        for (let k = 1; k <= 5; k++) if (P_('st' + k)) { if (lessonI >= 0) { lessonI = -1; world = PH.makeWorld(layout); demoRec = null; } tries = 0; reset(k); return; }
-        if (P_('scheme')) { mode = MODE_LIST[(MODE_LIST.indexOf(mode) + 1) % MODE_LIST.length]; tries = 0; reset(); return; }
+        for (let k = 1; k <= 5; k++) if (P_('st' + k)) { if (lessonI >= 0) setLesson(-1); tries = 0; reset(k); return; }
+        // 과제 중에는 결과를 바꾸는 큰 설정(조작 방식·도약 연결·벽·물리·몸)을 잠근다. 시범 기준과 달라지면 시범을 따라 할 수 없기 때문이다
+        const locked = lessonI >= 0; if (locked && ['scheme', 'couple', 'layout', 'phys', 'body'].some(P_)) lockT = 4;
+        if (lockT > 0) lockT -= dt;
+        if (!locked && P_('scheme')) { mode = MODE_LIST[(MODE_LIST.indexOf(mode) + 1) % MODE_LIST.length]; tries = 0; reset(); return; }
         if (P_('slow')) slow = !slow;
-        if (P_('couple')) C.COUPLE = C.COUPLE ? 0 : 0.15;
-        if (P_('layout')) { layout = layout ? null : 'near'; lessonI = -1; demoRec = null; world = PH.makeWorld(layout); tries = 0; reset(); return; }
-        if (P_('phys')) { v05 = !v05; setPhys(v05); tries = 0; reset(); return; }
-        if (P_('body')) { const order = ['base', 'prop', 'joint']; PH.setBody(order[(order.indexOf(PH.getBody()) + 1) % order.length]); tries = 0; reset(); return; }
+        if (!locked && P_('couple')) C.COUPLE = C.COUPLE ? 0 : 0.15;
+        if (!locked && P_('layout')) { layout = layout ? null : 'near'; world = PH.makeWorld(layout); tries = 0; reset(); return; }
+        if (!locked && P_('phys')) { v05 = !v05; setPhys(v05); tries = 0; reset(); return; }
+        if (!locked && P_('body')) { const order = ['base', 'prop', 'joint']; PH.setBody(order[(order.indexOf(PH.getBody()) + 1) % order.length]); tries = 0; reset(); return; }
         if (mode === 'intent') {
           if (P_('log')) showLog = !showLog;
           const O = CTRL.OPT;
@@ -1622,7 +1665,7 @@ if (typeof module !== 'undefined') module.exports = LESSON;
         if (demoMsgT > 0) demoMsgT -= dt;
       }
       if (endT > 0) { endT -= dt; if (endT <= 0 || (!bot && endT < 1.2 && inp.any())) { if (bot) nextAuto(false); reset(); } return; }
-      if (S.won && !bot) { if (BIND.pressed('power', inp) || inp.pressed('Enter')) reset(); }
+      if (S.won && !bot && lessonI < 0) { if (BIND.pressed('power', inp) || inp.pressed('Enter')) reset(); }
       tick++; if (slow && tick % 2) return;
       last = bot ? bot.step(S) : readInput(inp);
       PH.step(S, last, dt);
@@ -1707,11 +1750,14 @@ if (typeof module !== 'undefined') module.exports = LESSON;
     c.fillStyle = '#3c5a8a'; c.fillRect(OX, C.FLOOR, W, 60);
     for (const pl of world) {
       c.beginPath(); pl.pts.forEach((q, i) => i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1])); c.closePath();
-      c.fillStyle = pl.goal ? '#d9a521' : TYPE_COL[pl.type]; c.fill(); c.strokeStyle = 'rgba(0,0,0,0.45)'; c.lineWidth = 1.5; c.stroke();
+      c.fillStyle = pl.goal && !lesson() ? '#d9a521' : TYPE_COL[pl.type]; c.fill(); c.strokeStyle = 'rgba(0,0,0,0.45)'; c.lineWidth = 1.5; c.stroke();
       if (pl.type !== 'rock') for (const e of pl.edges) if (e.grip) G.line(e.ax, e.ay, e.bx, e.by, pl.type === 'sloper' ? '#e9e2ff' : '#fff6d8', 3.5); // 손으로 잡을 수 있는 면
     }
     const lab = (id, t, dx, dy) => { const pl = world.find(p => p.id === id); G.text(t, pl.cx + dx, pl.cy + dy, { size: 11, align: 'center', color: 'rgba(40,40,40,0.75)', weight: 700 }); };
-    lab('A', '깊은 턱', -40, 26); lab('B', '턱', 30, 26); lab('G', '목표: 두 손으로 잡기', 0, -14); lab('J', '저그', 0, 24); lab('S', '둥근 면(미끄러움)', 0, 24); lab('F1', '발판', 0, 6); lab('F3', '발판', 0, 24); lab('F4', '발판', 0, 24); lab('P', '반동 연습', 0, -14); lab('R', '바위', 6, 60);
+    lab('A', '깊은 턱', -40, 26); lab('B', '턱', 30, 26); if (!lesson()) lab('G', '목표: 두 손으로 잡기', 0, -14); lab('J', '저그', 0, 24); lab('S', '둥근 면(미끄러움)', 0, 24); lab('F1', '발판', 0, 6); lab('F3', '발판', 0, 24); lab('F4', '발판', 0, 24); lab('P', '반동 연습', 0, -14); lab('R', '바위', 6, 60);
+    const mk = lesson() && lesson().mark, mp = mk && world.find(p => p.id === mk[0]); // 과제 목표: 금색 테두리와 이름표
+    if (mp) { c.beginPath(); mp.pts.forEach((q, i) => i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1])); c.closePath(); c.strokeStyle = '#f2b200'; c.lineWidth = 3; c.stroke();
+      const tw = G.textW(mk[1], 11, 800) + 14, ty = Math.min(...mp.pts.map(q => q[1])) - 26; G.panel(mp.cx - tw / 2, ty, tw, 18, 'rgba(242,178,0,0.95)'); G.text(mk[1], mp.cx, ty + 13, { size: 11, weight: 800, align: 'center', color: '#1d1d1d' }); }
   }
   function ik(a, b, len, bend) {
     const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1, d = Math.min(L, len - 0.01), h = Math.sqrt(Math.max(0, (len / 2) ** 2 - (d / 2) ** 2));
@@ -1867,9 +1913,10 @@ if (typeof module !== 'undefined') module.exports = LESSON;
     const n = tlLanes(master, mine).length, h = 6 + 13 + TL.ruler + n * TL.lh + 6, x = TL.x, w = TL.w, y = TL.bottom - h; tlTop = y; glass(c, x, y, w, h, 10);
     let lx = x + 10; const ly = y + 6, item = (draw, t, col) => { draw(lx); lx += 24; G.text(t, lx, ly + 8, { size: 8.5, weight: 700, color: col }); lx += G.textW(t, 8.5, 700) + 10; };
     item(px => pill(c, px, ly, 20, 9, 'rgba(127,212,255,0.16)', 'rgba(127,212,255,0.95)', 1.5), l ? '시범' : '이전 시도', '#bfe9ff');
-    item(px => pill(c, px, ly + 1, 20, 7, 'rgba(125,255,154,0.92)', null), l ? '나(맞음)' : '나', '#b8ffca');
-    if (l) item(px => pill(c, px, ly + 1, 20, 7, 'rgba(255,190,80,0.95)', null), `나(${TOL}초 넘게 다름)`, '#ffd9a0');
-    G.text(l && !demoRec ? `0초 = 첫 입력 · ${BIND.first('demo')}를 누르면 시범 입력이 윤곽으로 나온다` : `0초 = 첫 입력 · ${BIND.first('chart')} 끔`, x + w - 10, ly + 8, { size: 8.5, weight: 700, align: 'right', color: 'rgba(255,255,255,0.55)' });
+    const ref = l ? '시범' : '이전 시도'; // 색은 성공·실패가 아니라 견주는 기록과 비슷한 정도다(다른 타이밍으로 성공할 수도 있다)
+    item(px => pill(c, px, ly + 1, 20, 7, 'rgba(125,255,154,0.92)', null), `나: ${ref}과 비슷`, '#b8ffca');
+    item(px => pill(c, px, ly + 1, 20, 7, 'rgba(255,190,80,0.95)', null), `나: ${TOL}초 넘게 다름`, '#ffd9a0');
+    G.text(l && !demoRec ? `0초 = 첫 입력 · ${BIND.first('demo')} = 시범 윤곽` : `0초 = 첫 입력 · ${BIND.first('chart')} 끔`, x + w - 10, ly + 8, { size: 8.5, weight: 700, align: 'right', color: 'rgba(255,255,255,0.55)' });
     const now = demo ? (rec.t0 !== null ? S.t - rec.t0 : null) : mine ? S.t - mine.zero() : null;
     drawTimeline(x + 6, y + 6 + 13, w - 16, master, mine, endT > 0 || lessonOkT !== null ? null : now);
   }
@@ -1881,6 +1928,13 @@ if (typeof module !== 'undefined') module.exports = LESSON;
     const st = demo ? { t: '시범 재생 중 · 적어 둔 입력을 그대로 넣는 것(사람 손 아님)', c: '#7fd4ff' }
       : lessonOkT !== null ? { t: `성공! · ${BIND.first('reset')} 다시 · ${BIND.first('lessonNext')} ${last ? '자유 연습으로' : '다음 과제'}`, c: '#7dff9a' }
       : { t: `${demoMsgT > 0 ? '직접 해 보세요 · ' : ''}${BIND.first('demo')} 시범 · ${BIND.first('reset')} 다시 · ${BIND.first('lessonNext')} ${last ? '자유 연습(조작 설명)' : '다음'} · ${BIND.first('ghost')} 유령 ${ghostOn ? '켬' : '끔'} · ${BIND.first('settings')} 키 설정`, c: 'rgba(255,255,255,0.8)' };
+    // 설정 안내: 들어올 때 맞춘 것, 지금 시범 기준과 다른 것, 잠근 것
+    const O = CTRL.OPT, diff = LESSON.TUNED.filter(k => O[k] !== LESSON.BASE.opt[k]).map(k => `${OPT_NAME[k][0]} ${OPT_NAME[k][1](O[k])}`), info = [];
+    if (lessonNote.length) info.push(`시범 기준에 맞춘 설정: ${lessonNote.join(', ')} (과제를 나가면 되돌림)`);
+    if (diff.length) info.push(`내 설정이 시범 기준과 다름: ${diff.join(', ')} → 같은 입력이라도 결과가 다를 수 있다. 시범·유령은 기준 설정으로 움직인다`);
+    if (O.handMode === 2) info.push('손 선택 2번: 요령의 좌클릭·우클릭은 왼손·오른손 보내기를 뜻한다(추천 손 입력으로 그 손을 보낸다)');
+    if (lockT > 0) info.push(`과제 중에는 몸·물리·벽·조작 방식·도약 연결을 바꿀 수 없다. ${BIND.first('lessonNext')}로 자유 연습에 나가서 바꾼다`);
+    for (const t of info) wrap(t, w - 24, 9, 600).forEach(ln => rows.push({ t: ln, s: 9, wt: 600, c: '#ffd9a0' }));
     const foot = wrap(st.t, w - 24, 9.5, 700), h = 10 + rows.reduce((a, r) => a + r.s + 4, 0) + 10 + foot.length * 13 + 6;
     glass(c, x, y, w, h); c.fillStyle = '#ffd166'; c.beginPath(); G.roundRect(x, y + 12, 3, 30, 2); c.fill();
     let yy = y + 10; for (const r of rows) { if (r.dot) G.circle(x + 15, yy + r.s - 3.5, 1.6, 'rgba(255,214,102,0.8)'); G.text(r.t, x + 12 + (r.in || 0), yy + r.s, { size: r.s, weight: r.wt, color: r.c }); yy += r.s + 4; }
@@ -1890,9 +1944,10 @@ if (typeof module !== 'undefined') module.exports = LESSON;
   // 시범 유령: 연습 과제에서 내가 첫 입력을 하는 순간, 시범 캐릭터가 같은 순간(시범의 첫 입력)부터 흐릿하게 함께 움직인다. 같은 계산을 따로 한 벌 더 돌린다
   function stepGhost() {
     const l = lesson(); if (!l || demo || !ghostOn || rec.t0 === null) return;
-    if (!ghost) { ghost = { S: PH.create(world, l.station), ctrl: CTRL.make('intent'), pl: LESSON.player(l) }; const t1 = LESSON.firstInput(l);
-      while (ghost.S.t < t1 - 1e-9) PH.step(ghost.S, ghost.ctrl.step(ghost.S, ghost.pl.step(ghost.S.t), 1 / 120), 1 / 120); } // 시범의 첫 입력 직전까지는 미리 계산해 둔다(가만히 버티는 구간)
-    if (ghost.S.t < l.T && !ghost.S.dead) PH.step(ghost.S, ghost.ctrl.step(ghost.S, ghost.pl.step(ghost.S.t), 1 / 120), 1 / 120);
+    if (!ghost) ghost = { S: PH.create(world, l.station), ctrl: CTRL.make('intent'), pl: LESSON.player(l) };
+    // 유령의 시각 = 시범의 첫 입력 시각 + 내 첫 입력 뒤로 지난 시간. 늘 이 식에 맞춰 따라가므로, 껐다 켜도 처음으로 돌아가지 않고 지금 자리로 온다
+    const want = Math.min(l.T, LESSON.firstInput(l) + (S.t - rec.t0));
+    withBase(() => { while (ghost.S.t < want - 1e-9 && !ghost.S.dead) PH.step(ghost.S, ghost.ctrl.step(ghost.S, ghost.pl.step(ghost.S.t), 1 / 120), 1 / 120); });
   }
   let ghostLayer = null;
   function drawGhost(c) { // 따로 그린 뒤 한 번에 반투명으로 얹는다(팔다리가 겹친 곳이 진해지지 않게)
@@ -2067,10 +2122,10 @@ if (typeof module !== 'undefined') module.exports = LESSON;
     if (showLog && mode === 'intent') drawLog();
     if (ui) drawSettings();
     if (remap) { G.panel(W / 2 - 220, 200, 440, 70, 'rgba(20,30,60,0.95)', '#fff'); G.text(`키 다시 지정 (${remap.i + 1}/${remap.list.length}) — Esc 그만`, W / 2, 226, { size: 13, align: 'center', weight: 600 }); G.text(`「${CTRL.LABEL[remap.list[remap.i]]}」에 쓸 키를 누르세요`, W / 2, 252, { size: 18, align: 'center', weight: 800 }); }
-    G.text('실험 빌드 v0.9.1', W - 10, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
+    G.text(`실험 빌드 ${BUILD}`, W - 10, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
     if (endT > 0) G.banner('매트에 떨어짐 — 바로 다시', why && (!air || why.t >= air.t - 0.05) ? why.text : hint() ? '도약이 다음 턱에 이어지지 않았다' : air && air.gap > 0 && air.gap < 1e8 ? `손이 잡을 곳에 닿지 못했다 — 가장 가까웠을 때 ${Math.ceil(air.gap)}px 모자람` : air && air.gap <= 0 ? '손이 닿는 거리였지만 잡지 않았다(버튼을 떼야 잡는다)' : '붙잡은 곳 없이 떨어졌다', 'fail', 380);
     if (endT > 0 && hint()) { const t = hint(), w = G.textW(t, 14, 800) + 28; const hy = Math.min(458, tlTop - 34); G.panel(W / 2 - w / 2, hy, w, 28, 'rgba(255,214,102,0.96)'); G.text(t, W / 2, hy + 19, { size: 14, weight: 800, align: 'center', color: '#111' }); }
-    else if (S.won) G.banner('목표 도달!', `${S.t.toFixed(1)}초 · 시도 ${tries} — R 또는 스페이스로 다시`, 'win', 400);
+    else if (S.won && !lesson()) G.banner('목표 도달!', `${S.t.toFixed(1)}초 · 시도 ${tries} — R 또는 스페이스로 다시`, 'win', 400);
     else if (bot && bot.m.done) G.banner('건너가서 안정됨', '두 손 + 한 발로 버티는 중', 'win', 440);
   }
   G.run(game, { title: '등반 조작 실험실' });

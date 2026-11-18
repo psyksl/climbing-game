@@ -541,6 +541,7 @@ const PH = (() => {
     for (const q of s.p) { L += q.m * ((q.x - cx) * (q.vy - py / m) - (q.y - cy) * (q.vx - px / m)); E += 0.5 * q.m * (q.vx * q.vx + q.vy * q.vy) - q.m * C.G * q.y; }
     return { px, py, L, E, cx, cy, m };
   }
-  return { rect, C, M, W, MASS, GRIP, STATIONS, BODIES, setBody, getBody, rootPos, jointPos, jointCap, hipAngle, solvePose, makeWorld, create, step, diag, nearestGrip, nearestSurface };
+  const VERSION = 'v0.8.1'; // 물리 판 번호: 계산 결과가 달라지는 변경을 하면 올린다(시범·기록이 어느 물리에서 만든 것인지 적는 데 쓴다)
+  return { VERSION, rect, C, M, W, MASS, GRIP, STATIONS, BODIES, setBody, getBody, rootPos, jointPos, jointCap, hipAngle, solvePose, makeWorld, create, step, diag, nearestGrip, nearestSurface };
 })();
 if (typeof module !== 'undefined') module.exports = PH;

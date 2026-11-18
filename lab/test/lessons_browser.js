@@ -35,7 +35,40 @@ const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), shot = pro
   await pg.keyboard.down('Space'); await pg.waitForTimeout(300); await pg.keyboard.up('Space'); await pg.waitForTimeout(150);
   const mine = await pg.evaluate(() => { const r = window.__lab.lesson().rec, b = r.bars.find(q => q.id === 'power'); return b ? b.b - b.a : null; });
   check('내 입력 기록: Space를 누른 시간이 남는다(0.2~0.45초)', mine !== null && mine > 0.2 && mine < 0.45, mine === null ? '없음' : mine.toFixed(2) + '초');
+  // 유령을 껐다 켜면 처음부터가 아니라 내 경과 시간에 맞는 자리에서 이어 간다(v0.9.1에서는 시범의 첫 입력으로 돌아갔다)
+  await pg.keyboard.press('KeyR'); await pg.waitForTimeout(300); await pg.keyboard.down('KeyW'); await pg.waitForTimeout(500);
+  await pg.keyboard.press('KeyU'); await pg.waitForTimeout(400); await pg.keyboard.press('KeyU'); await pg.waitForTimeout(200);
+  const g3 = await pg.evaluate(() => { const l = window.__lab.lesson(), L = LESSON.LIST[l.i]; return { g: l.ghost, want: Math.min(L.T, LESSON.firstInput(L) + window.__lab.s.t - l.rec.t0) }; });
+  await pg.keyboard.up('KeyW');
+  check('유령을 껐다 켜면 내 경과 시간에 맞는 자리로 돌아온다', !!g3.g && Math.abs(g3.g.t - g3.want) < 0.03, g3.g ? `유령 ${g3.g.t.toFixed(2)}초, 맞는 시각 ${g3.want.toFixed(2)}초` : '없음');
   await pg.keyboard.press('KeyO'); await pg.waitForTimeout(150);
   check('마지막 과제 다음은 자유 연습', (await pg.evaluate(() => window.__lab.lesson().i)) === -1);
+  // 실제 마우스·키 입력으로 한 시도의 기록(조준점 이동 포함)을 다시 계산하면 화면의 몸과 같은 자리에 온다 → 저장·재생에 쓸 수 있는 기록이다
+  for (let i = 0; i < 4; i++) { await pg.keyboard.press('KeyO'); await pg.waitForTimeout(140); }
+  await pg.mouse.move(300, 300); await pg.mouse.move(575, 218, { steps: 12 }); await pg.waitForTimeout(200); await pg.mouse.click(575, 218, { button: 'right' }); await pg.waitForTimeout(900);
+  await pg.keyboard.down('Space'); await pg.waitForTimeout(140); await pg.mouse.click(577, 220); await pg.waitForTimeout(330); await pg.keyboard.up('Space'); await pg.waitForTimeout(700);
+  const rp = await pg.evaluate(() => { const lab = window.__lab, S = lab.s, rec = lab.lesson().rec, s2 = PH.create(S.world, S.station), ctl = CTRL.make('intent'), pl = LESSON.player({ steps: LESSON.toSteps(rec) });
+    const d0 = Math.max(...s2.p.map((q, i) => Math.hypot(q.x - rec.meta.start[i][0], q.y - rec.meta.start[i][1])));
+    while (s2.t < S.t - 1e-9) PH.step(s2, ctl.step(s2, pl.step(s2.t), 1 / 120), 1 / 120);
+    return { d: Math.max(...s2.p.map((q, i) => Math.hypot(q.x - S.p[i].x, q.y - S.p[i].y))), d0, aim: rec.aim.length, ev: rec.ev.length, t: S.t, meta: rec.meta, moved: Math.hypot(S.p[0].x - rec.meta.start[0][0], S.p[0].y - rec.meta.start[0][1]) }; });
+  check('내 시도의 기록을 다시 계산하면 화면의 몸과 같은 자리', rp.d < 1e-6 && rp.d0 < 0.01 && rp.aim > 5 && rp.ev >= 4 && rp.moved > 30, `차이 ${rp.d.toExponential(1)}px · ${rp.t.toFixed(2)}초 · 조준 ${rp.aim}개 · 입력 ${rp.ev}개 · 몸이 움직인 거리 ${Math.round(rp.moved)}px`);
+  check('기록에 판 번호·설정·출발 상태가 붙는다', !!rp.meta && /^v\d/.test(rp.meta.build) && /^v\d/.test(rp.meta.phys) && rp.meta.lessons >= 1 && rp.meta.lesson === 'jump1' && rp.meta.body === 'joint' && rp.meta.opt.handMode === 1 && rp.meta.start.length === 6, rp.meta ? `빌드 ${rp.meta.build} · 물리 ${rp.meta.phys} · 과제 묶음 ${rp.meta.lessons}판 · ${rp.meta.lesson}` : '없음');
+  // 과제 중에는 몸·물리·벽·조작 방식을 바꾸는 키가 잠긴다
+  await pg.keyboard.press('Minus'); await pg.keyboard.press('Tab'); await pg.waitForTimeout(150);
+  check('과제 중에는 몸·조작 방식 바꾸기가 잠긴다', await pg.evaluate(() => PH.getBody() === 'joint' && window.__lab.lesson().i === 3 && !!window.__lab.ctrlState().mark));
+  for (let i = 0; i < 3; i++) { await pg.keyboard.press('KeyO'); await pg.waitForTimeout(140); }
+  // 내 설정이 달라도 시범은 기준 설정으로 성공한다: 손 선택 2번(H) + 자동 발 끔(F) + 닿으면 잡기 끔(V) + 자동 싣기 켬(N)으로 바꾸고 다시 여섯 과제
+  for (const k of ['KeyH', 'KeyF', 'KeyV', 'KeyN']) await pg.keyboard.press(k); await pg.waitForTimeout(100);
+  const mine0 = await pg.evaluate(() => ({ ...window.__lab.opt() }));
+  for (let i = 0; i < names.length; i++) {
+    await pg.keyboard.press('KeyO'); await pg.waitForTimeout(150);
+    if (i === 0) { for (const k of ['KeyF', 'KeyV', 'KeyN']) await pg.keyboard.press(k); await pg.waitForTimeout(80); if (shot) await pg.screenshot({ path: path.join(shot, 'lesson_settings.png') }); } // 과제 안에서도 다시 바꿔 둔다(들어올 때 기준에 맞춰졌으므로)
+    await pg.keyboard.press('KeyP'); await pg.waitForTimeout(names[i][1] * 1000 + 700);
+    const r = await pg.evaluate(() => { const l = window.__lab.lesson(); return { i: l.i, demo: l.demo, ok: l.demoOk }; });
+    check(`내 설정이 달라도(손 선택 2번·자동 발 끔 등) 시범 ${i + 1} 성공`, r.i === i && r.demo === false && r.ok === true);
+  }
+  await pg.keyboard.press('KeyO'); await pg.waitForTimeout(150);
+  const mine1 = await pg.evaluate(() => ({ ...window.__lab.opt() }));
+  check('과제를 나오면 들어가기 전 설정으로 돌아온다', JSON.stringify(mine0) === JSON.stringify(mine1), JSON.stringify(mine1));
   console.log('페이지 오류:', errs.join(';') || '없음', '| 실패', fail); await b.close(); process.exit(fail || errs.length ? 1 : 0);
 })();
