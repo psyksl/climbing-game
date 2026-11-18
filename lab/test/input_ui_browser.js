@@ -21,7 +21,7 @@ const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), out = proc
 
   // ── 2. 실행 중 다시 지정: 설정 화면에서 바꾸면 그 화면과 게임 화면의 키캡이 바로 바뀐다(다시 불러오지 않는다)
   await press('Escape', 250); await shot('02_설정_지정전');
-  check('설정 화면: 동작마다 두 칸 모두 키캡으로 나온다', (await keys()).filter(k => k.where === 'settings').length === (await lab(() => BIND.ACTIONS.filter(a => !a.hm || a.hm === 1).length)) * 2);
+  check('설정 화면: 동작마다 두 칸 모두 키캡으로 나온다', (await keys()).filter(k => k.where === 'settings').length === (await lab(() => BIND.ACTIONS.filter(a => (!a.hm || a.hm === 1) && ['손', '발', '몸', '몸통', '조준', '보조'].includes(a.g)).length)) * 2);
   await press('ArrowDown'); await press('Enter', 120); await press('KeyJ', 200);
   check('오른손 보내기 주 입력을 우클릭 → J로: 설정 화면의 키캡이 바로 J', str(await key1('settings', 'sendR:0')) === 'KeyJ/right/idle', str(await key1('settings', 'sendR:0')));
   await press('ArrowRight'); await press('Enter', 120); await press('KeyK', 200); await shot('03_설정_주J_보조K');
@@ -70,7 +70,8 @@ const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), out = proc
   // ── 6. 긴 키·미지정·미등록·숫자패드·한/영
   await lab(() => { BIND.set('power', 0, null); BIND.set('cancel', 0, 'VendorKeyXYZ123'); BIND.set('st1', 1, 'Numpad1'); BIND.set('ghost', 1, 'Lang1'); BIND.set('demo', 1, 'NumpadEnter'); }); await pg.waitForTimeout(150);
   const pw = (await key1('bar', 'power'))[0]; check('모으기를 비우면 미지정 키캡', pw && pw.code === 'Unassigned' && pw.label === '미지정', JSON.stringify(pw));
-  await press('Escape', 250); const sk = (await keys()).filter(k => k.where === 'settings'), by = a => sk.find(k => k.action === a) || {}; await shot('11_설정_미지정_미등록_숫자패드_한영');
+  await press('Escape', 250); let sk = (await keys()).filter(k => k.where === 'settings'); await shot('11_설정_1쪽_미지정_미등록'); await press('Tab', 200); sk = sk.concat((await keys()).filter(k => k.where === 'settings')); await shot('11_설정_2쪽_숫자패드_한영'); // 설정은 두 쪽(Tab으로 넘김)
+  const by = a => sk.find(k => k.action === a) || {};
   check('미등록 코드는 공통 키캡에 코드 이름으로', by('cancel:0').fallback === true && by('cancel:0').shape === 'short' && by('cancel:0').label === 'VendorKeyXYZ123', JSON.stringify(by('cancel:0')));
   check('숫자열 1과 숫자패드 1을 구분', by('st1:0').label === '1' && by('st1:1').label === 'NUM 1', `${by('st1:0').label} / ${by('st1:1').label}`);
   check('한/영, 숫자패드 Enter(세로로 긴 키)', by('ghost:1').label === '한/영' && by('demo:1').shape === 'numenter', `${by('ghost:1').label} · ${by('demo:1').shape}`);
@@ -116,7 +117,7 @@ const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), out = proc
     await p3.keyboard.down('Space'); for (let i = 0; i < 6; i++) { seen.add((await p3.evaluate(() => window.__lab.keys().find(k => k.where === 'bar' && k.action === 'power').press))); await p3.waitForTimeout(25); }
     await p3.keyboard.up('Space'); for (let i = 0; i < 6; i++) { await p3.waitForTimeout(25); seen.add((await p3.evaluate(() => window.__lab.keys().find(k => k.where === 'bar' && k.action === 'power').press))); }
     check('움직임 줄이기 설정이면 눌림 정도가 0 또는 1만 나온다', [...seen].every(v => v === 0 || v === 1) && seen.has(1) && seen.has(0), [...seen].join(' '));
-    await p3.evaluate(() => BIND.set('demo', 1, 'Enter')); await p3.keyboard.press('Escape'); await p3.waitForTimeout(250);
+    await p3.evaluate(() => BIND.set('demo', 1, 'Enter')); await p3.keyboard.press('Escape'); await p3.waitForTimeout(250); await p3.keyboard.press('Tab'); await p3.waitForTimeout(250);
     const en = await p3.evaluate(() => window.__lab.keys().find(k => k.action === 'demo:1')); check('주소에 enter=iso를 주면 Enter가 꺾인 모양으로', en && en.shape === 'iso', en && en.shape);
     if (out) await p3.screenshot({ path: path.join(out, '17_ISO_Enter.png') }); await p3.evaluate(() => BIND.resetAll()); await p3.close(); }
   { const p4 = await ctx.newPage(); await p4.goto(url); await p4.waitForTimeout(600); const seen = [];

@@ -1,7 +1,7 @@
 // 등반 조작 실험실 · 화면과 입력
 'use strict';
 (() => {
-  const W = G.W, H = G.H, OX = -30, OY0 = 130, C = PH.C, BUILD = 'v0.10.0';
+  const W = G.W, H = G.H, OX = -30, OY0 = 130, C = PH.C, BUILD = 'v0.11.0';
   let OY = OY0; // 화면 세로 기준. 과제가 정하면(view) 그 값을 쓴다: 높은 턱이 화면 밖으로 나가지 않게
   const LIMB = ['왼손', '오른손', '왼발', '오른발'], COL = ['#e86a5a', '#4fb3e8', '#e86a5a', '#4fb3e8'], DARK = ['#8a3b3b', '#2a6f97', '#8a3b3b', '#2a6f97'];
   let world = PH.makeWorld(), layout = null;
@@ -22,11 +22,14 @@
   setPhys(v05);
   const kn = c => (c || '?').replace('Key', '').replace('Digit', '').replace('Arrow', '');
   let recent = [], spWas = false, lastMiss = null, showLog = false, S, station = 1, tries = 0, fx = [], why = null, endT = 0, slow = false, tick = 0, bot = null, autoI = 0, doneT = 0, air = null, jump = null, trail = [], swing = null, last = BOTS.idle();
-  window.__lab = { keys: () => KEYS.log.slice(), chart: () => ({ mode: chartMode, view: tlView, end: tlEnd, top: tlTop, ready: KEYS.ready, panel: !!KEYS.panel }), lesson: () => ({ i: lessonI, demo: !!demo, ok: lessonOkT, demoOk, demoEnd, rec, demoRec, lastRec, kept, note: lessonNote, ghost: ghost ? { t: ghost.S.t, x: ghost.S.p[0].x, y: ghost.S.p[0].y, dead: ghost.S.dead } : null }), hint: () => hint(), jump: () => jump, ctrlState: () => ctrl.st, opt: () => CTRL.OPT, aim, plog, ui: () => ui, bind: BIND, raw: () => { const m = G.input.mouse; return (m.down[0] || G.input.key('KeyQ') ? 'L' : '-') + (m.down[2] || G.input.key('KeyE') ? 'R' : '-'); }, get s() { return S; }, get bot() { return bot; }, finished: false, results: [] };
+  window.__lab = { keys: () => KEYS.log.slice(), chart: () => ({ mode: chartMode, view: VIEW.start, span: VIEW.span, manual: VIEW.manual, end: CH.end, top: tlTop, rect: CH.rect && { ...CH.rect }, plot: CH.plot && { ...CH.plot }, ax: CH.ax, pad: CH.pad, pps: CH.pps, custom: !!CHR[chartMode], ready: KEYS.ready, panel: !!KEYS.panel }),
+    practice: () => ({ phase, ended: ended && { ...ended }, frames: trk.frames.length, rp: rp && { t: rp.t, from: rp.from, to: rp.to, playing: rp.playing, speed: rp.speed }, capture: HUD.capture, cursor: HUD.cursor, hits: HUD.hits.map(h => ({ ...h })) }), lesson: () => ({ i: lessonI, demo: !!demo, ok: lessonOkT, demoOk, demoEnd, rec, demoRec, lastRec, kept, note: lessonNote, ghost: ghost ? { t: ghost.S.t, x: ghost.S.p[0].x, y: ghost.S.p[0].y, dead: ghost.S.dead } : null }), hint: () => hint(), jump: () => jump, ctrlState: () => ctrl.st, opt: () => CTRL.OPT, aim, plog, ui: () => ui, bind: BIND, raw: () => { const m = G.input.mouse; return (m.down[0] || G.input.key('KeyQ') ? 'L' : '-') + (m.down[2] || G.input.key('KeyE') ? 'R' : '-'); }, get s() { return S; }, get bot() { return bot; }, finished: false, results: [] };
 
   // ---- 연습 과제·시범·입력 기록
   // 입력 기록(rec): 이번 시도에서 누른 것. 시범을 재생하는 동안에는 시범 입력이 같은 방법으로 기록되어 demoRec에 남는다. 그래서 시범 차트와 내 차트를 같은 눈금으로 견줄 수 있다
-  let lessonI = -1, demo = null, rec = LESSON.recorder(), demoRec = null, lastRec = null, lmem = {}, lessonOkT = null, demoMsgT = 0, demoOk = null, demoEnd = null, ghost = null, ghostOn = true; // demoEnd: 시범이 끝난 순간의 손발 자리(화면 표시를 바꿔도 계산이 같은지 시험에서 견준다)
+  let lessonI = -1, demo = null, rec = LESSON.recorder(), demoRec = null, lastRec = null, lmem = {}, lessonOkT = null, demoMsgT = 0, demoOk = null, demoEnd = null, ghost = null, ghostOn = true;
+  // 시도의 단계: live(하는 중) → ended(끝남: 결과와 다시하기·리플레이) → replay(리플레이). trk = 몸의 모습을 적어 둔 자취, rp = 재생 시계
+  let phase = 'live', ended = null, trk = PRACTICE.track(), rp = null, rpLive = null, rpHold = 0, wonT = null; // demoEnd: 시범이 끝난 순간의 손발 자리(화면 표시를 바꿔도 계산이 같은지 시험에서 견준다)
   const lesson = () => lessonI >= 0 ? LESSON.LIST[lessonI] : null;
   // 과제에 들어올 때: 지금 설정을 보관하고(kept), 결과를 바꾸는 것들을 시범 기준에 맞춘다. 나갈 때 보관한 설정으로 되돌린다.
   // 시범·유령은 withBase로 늘 기준 설정에서 계산하므로, 과제 안에서 플레이어가 보조 설정을 바꿔도 영향을 받지 않는다
@@ -58,7 +61,7 @@
   const recMeta = () => ({ build: BUILD, phys: PH.VERSION, lessons: LESSON.VERSION, lesson: lesson() ? lesson().id : null, station, body: PH.getBody(), mode, layout, physOn: v05, couple: C.COUPLE, opt: { ...CTRL.OPT }, extra: lesson() ? lesson().extra || [] : [], start: S.p.map(q => [+q.x.toFixed(3), +q.y.toFixed(3)]) });
   function reset(st) {
     if (rec.t0 !== null && !demo) lastRec = rec; // 방금 한 시도는 "이전 시도"로 남긴다
-    rec = LESSON.recorder(); demo = null; ghost = null; lmem = {}; lessonOkT = null; tlView = 0; tlManual = false;
+    rec = LESSON.recorder(); demo = null; ghost = null; lmem = {}; lessonOkT = null; phase = 'live'; ended = null; trk = PRACTICE.track(); rp = null; rpLive = null; wonT = null; VIEW.reset();
     if (st) station = st;
     if (autoList.length) { bot = BOTS.make(autoList[autoI % autoList.length]); station = bot.def.station; }
     S = PH.create(world, station); tries++; fx = []; why = null; endT = 0; doneT = 0; air = null; jump = null; trail = []; swing = null; lastMiss = null; ctrl = CTRL.make(mode); rec.meta = recMeta();
@@ -76,7 +79,7 @@
   }
   function updateAim(inp, dt) {
     const m = inp.mouse;
-    if (aim.mx === null || Math.abs(m.x - aim.mx) > 0.5 || Math.abs(m.y - aim.my) > 0.5) { if (aim.mx !== null) { aim.x = m.x + OX; aim.y = m.y + OY; } aim.mx = m.x; aim.my = m.y; }
+    if (aim.mx === null || Math.abs(m.x - aim.mx) > 0.5 || Math.abs(m.y - aim.my) > 0.5) { if (aim.mx !== null && !HUD.capture) { aim.x = m.x + OX; aim.y = m.y + OY; } aim.mx = m.x; aim.my = m.y; } // 마우스가 차트·단추 위에 있을 때는 조준점이 따라가지 않는다
     const dx = (BIND.down('aimRight', inp) ? 1 : 0) - (BIND.down('aimLeft', inp) ? 1 : 0), dy = (BIND.down('aimDown', inp) ? 1 : 0) - (BIND.down('aimUp', inp) ? 1 : 0);
     if (dx || dy) { aim.held += dt; const sp = BIND.down('aimSlow', inp) ? 90 : Math.min(520, 220 + 600 * aim.held), n = Math.hypot(dx, dy); aim.x += dx / n * sp * dt; aim.y += dy / n * sp * dt; } else aim.held = 0;
     aim.x = Math.max(OX + 4, Math.min(OX + W - 4, aim.x)); aim.y = Math.max(OY + 4, Math.min(OY + H - 30, aim.y));
@@ -120,7 +123,7 @@
     else if (e.type === 'footmiss') { if (e.fast) say(e, `${n} 디디지 못함 — 발이 너무 빠르다`, true); else if (e.d < 30) say(e, `${n} 헛디딤 — 면까지 ${Math.ceil(e.d)}px`, true); }
     else if (e.type === 'slip') { plog.slips++; say(e, `${n} 미끄러짐 — 당기는 방향 ${Math.round(e.ang)}°, 이 ${PH.GRIP[e.kind].name}의 한계 ${e.lim}°`); G.sfx.fail(); }
     else if (e.type === 'footoff') say(e, e.hang ? `${n} 떨어짐 — 발에 매달릴 수는 없다(몸이 발 아래에 있다)` : `${n} 접촉 끊김 — 누르는 힘이 없어 발이 떴다`, !e.hang);
-    else if (e.type === 'mat') { if (S.t - plog.sendT < 1.5) plog.fallAfterSend++; endT = bot ? 2.6 : 1.6; G.sfx.thud(); G.shake(5, 0.2); }
+    else if (e.type === 'mat') { if (S.t - plog.sendT < 1.5) plog.fallAfterSend++; endT = practice() ? 0 : bot ? 2.6 : 1.6; G.sfx.thud(); G.shake(5, 0.2); } // 연습(조작 D안)에서는 바로 다시 시작하지 않고 결과 화면으로 간다
     else if (e.type === 'win') { if (lessonI < 0) G.sfx.win(); }
   }
   function say(e, text, minor) { fx.push({ x: e.x, y: e.y, t: 1.6, kind: 'text', text }); if (!minor) why = { text, t: S.t }; }
@@ -136,13 +139,16 @@
         else if (codes.length) { CTRL.KEYMAP[mode][remap.list[remap.i]] = codes[0]; remap.i++; if (remap.i >= remap.list.length) { try { localStorage.setItem('climbKeys', JSON.stringify(CTRL.KEYMAP)); } catch (e) {} remap = null; reset(); } }
         return;
       }
+      hudUpdate(inp); if (HUD.click && doClick(HUD.click)) return;
       if (!bot) {
         const P_ = id => BIND.pressed(id, inp);
         if (P_('settings')) { if (mode === 'intent') openSettings(); else remap = { list: Object.keys(CTRL.KEYMAP[mode]), i: 0 }; return; }
         if (P_('lessonNext')) { setLesson(lessonI + 1 >= LESSON.LIST.length ? -1 : lessonI + 1); return; }
         if (P_('demo')) { if (lessonI < 0) setLesson(0); startDemo(); return; }
-        if (P_('chart')) chartMode = CHART_NEXT[chartMode];
-        { const dir = (BIND.down('chartRight', inp) ? 1 : 0) - (BIND.down('chartLeft', inp) ? 1 : 0); if (dir && chartMode !== 'off') { tlView = Math.max(0, tlView + dir * dt * 1.6); tlManual = true; } } // 시간축을 손으로 옮기면 다시 시작할 때까지 자동으로 따라가지 않는다
+        if (P_('chart')) setChartMode(CHART_NEXT[chartMode]);
+        if (P_('replay') && mode === 'intent') { phase === 'replay' ? closeReplay() : openReplay(); return; }
+        if (chartMode !== 'off') { const dir = (BIND.down('chartRight', inp) ? 1 : 0) - (BIND.down('chartLeft', inp) ? 1 : 0); if (dir) VIEW.pan(dir * dt * VIEW.span * 0.55, CH.end); // 시간축을 손으로 옮기면 다시 시작할 때까지 자동으로 따라가지 않는다
+          if (P_('chartZoomIn')) VIEW.zoom(1 / 1.3, VIEW.start + VIEW.span / 2, CH.end); if (P_('chartZoomOut')) VIEW.zoom(1.3, VIEW.start + VIEW.span / 2, CH.end); if (P_('chartFit')) VIEW.fit(CH.end); }
         if (P_('ghost')) { ghostOn = !ghostOn; if (!ghostOn) ghost = null; }
         if (P_('reset')) { reset(); return; }
         for (let k = 1; k <= 5; k++) if (P_('st' + k)) { if (lessonI >= 0) setLesson(-1); tries = 0; reset(k); return; }
@@ -165,11 +171,13 @@
           if (P_('handMode')) O.handMode = O.handMode === 1 ? 2 : 1;
           if (P_('assistRange')) O.assistRange = O.assistRange === 'near' ? 'ledge' : 'near';
         }
-        updateAim(inp, dt); if (mode === 'intent') { noteInputs(inp); noteUsed(inp); }
+        if (phase === 'live') { updateAim(inp, dt); if (mode === 'intent') { noteInputs(inp); noteUsed(inp); } }
         if (demoMsgT > 0) demoMsgT -= dt;
       }
+      if (phase === 'replay') { replayUpdate(dt, inp); return; }
+      if (phase === 'ended') return; // 결과 화면: 단추와 키(다시하기·리플레이·다음 과제)만 받는다
       if (endT > 0) { endT -= dt; if (endT <= 0 || (!bot && endT < 1.2 && inp.any())) { if (bot) nextAuto(false); reset(); } return; }
-      if (S.won && !bot && lessonI < 0) { if (BIND.pressed('power', inp) || inp.pressed('Enter')) reset(); }
+      if (S.won && !bot && lessonI < 0 && !practice()) { if (BIND.pressed('power', inp) || inp.pressed('Enter')) reset(); }
       tick++; if (slow && tick % 2) return;
       last = bot ? bot.step(S) : readInput(inp);
       PH.step(S, last, dt);
@@ -181,6 +189,12 @@
       else { if (!air) air = { t: S.t, gap: 1e9 }; if (S.t - air.t > 0.25) for (const i of [0, 1]) { const q = PH.nearestGrip(world, S.p[2 + i].x, S.p[2 + i].y); air.gap = Math.min(air.gap, q.d - C.GRAB_R); } }
       track(dt);
       for (const e of S.events) note(e);
+      if (practice()) { // 리플레이용 자취를 적고, 시도가 끝났는지 본다(떨어짐 = 바로, 성공 = 0.8초 더 버틴 뒤)
+        if (rec.t0 === null) trk.hold(S, frameExtra()); else trk.push(S, frameExtra());
+        if (!lesson() && S.won && wonT === null) wonT = S.t;
+        const okT = lesson() ? lessonOkT : wonT;
+        if (S.dead) endAttempt('fail'); else if (okT !== null && S.t - okT >= 0.8) endAttempt('ok');
+      }
       if (bot && bot.m.done) { doneT += dt; if (doneT > 2) { nextAuto(true); reset(); } }
     },
     draw,
@@ -401,7 +415,7 @@
   }
   function drawKeys(codes, x, y, h, o = {}) { // 함께 누르는 조합은 +로 잇는다(주·보조처럼 "둘 중 하나"와 다르다). 조합은 모두 눌려야 눌림으로 보인다
     const all = codes.every(cd => BIND.codeDown(cd, G.input)); let xx = x;
-    codes.forEach((cd, k) => { if (k) { G.text('+', xx + 4.5, y + h / 2 + 4, { size: 11, weight: 800, align: 'center', color: 'rgba(243,236,214,0.75)' }); xx += 9; } xx += drawKey(cd, xx, y, h, { ...o, down: o.disabled ? false : codes.length > 1 ? all : o.down }); });
+    codes.forEach((cd, k) => { if (k) { G.text('+', xx + 4.5, y + h / 2 + 4, { size: 11, weight: 800, align: 'center', color: 'rgba(243,236,214,0.75)' }); xx += 9; } xx += drawKey(cd, xx, y, h, { ...o, down: o.disabled ? false : o.forceDown !== undefined ? o.forceDown : codes.length > 1 ? all : o.down }); });
     return xx - x;
   }
   // 패널 바탕(아홉 조각으로 늘려 그린다). s = 그림 1px이 화면에서 차지하는 크기
@@ -419,12 +433,33 @@
   const rgba = (hex, a) => `rgba(${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)},${a})`;
   function diamond(c, x, y, r, fill, stroke) { c.beginPath(); c.moveTo(x, y - r); c.lineTo(x + r, y); c.lineTo(x, y + r); c.lineTo(x - r, y); c.closePath(); if (fill) { c.fillStyle = fill; c.fill(); } if (stroke) { c.strokeStyle = stroke; c.lineWidth = 1.6; c.stroke(); } }
 
-  // ---- 입력 비교 차트: 줄은 "수행한 동작"(결정된 팔다리, 누르고 있던 몸 동작)이다. 시범 = 윤곽선, 내 입력 = 채움. 순간 입력 = 마름모, 누르고 있기 = 구간.
-  // 0초 = 첫 입력(시범도 나도 각자의 첫 입력). 길이와 자리는 기록의 시각으로 계산한다. 색은 동작을 구분할 뿐 성공·실패를 뜻하지 않는다
+  // ---- 화면 UI의 마우스 처리(차트 옮기기·크기 바꾸기·시간축, 결과·리플레이 버튼). 그리는 쪽이 누를 수 있는 곳(hits)을 알려 주고, 다음 걸음에서 판정한다
+  const HUD = { hits: [], hot: null, click: null, drag: null, capture: false, pressIn: null, overChart: false, wheel: 0, cursor: 'none' };
+  window.addEventListener('wheel', e => { HUD.wheel += e.deltaY; if (HUD.overChart) e.preventDefault(); }, { passive: false });
+  function hudBtn(id, x, y, w, h, label, o = {}) { // 누를 수 있는 칸 하나(글자가 있으면 글자도 그린다)
+    const c = G.ctx, hot = HUD.hot === id && !o.off; c.beginPath(); G.roundRect(x, y, w, h, Math.min(7, h / 2)); c.fillStyle = hot ? 'rgba(243,236,214,0.26)' : 'rgba(243,236,214,0.1)'; c.fill(); c.strokeStyle = hot ? INK : 'rgba(243,236,214,0.32)'; c.lineWidth = 1; c.stroke();
+    if (label) G.text(label, x + w / 2, y + h / 2 + (o.size || 10) * 0.36, { size: o.size || 10, weight: 800, align: 'center', color: INK });
+    if (!o.off) HUD.hits.push({ id, x, y, w, h });
+  }
+  // ---- 입력 비교 차트: 줄은 "수행한 동작"(결정된 팔다리, 누르고 있던 몸 동작)이고 줄 머리에는 키캡만 둔다. 시범 = 윤곽선, 내 입력 = 채움. 순간 입력 = 마름모, 누르고 있기 = 구간.
+  // 0초 = 첫 입력(시범도 나도 각자의 첫 입력). 길이와 자리는 기록의 시각으로 계산한다. 색은 동작을 구분할 뿐 성공·실패를 뜻하지 않는다.
+  // 창처럼 다룬다: 끌어서 옮기고, 가장자리를 끌어 크기를 바꾼다. 시간축은 전체 보기·확대·축소·옮기기를 할 수 있고, 리플레이에서는 누른 곳의 시각으로 간다
   const INK = '#f3ecd6', DIM = 'rgba(243,236,214,0.6)';
-  const FULL = { x: 14, w: 932, bottom: 498, head: 38, axis: 16, lane: 40, foot: 24, lab: 222, padR: 26, span: 3 }, MINI = { x: 378, w: 438, bottom: 498, head: 17, axis: 12, lane: 14, foot: 5, lab: 56, padR: 10, span: 4 };
   const CHART_NEXT = { mini: 'full', full: 'off', off: 'mini' }, CHART_VERB = { mini: '펼치기', full: '끄기', off: '켜기' };
-  let chartMode = ['mini', 'full', 'off'].includes(G.params.get('chart')) ? G.params.get('chart') : 'mini', tlTop = 540, tlView = 0, tlManual = false, tlEnd = 0;
+  // 손대지 않은 차트는 줄 수에 맞춰 아래쪽에 붙여 그린다(작게·펼침). 옮기거나 크기를 바꾸면 그 사각형(CHR)을 기억한다(다시 실행해도 남는다)
+  const CH_DEF = { mini: { x: 378, w: 438, bottom: 498, lane: 18, span: 4 }, full: { x: 14, w: 932, bottom: 498, lane: 40, span: 3 } }, CH_STORE = 'climbChart_v1', CHR = { mini: null, full: null };
+  try { const sv = JSON.parse(localStorage.getItem(CH_STORE) || 'null'); if (sv) for (const k of ['mini', 'full']) if (sv[k] && [sv[k].x, sv[k].y, sv[k].w, sv[k].h].every(Number.isFinite)) CHR[k] = { x: sv[k].x, y: sv[k].y, w: sv[k].w, h: sv[k].h }; } catch (e) {}
+  const saveChart = () => { try { localStorage.setItem(CH_STORE, JSON.stringify(CHR)); } catch (e) {} };
+  let chartMode = ['mini', 'full', 'off'].includes(G.params.get('chart')) ? G.params.get('chart') : 'mini', tlTop = 540;
+  const VIEW = PRACTICE.view(CH_DEF[chartMode === 'full' ? 'full' : 'mini'].span), CH = { rect: null, plot: null, ax: 0, pad: 0, pps: 1, end: 0, minH: 60, n: 1 };
+  function setChartMode(m) { chartMode = m; if (m !== 'off') { VIEW.span0 = CH_DEF[m].span; if (!VIEW.manual) VIEW.span = VIEW.span0; } }
+  const METR = { big: { head: 38, axis: 16, foot: 24 }, small: { head: 17, axis: 12, foot: 5 } };
+  function chartGeom(n) { // n = 줄 수. 돌려주는 값: 사각형, 치수, 줄 높이
+    const d = CH_DEF[chartMode], cu = CHR[chartMode], minH = METR.small.head + METR.small.axis + METR.small.foot + n * 12;
+    if (!cu) { const big = chartMode === 'full', m = METR[big ? 'big' : 'small'], h = m.head + m.axis + m.foot + n * d.lane; return { r: { x: d.x, y: d.bottom - h, w: d.w, h }, m, big, laneH: d.lane, minH }; }
+    const r = PRACTICE.fitRect(cu, { w: 240, h: minH }, { x: 0, y: 0, w: W, h: H }), big = (r.h - 78) / n >= 26 && r.w >= 430, m = METR[big ? 'big' : 'small'];
+    return { r, m, big, laneH: Math.min(64, (r.h - m.head - m.axis - m.foot) / n), minH };
+  }
   function tlModel(master, mine) {
     const lanes = new Map(), lane = (key, mk) => { if (!lanes.has(key)) lanes.set(key, { key, ...mk(), m: [], i: [] }); return lanes.get(key); };
     const add = (r, who) => { if (!r) return; const z = r.zero(), evs = [];
@@ -448,84 +483,167 @@
     return { codes: [code], role, note, action: id };
   }
   const sgn = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2);
-  function drawChart(P, master, mine, now) { // P = FULL 또는 MINI
-    const c = G.ctx, full = P === FULL, model = tlModel(master, mine), lanes = model.lanes.length ? model.lanes : [{ key: 'power', kind: 'hold', id: 'power', ...ACT.HOLD.power, m: [], i: [] }];
-    const h = P.head + P.axis + lanes.length * P.lane + P.foot, x = P.x, y = P.bottom - h, w = P.w, ax = x + P.lab, aw = w - P.lab - P.padR, pps = (aw - (full ? 24 : 16)) / P.span, l = lesson(), ref = l ? '시범' : '이전 시도';
-    tlTop = y - (full ? 8 : 2); tlEnd = model.end;
-    if (now !== null && !tlManual) { if (now - tlView > P.span * 0.88) tlView = now - P.span * 0.88; if (now < tlView) tlView = 0; }
-    tlView = Math.max(0, Math.min(tlView, Math.max(0, Math.max(model.end, now || 0) - P.span * 0.5)));
-    panelSkin(c, x, y, w, h, full ? 0.42 : 0.2);
-    const pad = full ? 12 : 8, X = t => ax + pad + (t - tlView) * pps, top = y + P.head + P.axis;
-    // 머리줄: 제목, 범례, 접기 키
-    if (full) {
-      G.text('입력 비교', x + 46, y + 25, { size: 15, weight: 800, color: INK });
-      let lx = x + 132; pill(c, lx, y + 16, 20, 8, null, INK, 1.6); G.text(ref, lx + 26, y + 24.5, { size: 11, weight: 700, color: INK }); lx += 26 + G.textW(ref, 11, 700) + 16;
-      pill(c, lx, y + 16, 20, 8, INK, null); G.text(l ? '내 입력' : '이번 시도', lx + 26, y + 24.5, { size: 11, weight: 700, color: INK }); lx += 26 + G.textW(l ? '내 입력' : '이번 시도', 11, 700) + 16;
-      diamond(c, lx + 5, y + 20, 4.5, null, INK); G.text('순간 입력', lx + 14, y + 24.5, { size: 11, weight: 700, color: DIM });
-      let rx = x + w - 22; const verb = CHART_VERB[chartMode]; rx -= G.textW(verb, 11.5, 700); G.text(verb, rx, y + 24.5, { size: 11.5, weight: 700, color: INK }); rx -= keyW(firstCode('chart'), 28) + 2; drawKey(firstCode('chart'), rx, y + 6, 28, { where: 'chart', action: 'chart' });
-      if (model.end > P.span || tlView > 0) { rx -= 14; const t = '시간축 이동'; rx -= G.textW(t, 10.5, 700); G.text(t, rx, y + 24.5, { size: 10.5, weight: 700, color: DIM });
-        for (const id of ['chartRight', 'chartLeft']) { rx -= keyW(firstCode(id), 26) + 1; drawKey(firstCode(id), rx, y + 7, 26, { where: 'chart', action: id }); } }
-    } else {
-      let lx = x + 12; pill(c, lx, y + 5.5, 16, 7, null, INK, 1.4); G.text(ref, lx + 20, y + 12.5, { size: 8.5, weight: 700, color: INK }); lx += 20 + G.textW(ref, 8.5, 700) + 10;
-      pill(c, lx, y + 5.5, 16, 7, INK, null); G.text(l ? '내 입력' : '이번 시도', lx + 20, y + 12.5, { size: 8.5, weight: 700, color: INK });
-      G.text(`${BIND.first('chart')} ${CHART_VERB[chartMode]}`, x + w - 12, y + 12.5, { size: 8.5, weight: 800, align: 'right', color: INK });
-    }
-    // 눈금: 0.5초마다 숫자, 그 사이 0.25초에 옅은 선
-    for (let k = Math.floor(tlView * 4) - 1; k <= Math.ceil((tlView + P.span) * 4) + 1; k++) { const t = k / 4, gx = X(t), major = k % 2 === 0; if (t < 0 || gx < ax - 0.5 || gx > ax + aw + 0.5) continue;
-      c.fillStyle = major ? 'rgba(243,236,214,0.16)' : 'rgba(243,236,214,0.07)'; c.fillRect(gx, top - (major ? 3 : 0), 1, lanes.length * P.lane + (major ? 3 : 0));
-      if (major && (full || k % 4 === 0)) G.text(full ? `${t.toFixed(1)}초` : t === 0 ? '0초' : `${t}`, gx + (full ? 0 : 3), top - (full ? 5 : 3), { size: full ? 9.5 : 8, weight: 700, align: full ? 'center' : 'left', color: DIM }); }
-    lanes.forEach((L, k) => { const ly = top + k * P.lane, col = ROLE[L.role], K = laneKeys(L);
-      if (k % 2 === 0) { c.fillStyle = 'rgba(243,236,214,0.035)'; c.fillRect(ax, ly, aw, P.lane); }
-      if (full) { // 키캡(실제 입력)과 동작 이름
-        const area = 104, kh = Math.min(38, 38 * area / keysW(K.codes, 38)), kw = keysW(K.codes, kh), limbDown = L.kind === 'tap' && L.limb < 2 ? BIND.codeDown(K.codes[0], G.input) && !BIND.down('foot', G.input) : undefined;
-        drawKeys(K.codes, x + 24 + (area - kw) / 2, ly + (P.lane - kh) / 2, kh, { role: K.role, where: 'chart', action: K.action, down: limbDown });
-        G.text(L.name, x + 24 + area + 12, ly + P.lane / 2 + (K.note ? 0 : 4.5), { size: 12.5, weight: 800, color: INK });
-        if (K.note) G.text(K.note, x + 24 + area + 12, ly + P.lane / 2 + 12, { size: 8.5, weight: 600, color: DIM });
-      } else G.text(L.name, ax - 7, ly + P.lane / 2 + 3, { size: 9, weight: 800, align: 'right', color: col });
-      c.save(); c.beginPath(); c.rect(ax, ly, aw, P.lane); c.clip();
-      const mY = full ? ly + 9 : ly + 2.5, mH = full ? 8 : 9, iY = full ? ly + 23 : ly + 4.5, iH = full ? 8 : 5, fs = full ? 9.5 : 8;
+  // 리플레이에서 그 줄의 키가 그 시각에 눌려 있었나(누르고 있기 = 구간 안, 순간 입력 = 누른 뒤 0.15초)
+  const laneWasDown = (L, now) => L.kind === 'hold' ? L.i.some(b => b.a <= now && now < b.b) : L.i.some(t => now >= t.a && now - t.a < 0.15);
+  function drawChart(master, mine, now) {
+    const c = G.ctx, model = tlModel(master, mine), lanes = model.lanes.length ? model.lanes : [{ key: 'power', kind: 'hold', id: 'power', ...ACT.HOLD.power, m: [], i: [] }], n = lanes.length;
+    const g = chartGeom(n), { r, m, big, laneH } = g, x = r.x, y = r.y, w = r.w, h = r.h, l = lesson(), ref = l ? '시범' : '이전 시도';
+    const labW = Math.max(big ? 64 : 36, Math.min(big ? 128 : 96, laneH * 2.7)), lab = labW + (big ? 34 : 14), ax = x + lab, aw = Math.max(40, w - lab - (big ? 26 : 10)), pad = big ? 12 : 8, pps = (aw - 2 * pad) / VIEW.span, top = y + m.head + m.axis;
+    tlTop = y - (big ? 8 : 2); VIEW.follow(now, model.end);
+    Object.assign(CH, { rect: r, plot: { x: ax, y: top, w: aw, h: n * laneH }, ax, pad, pps, end: Math.max(model.end, now || 0), minH: g.minH, n });
+    panelSkin(c, x, y, w, h, big ? 0.42 : 0.2);
+    const X = t => ax + pad + (t - VIEW.start) * pps;
+    // 머리줄: 오른쪽에 펼치기·끄기와 시간축 단추(전체·축소·확대, 옮긴 차트는 제자리로), 왼쪽에 제목과 범례(자리가 있으면)
+    const bh = big ? 20 : 12, by = y + (big ? 12 : 3), fz = big ? 10.5 : 8.5; let rx = x + w - (big ? 22 : 9);
+    { const verb = CHART_VERB[chartMode], kc = firstCode('chart'), kw = big ? keyW(kc, 28) : 0, vt = big ? verb : `${BIND.first('chart')} ${verb}`, vw = kw + G.textW(vt, big ? 11.5 : 8.5, 800) + (big ? 14 : 10);
+      rx -= vw; hudBtn('tl_mode', rx, by - (big ? 4 : 0), vw, bh + (big ? 8 : 0)); if (big) drawKey(kc, rx + 2, by - 4, 28, { where: 'chart', action: 'chart' });
+      G.text(vt, rx + kw + (big ? 6 : 5), by + bh / 2 + (big ? 4.2 : 3.2), { size: big ? 11.5 : 8.5, weight: 800, color: INK }); }
+    for (const [id, t, bw] of [['tl_in', '+', bh + 5], ['tl_out', '−', bh + 5], ['tl_fit', '전체', big ? 36 : 28]].concat(CHR[chartMode] ? [['tl_reset', '제자리', big ? 44 : 34]] : [])) { rx -= bw + 4; hudBtn(id, rx, by, bw, bh, t, { size: fz }); }
+    { let lx = x + (big ? 46 : 12); const ty = y + (big ? 25 : 12.5), fit = t2 => lx + t2 < rx - 8;
+      if (big && fit(G.textW('입력 비교', 15, 800))) { G.text('입력 비교', lx, ty, { size: 15, weight: 800, color: INK }); lx += G.textW('입력 비교', 15, 800) + 22; }
+      const mineT = l ? '내 입력' : '이번 시도', lw = 26 + G.textW(ref, fz, 700) + 14 + 26 + G.textW(mineT, fz, 700);
+      if (fit(lw)) { const ph = big ? 8 : 7, pw = big ? 20 : 16, py = ty - (big ? 9 : 7); pill(c, lx, py, pw, ph, null, INK, 1.5); G.text(ref, lx + pw + 5, ty, { size: fz, weight: 700, color: INK }); lx += pw + 5 + G.textW(ref, fz, 700) + 12;
+        pill(c, lx, py, pw, ph, INK, null); G.text(mineT, lx + pw + 5, ty, { size: fz, weight: 700, color: INK }); } }
+    // 눈금: 보이는 폭에 맞춰 간격을 고른다
+    const major = [0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60].find(sv => sv * pps >= (big ? 70 : 44)) || 120, minor = major / 2;
+    for (let k = Math.max(0, Math.floor(VIEW.start / minor) - 1); k * minor <= VIEW.start + VIEW.span + minor; k++) { const t = k * minor, gx = X(t), isM = k % 2 === 0; if (gx < ax - 0.5 || gx > ax + aw + 0.5) continue;
+      c.fillStyle = isM ? 'rgba(243,236,214,0.16)' : 'rgba(243,236,214,0.07)'; c.fillRect(gx, top - (isM ? 3 : 0), 1, n * laneH + (isM ? 3 : 0));
+      if (isM) G.text((major < 0.5 ? t.toFixed(2) : major < 1 ? t.toFixed(1) : `${t}`) + (big || t === 0 ? '초' : ''), gx + (big ? 0 : 3), top - (big ? 5 : 3), { size: big ? 9.5 : 8, weight: 700, align: big ? 'center' : 'left', color: DIM }); }
+    const two = laneH >= 26, fs = two ? 9.5 : 8, replaying = phase === 'replay', footDown = BIND.down('foot', G.input);
+    lanes.forEach((L, k) => { const ly = top + k * laneH, col = ROLE[L.role], K = laneKeys(L);
+      if (k % 2 === 0) { c.fillStyle = 'rgba(243,236,214,0.035)'; c.fillRect(ax, ly, aw, laneH); }
+      // 줄 머리: 키캡만(실제 입력의 모양, 동작의 색). 줄 높이와 칸 너비에 맞춘다
+      const area = lab - (big ? 34 : 14), kh0 = Math.max(8, Math.min(laneH - 2, 44)), kh = Math.min(kh0, kh0 * area / keysW(K.codes, kh0)), kw = keysW(K.codes, kh);
+      drawKeys(K.codes, x + (big ? 24 : 8) + (area - kw) / 2, ly + (laneH - kh) / 2, kh, { role: K.role, where: 'chart', action: K.action, forceDown: replaying ? laneWasDown(L, now) : undefined, down: L.kind === 'tap' && L.limb < 2 ? BIND.codeDown(K.codes[0], G.input) && !footDown : undefined });
+      c.save(); c.beginPath(); c.rect(ax, ly, aw, laneH); c.clip();
+      const mH = two ? Math.max(6, Math.min(9, laneH * 0.2)) : Math.min(9, laneH - 4), mY = two ? ly + laneH * 0.24 : ly + (laneH - mH) / 2, iH = two ? mH : Math.max(3, mH - 4), iY = two ? ly + laneH * 0.6 : ly + (laneH - iH) / 2;
       if (L.kind === 'hold') {
         L.m.forEach(b => { const a = X(b.a), bw = (b.b - b.a) * pps; c.beginPath(); G.roundRect(a, mY, bw, mH, Math.min(mH / 2, bw / 2)); c.fillStyle = rgba(col, 0.12); c.fill(); c.strokeStyle = col; c.lineWidth = 1.6; c.stroke();
-          if (!L.i.length) G.text(`${(b.b - b.a).toFixed(2)}초`, a + bw + 5, mY + mH - (full ? 0.5 : 1.5), { size: fs, weight: 700, color: col }); });
-        L.i.forEach((b, n) => { const a = X(b.a), bw = (b.b - b.a) * pps, m = L.m[n]; c.beginPath(); G.roundRect(a, iY, bw, iH, Math.min(iH / 2, bw / 2)); c.fillStyle = col; c.fill();
+          if (!L.i.length) G.text(`${(b.b - b.a).toFixed(2)}초`, a + bw + 5, mY + mH - (two ? 0.5 : 1.5), { size: fs, weight: 700, color: col }); });
+        L.i.forEach((b, q) => { const a = X(b.a), bw = (b.b - b.a) * pps, mm = L.m[q]; c.beginPath(); G.roundRect(a, iY, bw, iH, Math.min(iH / 2, bw / 2)); c.fillStyle = col; c.fill();
           if (bw < 3) { c.beginPath(); c.moveTo(a + bw / 2, iY - 1); c.lineTo(a + bw / 2 - 3, iY - 5); c.lineTo(a + bw / 2 + 3, iY - 5); c.closePath(); c.fill(); } // 아주 짧은 구간: 너비를 부풀리지 않고 표식을 더한다
-          const d = b.b - b.a, t = `${d.toFixed(2)}초` + (m && !b.live ? ` (${ref} ${sgn(d - (m.b - m.a))})` : '');
-          G.text(t, Math.max(a + bw, m && !full ? X(m.b) : 0) + 5, full ? iY + iH - 0.5 : ly + P.lane - 3.5, { size: fs, weight: 700, color: INK }); });
+          const d = b.b - b.a, t = `${d.toFixed(2)}초` + (mm && !b.live ? ` (${ref} ${sgn(d - (mm.b - mm.a))})` : '');
+          G.text(t, Math.max(a + bw, mm && !two ? X(mm.b) : 0) + 5, two ? iY + iH - 0.5 : ly + laneH / 2 + 3, { size: fs, weight: 700, color: INK }); });
       } else {
-        const r = full ? 5 : 3.6, my = full ? ly + 13 : ly + P.lane / 2, iy = full ? ly + 27 : ly + P.lane / 2;
-        L.m.forEach(t => { diamond(c, X(t.a), my, r + (full ? 0 : 1), rgba(col, 0.12), col); if (full && t.mark && !L.i.length) G.text('놓을 손', X(t.a) + 9, my + 3.5, { size: 8.5, weight: 700, color: col }); });
-        L.i.forEach((t, n) => { const m = L.m[n]; diamond(c, X(t.a), iy, full ? r : 2.6, col, null);
-          const tx = (t.mark ? '놓을 손' : '') + (m ? `${t.mark ? ' ' : ''}${ref} ${sgn(t.a - m.a)}초` : ''); if (tx && (full || m)) G.text(full ? tx : sgn(t.a - m.a), Math.max(X(t.a), m && !full ? X(m.a) : 0) + 9, iy + 3.5, { size: full ? 9 : 8, weight: 700, color: INK }); });
+        const rr = two ? 5 : 3.6, my = two ? ly + laneH * 0.33 : ly + laneH / 2, iy = two ? ly + laneH * 0.7 : ly + laneH / 2;
+        L.m.forEach(t => { diamond(c, X(t.a), my, rr + (two ? 0 : 1), rgba(col, 0.12), col); if (two && t.mark && !L.i.length) G.text('놓을 손', X(t.a) + 9, my + 3.5, { size: 8.5, weight: 700, color: col }); });
+        L.i.forEach((t, q) => { const mm = L.m[q]; diamond(c, X(t.a), iy, two ? rr : 2.6, col, null);
+          const tx = (t.mark ? '놓을 손' : '') + (mm ? `${t.mark ? ' ' : ''}${ref} ${sgn(t.a - mm.a)}초` : ''); if (tx && (two || mm)) G.text(two ? tx : sgn(t.a - mm.a), Math.max(X(t.a), mm && !two ? X(mm.a) : 0) + 9, iy + 3.5, { size: two ? 9 : 8, weight: 700, color: INK }); });
       }
       c.restore();
     });
-    // 지금 시각
-    if (now !== null && X(now) >= ax && X(now) <= ax + aw) { const px = X(now); c.fillStyle = INK; c.fillRect(px - 0.5, top - 2, 1.5, lanes.length * P.lane + 4); const t = `${now.toFixed(2)}초`, pw = G.textW(t, full ? 9.5 : 8, 900) + 10; pill(c, px - pw / 2, top - (full ? 16 : 12), pw, full ? 13 : 10, INK, null); G.text(t, px, top - (full ? 6 : 4.5), { size: full ? 9.5 : 8, weight: 900, align: 'center', color: '#1c231d' }); }
-    if (full) { G.text(`${ref}과의 시간 차이만 견줍니다. 성공 여부는 실제 등반 결과로 확인합니다.`, x + 46, y + h - 9, { size: 10, weight: 600, color: DIM });
-      G.text('0초 = 첫 입력 · 키캡 = 지금 설정된 입력(이번에 실제로 누른 것 우선) · 색 = 수행한 동작', x + w - 24, y + h - 9, { size: 9.5, weight: 600, align: 'right', color: DIM }); }
+    // 지금 시각(리플레이에서는 재생 시각)
+    if (now !== null && X(now) >= ax && X(now) <= ax + aw) { const px = X(now); c.fillStyle = replaying ? '#ffd166' : INK; c.fillRect(px - 0.5, top - 2, replaying ? 2 : 1.5, n * laneH + 4); const t = `${now.toFixed(2)}초`, pw = G.textW(t, big ? 9.5 : 8, 900) + 10; pill(c, px - pw / 2, top - (big ? 16 : 12), pw, big ? 13 : 10, replaying ? '#ffd166' : INK, null); G.text(t, px, top - (big ? 6 : 4.5), { size: big ? 9.5 : 8, weight: 900, align: 'center', color: '#1c231d' }); }
+    if (big && w >= 430) { G.text(replaying ? '리플레이: 시간축을 누르거나 끌면 그 시각으로 갑니다.' : `${ref}과의 시간 차이만 견줍니다. 성공 여부는 실제 등반 결과로 확인합니다.`, x + 46, y + h - 9, { size: 10, weight: 600, color: DIM });
+      if (w >= 780) G.text('0초 = 첫 입력 · 키캡 = 지금 설정된 입력(실제로 누른 것 우선) · 색 = 수행한 동작', x + w - 24, y + h - 9, { size: 9.5, weight: 600, align: 'right', color: DIM }); }
   }
-  function drawTimelineStrip() { // 과제 중에는 시범과 나, 자유 연습에서는 이전 시도와 이번 시도
+  function drawChartPanel() { // 과제 중에는 시범과 나, 자유 연습에서는 이전 시도와 이번 시도. 리플레이에서는 내 기록 전체 위로 재생 시각이 지나간다
     tlTop = 540; const l = lesson(), master = l ? demoRec : lastRec, mine = demo ? null : rec.t0 !== null ? rec : null;
-    if (chartMode === 'off') { const t = `${BIND.first('chart')} ${ACT.name.chart}`, w = G.textW(t, 9, 800) + 16; G.panel(MINI.x + MINI.w - w, MINI.bottom - 17, w, 17, 'rgba(28,35,29,0.88)', '#636a4b'); G.text(t, MINI.x + MINI.w - w / 2, MINI.bottom - 5, { size: 9, weight: 800, align: 'center', color: INK }); return; }
-    const now = demo ? (rec.t0 !== null ? S.t - rec.t0 : null) : mine ? S.t - mine.zero() : null;
-    drawChart(chartMode === 'full' ? FULL : MINI, master, mine, endT > 0 || lessonOkT !== null ? null : now);
+    if (chartMode === 'off') { const t = `${BIND.first('chart')} ${ACT.name.chart}`, w = G.textW(t, 9, 800) + 16, d = CH_DEF.mini; G.panel(d.x + d.w - w, d.bottom - 17, w, 17, 'rgba(28,35,29,0.88)', '#636a4b'); G.text(t, d.x + d.w - w / 2, d.bottom - 5, { size: 9, weight: 800, align: 'center', color: INK }); HUD.hits.push({ id: 'tl_mode', x: d.x + d.w - w, y: d.bottom - 17, w, h: 17 }); return; }
+    const now = phase === 'replay' ? rp.t - (rec.t0 ?? 0) : demo ? (rec.t0 !== null ? S.t - rec.t0 : null) : phase === 'live' && mine ? S.t - mine.zero() : null;
+    drawChart(master, mine, now);
+  }
+  const inPlot = m => CH.plot && m.x >= CH.plot.x && m.x <= CH.plot.x + CH.plot.w && m.y >= CH.plot.y && m.y <= CH.plot.y + CH.plot.h;
+  const timeAt = x => VIEW.start + (x - CH.ax - CH.pad) / CH.pps, pannable = () => CH.end + 0.3 > VIEW.span || VIEW.start > 0;
+  function hudUpdate(inp) {
+    const m = inp.mouse, anyDown = m.down.some(Boolean), R = chartMode !== 'off' ? CH.rect : null, z = R ? PRACTICE.zone(R, m.x, m.y) : null, hit = HUD.hits.find(q => m.x >= q.x && m.x <= q.x + q.w && m.y >= q.y && m.y <= q.y + q.h) || null;
+    // 누른 자리가 UI 안인가로 정한다(pressIn): 밖에서 누른 채 차트 위로 들어온 마우스는 뗄 때까지 게임 입력이고, 차트에서 누른 채 밖으로 나가도 뗄 때까지 UI의 것이다.
+    // 판정은 누른 순간의 자리로 한다(화면이 잠깐 느려지면 판정할 때 마우스는 이미 다른 곳에 가 있을 수 있다)
+    const inside = (px, py) => !!(R && PRACTICE.zone(R, px, py)) || HUD.hits.some(q => px >= q.x && px <= q.x + q.w && py >= q.y && py <= q.y + q.h);
+    if (inp.clicks.length) HUD.pressIn = inp.clicks.some(k => inside(k.x, k.y)); else if (!anyDown) HUD.pressIn = null;
+    HUD.overChart = !!z; HUD.hot = hit ? hit.id : null; HUD.click = null;
+    HUD.capture = !!HUD.drag || (HUD.pressIn !== null ? HUD.pressIn : !!z || !!hit); BIND.setMouseBlocked(HUD.capture);
+    if (HUD.drag) { const d = HUD.drag;
+      if (!m.down[0]) { if (d.kind === 'move' || d.kind === 'size') saveChart(); HUD.drag = null; }
+      else if (d.kind === 'move' || d.kind === 'size') CHR[chartMode] = PRACTICE.drag(d.r0, d.z, m.x - d.mx, m.y - d.my, { w: 240, h: CH.minH }, { x: 0, y: 0, w: W, h: H });
+      else if (d.kind === 'pan') { VIEW.start = d.start; VIEW.pan(-(m.x - d.mx) / CH.pps, CH.end); }
+      else if (d.kind === 'seek' && rp) rp.seek((rec.t0 ?? 0) + timeAt(m.x));
+    } else if (inp.clicks.some(k => k.button === 0)) {
+      const ck = inp.clicks.find(k => k.button === 0), p0 = { x: ck.x, y: ck.y }, z0 = R ? PRACTICE.zone(R, p0.x, p0.y) : null, hit0 = HUD.hits.find(q => p0.x >= q.x && p0.x <= q.x + q.w && p0.y >= q.y && p0.y <= q.y + q.h) || null;
+      if (hit0) HUD.click = hit0.id;
+      else if (z0) { const base = { z: z0, r0: { ...R }, mx: p0.x, my: p0.y };
+        if (z0.edge) HUD.drag = { kind: 'size', cursor: PRACTICE.cursorOf(z0), ...base };
+        else if (inPlot(p0) && phase === 'replay') { HUD.drag = { kind: 'seek', cursor: 'pointer' }; rp.seek((rec.t0 ?? 0) + timeAt(p0.x)); }
+        else if (inPlot(p0) && pannable()) HUD.drag = { kind: 'pan', cursor: 'grabbing', mx: p0.x, start: VIEW.start };
+        else HUD.drag = { kind: 'move', cursor: 'move', ...base }; }
+    }
+    if (HUD.wheel) { if (z && CH.plot) VIEW.zoom(HUD.wheel > 0 ? 1.2 : 1 / 1.2, inPlot(m) ? timeAt(m.x) : VIEW.start + VIEW.span / 2, CH.end); HUD.wheel = 0; }
+    // 마우스 모양: 플레이 중에는 조준점만 보이고(none), UI 위에서는 무엇을 할 수 있는지 보인다. 끝난 뒤와 리플레이에서는 보통 화살표
+    let cur = phase === 'live' ? 'none' : 'default';
+    if (HUD.drag) cur = HUD.drag.cursor; else if (HUD.capture && hit) cur = 'pointer'; else if (HUD.capture && z) cur = z.edge ? PRACTICE.cursorOf(z) : inPlot(m) ? (phase === 'replay' ? 'pointer' : pannable() ? 'grab' : 'move') : 'move';
+    HUD.cursor = cur; const cv = G.ctx.canvas; if (cv.style.cursor !== cur) cv.style.cursor = cur;
+  }
+  // ---- 시도가 끝난 뒤: 바로 처음으로 돌아가지 않고 결과와 "다시하기 / 리플레이"를 보인다. 연습 과제든 자유 연습이든 같다
+  const practice = () => mode === 'intent' && !bot && !demo;
+  const failText = () => why && (!air || why.t >= air.t - 0.05) ? why.text : hint() ? '도약이 다음 턱에 이어지지 않았다' : air && air.gap > 0 && air.gap < 1e8 ? `손이 잡을 곳에 닿지 못했다 — 가장 가까웠을 때 ${Math.ceil(air.gap)}px 모자람` : air && air.gap <= 0 ? '손이 닿는 거리였지만 잡지 않았다(버튼을 떼야 잡는다)' : '붙잡은 곳 없이 떨어졌다';
+  const frameExtra = () => ({ aim: [aim.x, aim.y], g: ghost ? PRACTICE.clone(ghost.S) : null });
+  function endAttempt(kind) { // kind: 'ok' 성공, 'fail' 떨어짐, 'stop' 하다가 리플레이를 열어 멈춤
+    if (phase !== 'live') return; trk.push(S, frameExtra(), true);
+    ended = { kind, t: S.t, title: kind === 'ok' ? (lesson() ? '성공!' : '목표 도달!') : kind === 'fail' ? '매트에 떨어짐' : '여기까지', sub: kind === 'fail' ? failText() : kind === 'ok' ? `첫 입력부터 ${(S.t - (rec.t0 ?? 0)).toFixed(2)}초 · 시도 ${tries}` : '하는 중에 멈췄다', hint: kind === 'fail' ? hint() : null };
+    phase = 'ended';
+  }
+  function openReplay() { // 내가 한 플레이를 적어 둔 자취 그대로 다시 본다(다시 계산하지 않는다)
+    if (!practice() || trk.frames.length < 2) return; if (phase === 'live') endAttempt('stop');
+    rpLive = { S, aim: [aim.x, aim.y], gS: ghost ? ghost.S : null }; rp = PRACTICE.clock(rec.t0 ?? trk.t0(), trk.t1()); rp.playing = true; phase = 'replay';
+    if (chartMode === 'off') setChartMode('mini'); VIEW.manual = false; VIEW.start = 0;
+  }
+  function closeReplay() { if (phase !== 'replay') return; S = rpLive.S; aim.x = rpLive.aim[0]; aim.y = rpLive.aim[1]; if (ghost) ghost.S = rpLive.gS; rp = null; rpLive = null; phase = 'ended'; }
+  function replayUpdate(dt, inp) {
+    if (BIND.pressed('rpPlay', inp)) rp.toggle();
+    if (BIND.pressed('rpSpeed', inp)) rp.cycleSpeed();
+    for (const [id, d] of [['rpBack', -1], ['rpFwd', 1]]) { if (BIND.pressed(id, inp)) { rp.nudge(d * 0.05); rpHold = 0; } else if (BIND.down(id, inp)) { rpHold += dt; if (rpHold > 0.25) rp.nudge(d * dt); } } // 한 번 = 0.05초, 누르고 있으면 실제 빠르기로 계속
+    rp.update(dt); const f = trk.at(rp.t); S = f.s; if (f.aim) { aim.x = f.aim[0]; aim.y = f.aim[1]; } if (ghost) ghost.S = f.g || rpLive.gS;
+  }
+  function doClick(id) { // 화면의 단추를 눌렀을 때
+    if (id === 'retry') { reset(); return true; }
+    if (id === 'replay') { phase === 'replay' ? closeReplay() : openReplay(); return true; }
+    if (id === 'next') { setLesson(lessonI + 1 >= LESSON.LIST.length ? -1 : lessonI + 1); return true; }
+    if (id === 'rp_play' && rp) rp.toggle(); if (id === 'rp_back' && rp) rp.nudge(-0.1); if (id === 'rp_fwd' && rp) rp.nudge(0.1); if (id === 'rp_speed' && rp) rp.cycleSpeed();
+    if (id === 'tl_mode') setChartMode(CHART_NEXT[chartMode]);
+    if (id === 'tl_fit') VIEW.fit(CH.end); if (id === 'tl_in') VIEW.zoom(1 / 1.3, VIEW.start + VIEW.span / 2, CH.end); if (id === 'tl_out') VIEW.zoom(1.3, VIEW.start + VIEW.span / 2, CH.end);
+    if (id === 'tl_reset') { CHR[chartMode] = null; saveChart(); VIEW.reset(); }
+    return false;
+  }
+  function keyBtn(id, act, text, x, y, h, o = {}) { // 키캡 + 동작 이름으로 된 단추. 돌려주는 값: 너비
+    const kc = firstCode(act), kw = keyW(kc, h - 4), fz = o.size || 12, w = kw + G.textW(text, fz, 800) + 18;
+    hudBtn(id, x, y, w, h, null, { off: o.off }); drawKey(kc, x + 4, y + 2, h - 4, { where: o.where || 'result', action: act, disabled: o.off, down: o.off ? false : undefined });
+    G.text(text, x + 4 + kw + 4, y + h / 2 + fz * 0.36, { size: fz, weight: 800, color: o.off ? DIM : INK }); return w;
+  }
+  const keyBtnW = (act, text, h, fz = 12) => keyW(firstCode(act), h - 4) + G.textW(text, fz, 800) + 18;
+  function drawResult() {
+    if (phase !== 'ended' || !ended) return; const c = G.ctx, col = ended.kind === 'ok' ? '#7dff9a' : ended.kind === 'fail' ? '#ff9c8a' : INK, lines = [ended.sub].filter(Boolean).map(t => ({ t, c: INK })).concat(ended.hint ? wrap(ended.hint, 470, 12, 700).map(t => ({ t, c: '#ffd166' })) : []);
+    const btns = [['retry', 'reset', '다시하기'], ['replay', 'replay', '리플레이']].concat(lesson() ? [['next', 'lessonNext', lessonI === LESSON.LIST.length - 1 ? '자유 연습으로' : '다음 과제']] : []);
+    const bws = btns.map(b => keyBtnW(b[1], b[2], 34, 13)), bsum = bws.reduce((a, v) => a + v + 10, -10), w = Math.max(G.textW(ended.title, 20, 900), ...lines.map(q => G.textW(q.t, 12, 700)), bsum) + 56, h = 54 + lines.length * 19 + 50, cx = lesson() ? Math.max(w / 2 + 10, 363) : W / 2, x = cx - w / 2, y = 92; // 과제 카드(오른쪽)를 가리지 않게 그 왼쪽 가운데에 둔다
+    panelSkin(c, x, y, w, h, 0.3);
+    G.text(ended.title, cx, y + 36, { size: 20, weight: 900, align: 'center', color: col });
+    lines.forEach((q, k) => G.text(q.t, cx, y + 60 + k * 19, { size: 12, weight: 700, align: 'center', color: q.c }));
+    let bx = cx - bsum / 2; btns.forEach((b, k) => { bx += keyBtn(b[0], b[1], b[2], bx, y + h - 50, 34, { size: 13, off: b[0] === 'replay' && trk.frames.length < 2 }) + 10; });
+  }
+  function drawReplayBar() {
+    if (phase !== 'replay') return; const c = G.ctx, h = 30, items = [['rp_play', 'rpPlay', rp.playing ? '멈춤' : '재생'], ['rp_back', 'rpBack', '뒤로'], ['rp_fwd', 'rpFwd', '앞으로'], ['rp_speed', 'rpSpeed', `속도 ${rp.speed}배`], ['replay', 'replay', '닫기'], ['retry', 'reset', '다시하기']];
+    const tt = `${(rp.t - rp.from).toFixed(2)} / ${(rp.to - rp.from).toFixed(2)}초`, tw = G.textW('00.00 / 00.00초', 13, 900) + 16, lw = G.textW('리플레이', 13, 900) + 16, w = lw + items.reduce((a, it) => a + keyBtnW(it[1], it[2], h, 11.5) + 6, 0) + tw + 22, x = (W - w) / 2, y = 8;
+    panelSkin(c, x, y, w, h + 12, 0.2);
+    G.text('리플레이', x + 14, y + 25, { size: 13, weight: 900, color: '#ffd166' }); let bx = x + 14 + lw;
+    for (const it of items) bx += keyBtn(it[0], it[1], it[2], bx, y + 6, h, { size: 11.5, where: 'replay' }) + 6;
+    G.text(tt, x + w - 14, y + 25, { size: 13, weight: 900, align: 'right', color: INK });
+    G.text(trk.full ? '적어 둔 것은 처음 2분까지입니다 · 차트의 시간축을 누르거나 끌면 그 시각으로' : '내가 한 플레이를 그대로 다시 봅니다 · 차트의 시간축을 누르거나 끌면 그 시각으로', W / 2, y + h + 26, { size: 10, weight: 700, align: 'center', color: '#222', stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
   }
   // ---- 아래 키 안내(조작 D안): 키캡 = 지금 설정된 입력(실제로 누르고 있는 칸 우선), 옆 = 동작 이름과 그 손발의 상태. 손 선택 2번에서는 지금 추천된 손의 색을 쓴다
   function drawKeyBar() {
     const c = G.ctx, st = ctrl.st, hm = CTRL.OPT.handMode, h = 34, y = H - 37; let x = 8;
     const stateOf = i => { const m = S.limb[i].mode; return m === 'reach' ? (i >= 2 && !st.manual[i] ? '자동' : '움직이는 중') : m === 'free' ? '힘 빠짐' : '붙음'; };
-    const chips = [], footDown = BIND.down('foot', G.input);
+    const chips = [], footDown = BIND.down('foot', G.input), rt = phase === 'replay' ? rp.t : null, tapAt = i => rec.taps.some(t => rt >= t.t && rt - t.t < 0.15 && t.limb === i), heldAt = id => rec.all().some(b => b.id === id && b.a <= rt && rt < b.b);
     for (let k = 0; k < 4; k++) {
       const foot = k >= 2, flip = k % 2; let i, id, name;
       if (hm === 1) { i = k; id = flip ? 'sendR' : 'sendL'; name = ACT.LIMB[i].name; }
       else { const r = st.rec ? (foot ? st.rec.foot : st.rec.hand) % 2 : 0; i = (foot ? 2 : 0) + (flip ? 1 - r : r); id = flip ? 'sendOther' : 'sendBest'; name = `${flip ? '다른' : '추천'} ${foot ? '발' : '손'}: ${ACT.LIMB[i].name}`; }
-      chips.push({ codes: foot ? [usedCode('foot'), usedCode(id, 'foot+' + id)] : [usedCode(id)], role: ACT.LIMB[i].role, name, sub: stateOf(i), on: S.limb[i].mode === 'reach', action: foot ? 'foot+' + id : id, down: foot ? undefined : BIND.down(id, G.input) && !footDown });
+      chips.push({ codes: foot ? [usedCode('foot'), usedCode(id, 'foot+' + id)] : [usedCode(id)], role: ACT.LIMB[i].role, name, sub: stateOf(i), on: S.limb[i].mode === 'reach', action: foot ? 'foot+' + id : id, down: foot ? undefined : BIND.down(id, G.input) && !footDown, forceDown: rt !== null ? tapAt(i) : undefined });
     }
-    chips.push({ codes: [usedCode('power')], role: 'power', name: ACT.HOLD.power.name, sub: st.phase === 'charge' ? '모으는 중' : st.phase === 'throw' ? '던지는 중' : '떼면 던지기', on: !!last.power, action: 'power', down: BIND.down('power', G.input) });
+    chips.push({ codes: [usedCode('power')], role: 'power', name: ACT.HOLD.power.name, sub: st.phase === 'charge' ? '모으는 중' : st.phase === 'throw' ? '던지는 중' : '떼면 던지기', on: !!last.power, action: 'power', down: BIND.down('power', G.input), forceDown: rt !== null ? heldAt('power') : undefined });
     for (const ch of chips) {
       const kw = keysW(ch.codes, h), tw = Math.max(G.textW(ch.name, 11.5, 800), G.textW(ch.sub, 9, 600)), w = 5 + kw + 4 + tw + 9, col = ROLE[ch.role];
       c.beginPath(); G.roundRect(x, y + 3, w, h - 3, 8); c.fillStyle = 'rgba(28,35,29,0.9)'; c.fill(); c.strokeStyle = ch.on ? col : 'rgba(99,106,75,0.9)'; c.lineWidth = ch.on ? 2 : 1; c.stroke();
-      drawKeys(ch.codes, x + 5, y + 1, h, { role: ch.role, where: 'bar', action: ch.action, down: ch.down });
+      drawKeys(ch.codes, x + 5, y + 1, h, { role: ch.role, where: 'bar', action: ch.action, down: ch.down, forceDown: ch.forceDown });
       G.text(ch.name, x + 5 + kw + 4, y + 17, { size: 11.5, weight: 800, color: INK }); G.text(ch.sub, x + 5 + kw + 4, y + 29, { size: 9, weight: 600, color: ch.on ? col : DIM });
       x += w + 6;
     }
@@ -608,13 +726,15 @@
     rows.forEach((t, k) => G.text(t, W - 460, 138 + k * 18, { size: 12, weight: k ? 600 : 800, color: k ? '#e8e8e4' : '#ffd166' }));
   }
   // ---- 키 설정 화면(배틀그라운드식): 동작마다 두 칸, 칸을 고르고 새 키나 마우스 버튼을 누른다
-  function settingsRows() { const hm = CTRL.OPT.handMode; return BIND.ACTIONS.filter(a => !a.hm || a.hm === hm); }
-  function openSettings() { ui = { sel: 0, slot: 0, cap: null, msg: '', frame: 0 }; }
+  // 동작이 많아 두 쪽으로 나눈다: 1쪽 = 조작, 2쪽 = 연습·리플레이·실험실
+  const SET_PAGES = [['손', '발', '몸', '몸통', '조준', '보조'], ['연습', '리플레이', '실험실']], SET_PAGE_NAME = ['조작', '연습·리플레이·실험실'];
+  function settingsRows() { const hm = CTRL.OPT.handMode, pg = SET_PAGES[ui ? ui.page : 0]; return BIND.ACTIONS.filter(a => (!a.hm || a.hm === hm) && pg.includes(a.g)); }
+  function openSettings() { ui = { sel: 0, slot: 0, page: 0, cap: null, msg: '', frame: 0 }; }
   function settingsLayout() {
     const rows = settingsRows(), per = Math.ceil(rows.length / 2), out = [];
     rows.forEach((a, k) => { const col = k < per ? 0 : 1, r = col ? k - per : k, x = 30 + col * 452, y = 92 + r * 22; out.push({ a, k, x, y, s0: [x + 268, y - 14, 82, 19], s1: [x + 354, y - 14, 82, 19] }); });
     const by = 92 + per * 22 + 16;
-    return { rows: out, per, btn: { mode: [30, 52, 330, 22], reset: [W / 2 - 170, by, 160, 26], close: [W / 2 + 10, by, 160, 26] }, by };
+    return { rows: out, per, btn: { mode: [30, 52, 330, 22], page: [W - 30 - 300, 52, 300, 22], reset: [W / 2 - 170, by, 160, 26], close: [W / 2 + 10, by, 160, 26] }, by };
   }
   const inBox = (b, x, y) => x >= b[0] && x <= b[0] + b[2] && y >= b[1] && y <= b[1] + b[3];
   function settingsUpdate(inp) {
@@ -630,6 +750,7 @@
       ui.cap = null; return;
     }
     if (ui.frame > 1 && (inp.pressed('Escape') || BIND.get('settings').some(c => c && !c.startsWith('Mouse') && inp.pressed(c)))) { ui = null; ctrl = CTRL.make(mode); return; }
+    if (inp.pressed('Tab')) { ui.page = 1 - ui.page; ui.sel = 0; ui.slot = 0; ui.msg = ''; return; }
     const per = L.per, col = ui.sel < n ? (ui.sel < per ? 0 : 1) : -1;
     if (inp.pressed('ArrowDown')) ui.sel = Math.min(n + 1, ui.sel + 1);
     if (inp.pressed('ArrowUp')) ui.sel = Math.max(0, ui.sel - 1);
@@ -641,6 +762,7 @@
     for (const ck of inp.clicks) {
       if (ck.button !== 0) continue; const x = ck.x, y = ck.y;
       if (inBox(L.btn.mode, x, y)) { CTRL.OPT.handMode = CTRL.OPT.handMode === 1 ? 2 : 1; ui.sel = 0; ui.msg = `손 선택 ${CTRL.OPT.handMode}번 방식의 키를 보여 준다`; return; }
+      if (inBox(L.btn.page, x, y)) { ui.page = 1 - ui.page; ui.sel = 0; ui.slot = 0; ui.msg = ''; return; }
       if (inBox(L.btn.reset, x, y)) { ui.sel = n; act(); return; }
       if (inBox(L.btn.close, x, y)) { ui.sel = n + 1; act(); return; }
       for (const r of L.rows) for (const sl of [0, 1]) if (inBox(sl ? r.s1 : r.s0, x, y)) { ui.sel = r.k; ui.slot = sl; ui.cap = { id: r.a.id, slot: sl, t: ui.frame }; ui.msg = ''; return; }
@@ -653,6 +775,7 @@
     G.text('키 설정', 30, 36, { size: 18, weight: 800 });
     G.text('칸을 클릭하거나 방향키로 고르고 Enter → 새 키나 마우스 버튼을 누른다 · Delete 비우기 · Esc 닫기 · 바꾸면 바로 저장되고 다시 열어도 남는다', 112, 36, { size: 11.5, color: '#c8ccd6', weight: 500 });
     const mb = L.btn.mode; G.panel(mb[0], mb[1], mb[2], mb[3], '#2c3b55', '#9fb4d9'); G.text(`손 선택 방식: ${CTRL.OPT.handMode}번 ${CTRL.OPT.handMode === 1 ? '(입력마다 손이 정해짐)' : '(게임이 추천하는 손)'} — 클릭해서 바꾸기`, mb[0] + 8, mb[1] + 16, { size: 12, weight: 700 });
+    { const pb = L.btn.page; G.panel(pb[0], pb[1], pb[2], pb[3], '#2c3b55', '#9fb4d9'); G.text(`${ui.page + 1}/2쪽 · ${SET_PAGE_NAME[ui.page]} — Tab 또는 클릭으로 넘기기`, pb[0] + 8, pb[1] + 16, { size: 12, weight: 700 }); }
     let lastG = null;
     for (const r of L.rows) {
       const a = r.a, sel = ui.sel === r.k;
@@ -676,29 +799,30 @@
     G.text(ui.msg || (anyCf ? `겹친 입력이 있다(빨간 칸). 같은 입력을 두 동작에 쓰면 둘 다 함께 실행된다` : '겹친 입력 없음'), W / 2, L.by + 48, { size: 12, weight: 700, align: 'center', color: ui.msg.startsWith('주의') || (!ui.msg && anyCf) ? '#ff8a8a' : '#a8e6b8' });
   }
   function draw(c) {
+    HUD.hits = []; CH.rect = null; CH.plot = null; const liveView = phase !== 'replay'; // 리플레이에서는 그때의 몸만 보인다(효과·이륙 표시·도움 표시는 지금 것이라 감춘다)
     KEYS.log = []; // 이번 프레임에 그린 키캡 목록(시험에서 "화면의 키캡이 지금 설정과 같은지" 확인하는 데 쓴다)
     c.save(); c.translate(-OX, -OY);
     drawWorld(c); drawGhost(c); drawBody(c);
-    for (const f of fx) {
+    for (const f of liveView ? fx : []) {
       if (f.kind === 'ring') G.circle(f.x, f.y, 12 + (0.4 - f.t) * 40, null, `rgba(255,255,255,${Math.min(1, f.t * 3)})`, 3);
       else if (f.t > 1.0) G.circle(f.x, f.y, 10, null, '#ff4a4a', 2.5); // 경고 글은 왼쪽 아래 상태 칸으로, 그 자리에는 작은 빨간 고리만
       else if (false) { c.globalAlpha = Math.min(1, f.t * 2); const w = G.textW(f.text, 13, 800) + 14; G.panel(f.x + 14, f.y - 30, w, 22, 'rgba(120,16,16,0.9)'); G.text(f.text, f.x + 21, f.y - 14, { size: 13, weight: 800 }); c.globalAlpha = 1; }
     }
-    if (jump && jump.off) { // 이륙 순간의 속도와 그 뒤 가슴이 지나간 길
+    if (liveView && jump && jump.off) { // 이륙 순간의 속도와 그 뒤 가슴이 지나간 길
       const o = jump.off; for (const q of trail) G.circle(q[0], q[1], 2, 'rgba(20,20,20,0.45)');
       const ex = o.x + o.vx * 0.14, ey = o.y + o.vy * 0.14, a = Math.atan2(o.vy, o.vx);
       G.line(o.x, o.y, ex, ey, '#111', 3); G.line(ex, ey, ex - 10 * Math.cos(a - 0.5), ey - 10 * Math.sin(a - 0.5), '#111', 3); G.line(ex, ey, ex - 10 * Math.cos(a + 0.5), ey - 10 * Math.sin(a + 0.5), '#111', 3);
       G.text(`이륙 ${Math.round(Math.hypot(o.vx, o.vy))}px/s · ${Math.round(Math.atan2(-o.vy, o.vx) * 180 / Math.PI)}°${jump.tR !== null && jump.tP !== null ? ` · 손 놓기 ${jump.tR - jump.tP >= 0 ? '+' : ''}${(jump.tR - jump.tP).toFixed(2)}초` : ''}`, o.x - 10, o.y + 22, { size: 12, weight: 800, color: '#111', align: 'right', stroke: 'rgba(255,255,255,0.7)', strokeW: 3 });
     }
-    if (swing && Math.max(swing.peak, swing.cur) > 6) { // 반동 표시: 손 아래 수직선과 최근 최고 각도
+    if (liveView && swing && Math.max(swing.peak, swing.cur) > 6) { // 반동 표시: 손 아래 수직선과 최근 최고 각도
       const r = 118, pk = Math.max(swing.peak, swing.cur) * Math.PI / 180;
       G.line(swing.ax, swing.ay, swing.ax, swing.ay + r, 'rgba(0,0,0,0.25)', 1.5, [3, 5]);
       for (const sg of [-1, 1]) G.line(swing.ax + Math.sin(sg * pk) * (r - 8), swing.ay + Math.cos(pk) * (r - 8), swing.ax + Math.sin(sg * pk) * (r + 8), swing.ay + Math.cos(pk) * (r + 8), '#111', 3);
       const tr = swing.prev ? (swing.peak > swing.prev + 1 ? ' ▲ 커지는 중' : swing.peak < swing.prev - 1 ? ' ▼ 줄어드는 중' : ' ─') : '';
       G.text(`반동 ${Math.round(Math.max(swing.peak, swing.cur))}°${tr}`, swing.ax, swing.ay - 14, { size: 13, weight: 800, align: 'center', color: '#111', stroke: 'rgba(255,255,255,0.7)', strokeW: 3 });
     }
-    if (mode === 'intent' && !bot && !S.dead && !ui) drawIntentHelp(c);
-    if (!S.dead && (bot || mode !== 'keys')) { G.line(last.cx - 9, last.cy, last.cx + 9, last.cy, '#111', 2); G.line(last.cx, last.cy - 9, last.cx, last.cy + 9, '#111', 2); G.circle(last.cx, last.cy, 5, null, '#fff', 1.5); }
+    if (mode === 'intent' && !bot && !S.dead && !ui && phase === 'live') drawIntentHelp(c);
+    if (!S.dead && (bot || mode !== 'keys')) { const qx = liveView ? last.cx : aim.x, qy = liveView ? last.cy : aim.y; G.line(qx - 9, qy, qx + 9, qy, '#111', 2); G.line(qx, qy - 9, qx, qy + 9, '#111', 2); G.circle(qx, qy, 5, null, '#fff', 1.5); } // 리플레이에서는 그때의 조준점
     c.restore();
     const K = CTRL.KEYMAP[mode], sp = kn(K.power);
     const O = CTRL.OPT, onoff = v => v ? '켬' : '끔';
@@ -720,7 +844,7 @@
       `좌클릭(${kn(K.lh)}) 왼손 · 우클릭(${kn(K.rh)}) 오른손 · ${kn(K.lf)} 왼발 · ${kn(K.rf)} 오른발 : 누르고 있는 동안 커서를 따라오고, 떼는 순간 붙는다`,
       `${sp} : 붙은 팔다리로 밀기·당기기 (커서 쪽)`, '',
     ];
-    if (lesson() && !bot) { /* 과제 중에는 조작 설명 칸을 그리지 않는다(벽과 목표 턱을 가리지 않게). 설명은 자유 연습 화면에 있다 */ }
+    if ((lesson() || phase !== 'live') && !bot) { /* 과제 중과 결과·리플레이 화면에서는 조작 설명 칸을 그리지 않는다(벽과 목표 턱을 가리지 않게). 설명은 자유 연습 화면에 있다 */ }
     else {
       G.panel(8, 6, 716, 84, 'rgba(255,255,255,0.82)');
       G.text(`조작 ${CTRL.MODES[mode]}`, 18, 25, { size: 14, weight: 800, color: '#222' });
@@ -737,15 +861,15 @@
       key(c, 514, mode === 'intent' ? '모으기·던지기' : '힘주기', '', last.power, '#ffd166', mode === 'intent' ? B1('power') : sp);
     }
     if (mode === 'intent' && recent.length && !ui) recent.forEach((r, k) => { const y = Math.min(H - 50, chartMode === 'full' ? tlTop - 8 : H) - (recent.length - 1 - k) * 20, w = G.textW(r.text, 12, 800) + 14; G.ctx.globalAlpha = Math.min(1, r.t * 2); G.panel(W - 12 - w, y - 15, w, 19, 'rgba(10,12,16,0.8)'); G.text(r.text, W - 12 - w + 7, y, { size: 12, weight: 800, color: '#ffd166' }); G.ctx.globalAlpha = 1; });
-    tlTop = 540; if (mode === 'intent' && !bot && !ui) { drawLessonCard(); drawTimelineStrip(); }
-    if (mode === 'intent' && !bot && !ui && !(endT > 0)) drawStatus(); // 떨어진 뒤에는 안내 띠와 겹치지 않게 상태 칸을 숨긴다
+    tlTop = 540; if (mode === 'intent' && !bot && !ui) { drawLessonCard(); drawChartPanel(); drawResult(); drawReplayBar(); }
+    if (mode === 'intent' && !bot && !ui && !(endT > 0) && phase === 'live') drawStatus(); // 떨어진 뒤에는 안내 띠와 겹치지 않게 상태 칸을 숨긴다
     if (showLog && mode === 'intent') drawLog();
     if (ui) drawSettings();
     if (remap) { G.panel(W / 2 - 220, 200, 440, 70, 'rgba(20,30,60,0.95)', '#fff'); G.text(`키 다시 지정 (${remap.i + 1}/${remap.list.length}) — Esc 그만`, W / 2, 226, { size: 13, align: 'center', weight: 600 }); G.text(`「${CTRL.LABEL[remap.list[remap.i]]}」에 쓸 키를 누르세요`, W / 2, 252, { size: 18, align: 'center', weight: 800 }); }
     G.text(`실험 빌드 ${BUILD}`, W - 10, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
-    if (endT > 0) G.banner('매트에 떨어짐 — 바로 다시', why && (!air || why.t >= air.t - 0.05) ? why.text : hint() ? '도약이 다음 턱에 이어지지 않았다' : air && air.gap > 0 && air.gap < 1e8 ? `손이 잡을 곳에 닿지 못했다 — 가장 가까웠을 때 ${Math.ceil(air.gap)}px 모자람` : air && air.gap <= 0 ? '손이 닿는 거리였지만 잡지 않았다(버튼을 떼야 잡는다)' : '붙잡은 곳 없이 떨어졌다', 'fail', 380);
+    if (endT > 0) G.banner('매트에 떨어짐 — 바로 다시', failText(), 'fail', 380);
     if (endT > 0 && hint()) { const t = hint(), w = G.textW(t, 14, 800) + 28; const hy = Math.min(458, tlTop - 34); G.panel(W / 2 - w / 2, hy, w, 28, 'rgba(255,214,102,0.96)'); G.text(t, W / 2, hy + 19, { size: 14, weight: 800, align: 'center', color: '#111' }); }
-    else if (S.won && !lesson()) G.banner('목표 도달!', `${S.t.toFixed(1)}초 · 시도 ${tries} — R 또는 스페이스로 다시`, 'win', 400);
+    else if (S.won && !lesson() && !(mode === 'intent' && !bot)) G.banner('목표 도달!', `${S.t.toFixed(1)}초 · 시도 ${tries} — R 또는 스페이스로 다시`, 'win', 400);
     else if (bot && bot.m.done) G.banner('건너가서 안정됨', '두 손 + 한 발로 버티는 중', 'win', 440);
   }
   G.run(game, { title: '등반 조작 실험실' });

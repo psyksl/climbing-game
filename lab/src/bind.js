@@ -4,6 +4,7 @@
 const BIND = (() => {
   const STORE = 'climbBind_v1';
   // hm: 손 선택 방식(1 = 버튼마다 손이 정해짐, 2 = 게임이 추천하는 손). 없으면 두 방식 공통
+  // ctx: 그 동작이 쓰이는 때('replay' = 리플레이를 보는 동안만). 없으면 플레이 중. 때가 다르면 같은 키를 써도 겹침이 아니다
   const ACTIONS = [
     { id: 'sendL', g: '손', hm: 1, label: '왼손 보내기 · (모으는 중) 왼손 놓기 지정/취소', def: ['Mouse0', 'KeyQ'] },
     { id: 'sendR', g: '손', hm: 1, label: '오른손 보내기 · (모으는 중) 오른손 놓기 지정/취소', def: ['Mouse2', 'KeyE'] },
@@ -33,6 +34,14 @@ const BIND = (() => {
     { id: 'chart', g: '연습', label: '입력 비교 차트 (작게 → 펼침 → 끔)', def: ['KeyT', null] },
     { id: 'chartLeft', g: '연습', label: '입력 비교 차트의 시간축을 앞(이른 쪽)으로', def: ['Comma', null] },
     { id: 'chartRight', g: '연습', label: '입력 비교 차트의 시간축을 뒤(늦은 쪽)로', def: ['Period', null] },
+    { id: 'chartZoomOut', g: '연습', label: '입력 비교 차트의 시간축 축소(더 긴 시간을 한눈에)', def: ['BracketLeft', null] },
+    { id: 'chartZoomIn', g: '연습', label: '입력 비교 차트의 시간축 확대', def: ['BracketRight', null] },
+    { id: 'chartFit', g: '연습', label: '입력 비교 차트 전체 보기(처음부터 끝까지)', def: ['Backslash', null] },
+    { id: 'replay', g: '연습', label: '리플레이 보기·닫기 (시도가 끝난 뒤. 하는 중에 누르면 거기서 끝내고 본다)', def: ['KeyY', null] },
+    { id: 'rpPlay', g: '리플레이', ctx: 'replay', label: '리플레이 재생·멈춤', def: ['Space', null] },
+    { id: 'rpBack', g: '리플레이', ctx: 'replay', label: '리플레이 뒤로 (한 번 = 0.05초, 누르고 있으면 계속)', def: ['ArrowLeft', null] },
+    { id: 'rpFwd', g: '리플레이', ctx: 'replay', label: '리플레이 앞으로 (한 번 = 0.05초, 누르고 있으면 계속)', def: ['ArrowRight', null] },
+    { id: 'rpSpeed', g: '리플레이', ctx: 'replay', label: '리플레이 재생 속도 (1 → 0.5 → 0.25배)', def: ['ArrowDown', null] },
     { id: 'ghost', g: '연습', label: '시범 유령 켬·끔 (내 첫 입력에 맞춰 시범 캐릭터가 흐릿하게 함께 움직임)', def: ['KeyU', null] },
     { id: 'reset', g: '실험실', label: '같은 자세로 다시', def: ['KeyR', null] },
     { id: 'scheme', g: '실험실', label: '조작 방식 바꾸기 (D·A·B·C안)', def: ['Tab', null] },
@@ -62,19 +71,21 @@ const BIND = (() => {
   // 같은 입력을 쓰는 동작들(같은 손 선택 방식에서 함께 쓰이는 것끼리만). "발 + 손 입력"처럼 의도된 조합은 겹침이 아니다
   function conflicts(hm) {
     const use = {};
-    for (const a of ACTIONS) { if (a.hm && a.hm !== hm) continue; for (const c of map[a.id]) if (c) (use[c] = use[c] || []).push(a.id); }
+    for (const a of ACTIONS) { if (a.hm && a.hm !== hm) continue; for (const c of map[a.id]) if (c) { const k = (a.ctx || 'play') + ' ' + c; (use[k] = use[k] || []).push(a.id); } }
     const out = {}; for (const c in use) if (use[c].length > 1) for (const id of use[c]) (out[id] = out[id] || []).push(...use[c].filter(x => x !== id));
     return out;
   }
   // 엔진 입력(raw)에 대해: 지금 눌려 있나 / 이번 프레임에 새로 눌렸나
+  // 마우스가 화면 UI(차트 옮기기·크기 바꾸기·버튼)에 쓰이는 동안에는 마우스 버튼에 배정된 동작이 실행되지 않게 막는다
+  let mouseBlocked = false; const setMouseBlocked = v => { mouseBlocked = !!v; };
   const mouseBtn = c => c && c.startsWith('Mouse') ? +c.slice(5) : -1;
-  function down(id, raw) { for (const c of get(id)) { if (!c) continue; const b = mouseBtn(c); if (b >= 0 ? raw.mouse.down[b] : raw.key(c)) return true; } return false; }
-  function pressed(id, raw) { for (const c of get(id)) { if (!c) continue; const b = mouseBtn(c); if (b >= 0 ? raw.clicks.some(k => k.button === b) : raw.pressed(c)) return true; } return false; }
+  function down(id, raw) { for (const c of get(id)) { if (!c) continue; const b = mouseBtn(c); if (b >= 0 && mouseBlocked) continue; if (b >= 0 ? raw.mouse.down[b] : raw.key(c)) return true; } return false; }
+  function pressed(id, raw) { for (const c of get(id)) { if (!c) continue; const b = mouseBtn(c); if (b >= 0 && mouseBlocked) continue; if (b >= 0 ? raw.clicks.some(k => k.button === b) : raw.pressed(c)) return true; } return false; }
   // 그 동작의 두 칸(주·보조) 가운데 지금 실제로 쓰이고 있는 입력: 이번 프레임에 새로 눌린 것이 먼저, 없으면 눌려 있는 것. 기록과 화면이 "실제로 누른 키"를 보이는 데 쓴다
-  function active(id, raw) { let dn = null; for (const c of get(id)) { if (!c) continue; const b = mouseBtn(c); if (b >= 0 ? raw.clicks.some(k => k.button === b) : raw.pressed(c)) return c; if (!dn && (b >= 0 ? raw.mouse.down[b] : raw.key(c))) dn = c; } return dn; }
+  function active(id, raw) { let dn = null; for (const c of get(id)) { if (!c) continue; const b = mouseBtn(c); if (b >= 0 && mouseBlocked) continue; if (b >= 0 ? raw.clicks.some(k => k.button === b) : raw.pressed(c)) return c; if (!dn && (b >= 0 ? raw.mouse.down[b] : raw.key(c))) dn = c; } return dn; }
   const codeDown = (c, raw) => { if (!c) return false; const b = mouseBtn(c); return b >= 0 ? !!raw.mouse.down[b] : !!raw.key(c); };
   // 마우스 버튼으로 눌렸고 그 순간 Shift가 눌려 있었나(Shift를 빨리 떼도 발 조작으로 인식하기 위해)
-  function pressedWithShift(id, raw) { for (const c of get(id)) { const b = mouseBtn(c); if (b >= 0 && raw.clicks.some(k => k.button === b && k.shift)) return true; } return false; }
+  function pressedWithShift(id, raw) { if (mouseBlocked) return false; for (const c of get(id)) { const b = mouseBtn(c); if (b >= 0 && raw.clicks.some(k => k.button === b && k.shift)) return true; } return false; }
   const NAMES = { Mouse0: '좌클릭', Mouse1: '휠 클릭', Mouse2: '우클릭', Mouse3: '마우스 뒤', Mouse4: '마우스 앞', Space: 'Space', Escape: 'Esc', Tab: 'Tab', Enter: 'Enter', Backspace: 'Backspace',
     ShiftLeft: '왼Shift', ShiftRight: '오른Shift', ControlLeft: '왼Ctrl', ControlRight: '오른Ctrl', AltLeft: '왼Alt', AltRight: '오른Alt', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→',
     Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', Backslash: '\\', BracketLeft: '[', BracketRight: ']', Minus: '-', Equal: '=', Backquote: '`', CapsLock: 'CapsLock' };
@@ -83,6 +94,6 @@ const BIND = (() => {
   const label = id => { const b = get(id).filter(Boolean); return b.length ? b.map(name).join(' / ') : '없음'; };
   const first = id => name(get(id).find(Boolean) || null);
   load();
-  return { ACTIONS, BY, load, save, resetAll, set, get, conflicts, down, pressed, pressedWithShift, active, codeDown, name, label, first, STORE };
+  return { ACTIONS, BY, load, save, resetAll, set, get, conflicts, down, pressed, pressedWithShift, active, codeDown, setMouseBlocked, name, label, first, STORE };
 })();
 if (typeof module !== 'undefined') module.exports = BIND;

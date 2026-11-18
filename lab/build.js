@@ -21,7 +21,7 @@ const html = `<!doctype html>
 </head><body>
 ${['engine.js', 'physics.js', 'bots.js', 'bind.js', 'action-names.js', 'input-catalog.js', 'input-ui.js'].map(n => `<script>\n${src(n)}\n</script>`).join('\n')}
 <script>\n${assets}\n</script>
-${['controls.js', 'lessons.js', 'game.js'].map(n => `<script>\n${src(n)}\n</script>`).join('\n')}
+${['controls.js', 'lessons.js', 'practice.js', 'game.js'].map(n => `<script>\n${src(n)}\n</script>`).join('\n')}
 </body></html>
 `;
 fs.writeFileSync(path.join(__dirname, 'climb_lab.html'), html);
