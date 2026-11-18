@@ -180,6 +180,8 @@ const CTRL = (() => {
       if (!sp && st.phase === 'charge') { st.power = Math.max(0.15, Math.min(1, (st.pt - 0.04) / P.FULL_CHARGE));
         // 놓을 손을 정하지 않았고 아직 붙든 손이 있으면 뛰지 않는다: 발을 디딘 채 몸만 싣는 작은 반동으로 제한
         st.jump = st.mark[0] || st.mark[1] || !(gripping(s, 0) || gripping(s, 1));
+        // 실패 안내용: 뗀 순간 겨눈 곳(잡기 보조가 기준으로 삼는 점, 없으면 커서)
+        { const a = aimSeg(s, io); st.aimAt = a ? { x: a.x, y: a.y } : { x: io.mx, y: io.my }; }
         if (!st.jump) st.power = Math.min(st.power, P.ROCK_MAX); st.phase = 'throw'; st.pt = 0; st.tAnchor = [c.x, c.y]; } // 짧게 누르면 작은 반동, 오래 누르면 힘껏 던지기
       // 클릭: 손발 하나에 대한 의도
       // 입력 → 손발: 1번 방식은 입력마다 손이 정해져 있고, 2번 방식은 누르는 순간의 추천 손(또는 그 반대 손)으로 확정한다

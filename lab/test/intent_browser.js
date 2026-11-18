@@ -99,5 +99,13 @@ const sx = x => x - OX, sy = y => y - OY; // 게임 좌표 → 화면 좌표
   await fresh(1); await pg.keyboard.press('KeyJ'); await pg.waitForTimeout(350);
   check('바꾼 키(J)로 실제로 왼손이 움직임', (await modes()).split(',')[0] === 'reach', await modes());
   await pg.evaluate(() => window.__lab.bind.resetAll());
+  // 실패 안내: 못 미침과 지나침을 구분한다(모은 힘이 낮다는 이유만으로 오래 누르라고 하지 않는다)
+  const jumpHint = async (x, hold) => { await fresh(3); await pg.mouse.move(sx(x), sy(348)); await pg.waitForTimeout(200);
+    await pg.keyboard.down('Space'); await pg.waitForTimeout(40); await pg.mouse.click(sx(x), sy(348)); await pg.mouse.click(sx(x), sy(348), { button: 'right' });
+    await pg.waitForTimeout(hold - 40); await pg.keyboard.up('Space'); await pg.waitForTimeout(2200); return { m: await modes(), h: await pg.evaluate(() => window.__lab.hint()) || '' }; };
+  let jh = await jumpHint(482, 650);
+  check('실패 안내: 가까운 끝을 겨누고 길게 → "지나쳐 … 덜 모으거나"', !jh.m.includes('@B') && jh.h.includes('지나쳐') && jh.h.includes('덜 모으'), jh.h);
+  jh = await jumpHint(600, 150);
+  check('실패 안내: 먼 끝을 겨누고 짧게 → "못 미쳐 … 더 모으거나"', !jh.m.includes('@B') && jh.h.includes('못 미쳐') && !jh.h.includes('지나'), jh.h);
   console.log('페이지 오류:', errs.join(';') || '없음', '| 실패', fail); await b.close(); process.exit(fail ? 1 : 0);
 })();

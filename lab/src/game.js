@@ -20,7 +20,7 @@
   setPhys(v05);
   const kn = c => (c || '?').replace('Key', '').replace('Digit', '').replace('Arrow', '');
   let recent = [], spWas = false, lastMiss = null, showLog = false, S, station = 1, tries = 0, fx = [], why = null, endT = 0, slow = false, tick = 0, bot = null, autoI = 0, doneT = 0, air = null, jump = null, trail = [], swing = null, last = BOTS.idle();
-  window.__lab = { ctrlState: () => ctrl.st, opt: () => CTRL.OPT, aim, plog, ui: () => ui, bind: BIND, raw: () => { const m = G.input.mouse; return (m.down[0] || G.input.key('KeyQ') ? 'L' : '-') + (m.down[2] || G.input.key('KeyE') ? 'R' : '-'); }, get s() { return S; }, get bot() { return bot; }, finished: false, results: [] };
+  window.__lab = { hint: () => hint(), jump: () => jump, ctrlState: () => ctrl.st, opt: () => CTRL.OPT, aim, plog, ui: () => ui, bind: BIND, raw: () => { const m = G.input.mouse; return (m.down[0] || G.input.key('KeyQ') ? 'L' : '-') + (m.down[2] || G.input.key('KeyE') ? 'R' : '-'); }, get s() { return S; }, get bot() { return bot; }, finished: false, results: [] };
 
   function reset(st) {
     if (st) station = st;
@@ -56,7 +56,7 @@
     const out = ctrl.step(S, io, 1 / 120);
     for (const i of ctrl.st.air) fx.push({ x: S.p[2 + i].x, y: S.p[2 + i].y, t: 0.9, kind: 'text', text: `${LIMB[i]}: 닿은 곳이 없다 — 그대로 들고 있음` });
     if (mode === 'intent') {
-      for (const m of ctrl.st.miss || []) { lastMiss = { d: m.d, t: S.t }; } for (const m of ctrl.st.miss || []) if (!fx.some(f => f.miss === m.i && f.t > 0.6)) fx.push({ x: m.x, y: m.y, t: 1.0, kind: 'text', miss: m.i, text: `${LIMB[m.i]}: 겨눈 구간 밖에 닿음 (${Math.ceil(m.d)}px 벗어남)` });
+      for (const m of ctrl.st.miss || []) { lastMiss = { d: m.d, t: S.t, x: m.x, y: m.y }; } for (const m of ctrl.st.miss || []) if (!fx.some(f => f.miss === m.i && f.t > 0.6)) fx.push({ x: m.x, y: m.y, t: 1.0, kind: 'text', miss: m.i, text: `${LIMB[m.i]}: 겨눈 구간 밖에 닿음 (${Math.ceil(m.d)}px 벗어남)` });
       logSends(inp);
     }
     return out;
@@ -147,9 +147,14 @@
       jump.lean = S.p[1].x - feet.reduce((a, i) => a + S.p[2 + i].x, 0) / feet.length; // 엉덩이가 발보다 얼마나 오른쪽인가
     } else if (jump && !jump.off && jump.tP !== null) {
       jump.off = { x: c.x, y: c.y, vx: c.vx, vy: c.vy, t: S.t, held: hands.length > 0 }; trail = [];
+      jump.aim = mode === 'intent' && ctrl.st.aimAt ? { ...ctrl.st.aimAt } : null; jump.near = null;
       if (jump.tR === null && !hands.length) jump.tR = S.t;
     }
     if (jump && jump.off && jump.tR === null && !hands.length) jump.tR = S.t;
+    // 공중에서 손이 겨눈 곳에 가장 가까웠던 순간: 거리와, 이륙점→겨눈 곳 방향으로 본 앞뒤(음수 = 못 미침, 양수 = 지나침)
+    if (jump && jump.off && jump.aim && !feet.length) for (const i of [0, 1]) { if (S.limb[i].mode === 'grip') continue;
+      const h = S.p[2 + i], d = Math.hypot(h.x - jump.aim.x, h.y - jump.aim.y);
+      if (!jump.near || d < jump.near.d) jump.near = { d, along: alongAim(h.x, h.y) }; }
     if (jump && jump.off && !hands.length && !feet.length && trail.length < 400 && Math.round(S.t * 120) % 4 === 0) trail.push([c.x, c.y]);
     // 반동: 손으로만 매달려 있을 때 가슴이 손 아래에서 벗어난 각도의 반주기별 최고값
     const hanging = hands.length && Math.hypot(S.p[2 + hands[0]].x - c.x, S.p[2 + hands[0]].y - c.y) > 0.8 * C.A; // 팔이 펴져 매달려 있을 때만(당겨 올라간 자세는 흔들림이 아님)
@@ -160,17 +165,32 @@
       swing.cur = Math.max(swing.cur, Math.abs(phi)); swing.phi = phi;
     } else swing = null;
   }
+  // 이륙점→겨눈 곳 방향으로 잰 (x,y)의 앞뒤 위치. 음수 = 겨눈 곳보다 앞(못 미침), 양수 = 뒤(지나침)
+  function alongAim(x, y) { const a = jump.aim, o = jump.off, ux = a.x - o.x, uy = a.y - o.y, l = Math.hypot(ux, uy) || 1; return ((x - a.x) * ux + (y - a.y) * uy) / l; }
+  // 못 미침/지나침이 분명한가: 앞뒤 차이가 6px 이상이고, 겨눈 곳에서 벗어난 거리의 60% 이상이 앞뒤 방향일 때만(옆으로 빗나간 것은 판단하지 않는다)
+  const sideOf = (along, d) => Math.abs(along) >= 6 && Math.abs(along) >= 0.6 * d ? Math.sign(along) : 0;
   function hint() { // 떨어진 뒤: 방향·타이밍·발 위치 중 무엇을 바꿀지
     if (!jump || jump.tP === null || !jump.off) return null;
     const d = jump.tR === null ? 9 : jump.tR - jump.tP, o = jump.off, ang = Math.round(Math.atan2(-o.vy, o.vx) * 180 / Math.PI), sp = Math.round(Math.hypot(o.vx, o.vy));
     const win = (C.COUPLE || 0) + 0.15;
     if (mode === 'intent' && !bot) { // D안: 손 놓는 순간은 게임이 고르므로 모으기·발 위치·방향만 본다
-      if (lastMiss && jump.off && lastMiss.t >= jump.off.t) return `바꿀 것: 세기 또는 겨냥 — 손이 겨눈 구간을 ${Math.ceil(lastMiss.d)}px 벗어났다. 덜 모으거나 손이 닿는 곳을 겨눈다`;
-      if (ctrl.st.power < 0.7) return `바꿀 것: 모으기 — Space를 짧게 눌렀다(세기 ${Math.round(ctrl.st.power * 100)}%). ${CTRL.P.FULL_CHARGE}초 넘게 누르면 힘껏 던진다`;
+      // 세기를 탓하려면 손이 겨눈 곳보다 앞에서 모자랐는지, 뒤로 지나쳤는지를 먼저 확인한다. 근거가 없으면 사실만 알린다
+      const pw = Math.round(ctrl.st.power * 100);
+      if (lastMiss && jump.off && lastMiss.t >= jump.off.t) {
+        const side = jump.aim ? sideOf(alongAim(lastMiss.x, lastMiss.y), Math.hypot(lastMiss.x - jump.aim.x, lastMiss.y - jump.aim.y)) : 0;
+        if (side > 0) return `바꿀 것: 세기 — 손이 겨눈 구간을 지나쳐 ${Math.ceil(lastMiss.d)}px 뒤에 닿았다(세기 ${pw}%). 덜 모으거나 더 먼 곳을 겨눈다`;
+        if (side < 0) return `바꿀 것: 세기 — 손이 겨눈 구간에 못 미쳐 ${Math.ceil(lastMiss.d)}px 앞에 닿았다(세기 ${pw}%). ${pw >= 99 ? '이미 가장 세게 뛰었다. 더 가까운 곳을 겨눈다' : '더 모으거나 더 가까운 곳을 겨눈다'}`;
+        return `손이 겨눈 구간 밖에 닿음 (${Math.ceil(lastMiss.d)}px 벗어남)`;
+      }
+      if (jump.lean >= 4 && jump.near && jump.near.d > C.GRAB_R) {
+        const side = sideOf(jump.near.along, jump.near.d), gap = Math.ceil(jump.near.d - C.GRAB_R);
+        if (side < 0) return `바꿀 것: 세기 — 손이 겨눈 곳에 ${gap}px 못 미쳤다(세기 ${pw}%). ${pw >= 99 ? '이미 가장 세게 뛰었다. 더 가까운 곳을 겨눈다' : '더 모은다'}`;
+        if (side > 0) return `바꿀 것: 세기 — 손이 겨눈 곳을 지나쳤다(가장 가까울 때 ${gap}px, 세기 ${pw}%). 덜 모은다`;
+      }
     } else if (d > win) return `바꿀 것: 타이밍 — 손 놓기가 밀기보다 ${d > 5 ? '너무' : d.toFixed(2) + '초'} 늦어 팔에 붙잡혔다 (여유 약 ${win.toFixed(2)}초)`;
     if (jump.lean < 4) return `바꿀 것: 발 위치 — 발이 엉덩이보다 앞(가려는 쪽)에 있어 ${ang > 90 ? '뒤로' : '위로만'} 밀렸다. 발을 반대쪽에 두기`;
     if (air && air.gap <= 0) return '바꿀 것: 잡는 타이밍 — 손이 닿았지만 버튼을 떼지 않았다';
-    return `바꿀 것: 방향 — 이륙 ${sp}px/s, 수평에서 ${ang}° 위. 손이 ${air && air.gap < 1e8 ? Math.ceil(air.gap) : '?'}px 모자랐다`;
+    return `바꿀 것: 방향 — 이륙 ${sp}px/s, 수평에서 ${ang}° 위. 손이 잡을 곳에서 가장 가까울 때 ${air && air.gap < 1e8 ? Math.ceil(air.gap) : '?'}px 떨어져 있었다`;
   }
   function nextAuto(ok) { window.__lab.results.push({ name: autoList[autoI % autoList.length], ok }); autoI++; if (autoI >= autoList.length) window.__lab.finished = true; }
 
@@ -415,11 +435,11 @@
     for (let i = 0; i < 4; i++) { const m = S.limb[i].mode, on = m === 'reach'; key(c, 10 + i * 126, LIMB[i], on ? (mode === 'intent' && i >= 2 && !ctrl.st.manual[i] ? '자동' : '움직이는 중') : m === 'free' ? '힘 빠짐' : '붙음', on, COL[i], kname[i]); }
     key(c, 514, mode === 'intent' ? '모으기·던지기' : '힘주기', '', last.power, '#ffd166', mode === 'intent' ? B1('power') : sp);
     if (mode === 'intent' && recent.length && !ui) recent.forEach((r, k) => { const y = H - 40 - (recent.length - 1 - k) * 20, w = G.textW(r.text, 12, 800) + 14; G.ctx.globalAlpha = Math.min(1, r.t * 2); G.panel(W - 12 - w, y - 15, w, 19, 'rgba(10,12,16,0.8)'); G.text(r.text, W - 12 - w + 7, y, { size: 12, weight: 800, color: '#ffd166' }); G.ctx.globalAlpha = 1; });
-    if (mode === 'intent' && !bot && !ui) drawStatus();
+    if (mode === 'intent' && !bot && !ui && !(endT > 0)) drawStatus(); // 떨어진 뒤에는 안내 띠와 겹치지 않게 상태 칸을 숨긴다
     if (showLog && mode === 'intent') drawLog();
     if (ui) drawSettings();
     if (remap) { G.panel(W / 2 - 220, 200, 440, 70, 'rgba(20,30,60,0.95)', '#fff'); G.text(`키 다시 지정 (${remap.i + 1}/${remap.list.length}) — Esc 그만`, W / 2, 226, { size: 13, align: 'center', weight: 600 }); G.text(`「${CTRL.LABEL[remap.list[remap.i]]}」에 쓸 키를 누르세요`, W / 2, 252, { size: 18, align: 'center', weight: 800 }); }
-    G.text('실험 빌드 v0.6.3', W - 10, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
+    G.text('실험 빌드 v0.6.4', W - 10, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
     if (endT > 0) G.banner('매트에 떨어짐 — 바로 다시', why && (!air || why.t >= air.t - 0.05) ? why.text : hint() ? '도약이 다음 턱에 이어지지 않았다' : air && air.gap > 0 && air.gap < 1e8 ? `손이 잡을 곳에 닿지 못했다 — 가장 가까웠을 때 ${Math.ceil(air.gap)}px 모자람` : air && air.gap <= 0 ? '손이 닿는 거리였지만 잡지 않았다(버튼을 떼야 잡는다)' : '붙잡은 곳 없이 떨어졌다', 'fail', 380);
     if (endT > 0 && hint()) { const t = hint(), w = G.textW(t, 14, 800) + 28; G.panel(W / 2 - w / 2, 458, w, 28, 'rgba(255,214,102,0.96)'); G.text(t, W / 2, 477, { size: 14, weight: 800, align: 'center', color: '#111' }); }
     else if (S.won) G.banner('목표 도달!', `${S.t.toFixed(1)}초 · 시도 ${tries} — R 또는 스페이스로 다시`, 'win', 400);
