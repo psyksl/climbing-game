@@ -34,6 +34,7 @@
     for (const id of CTRL.OPT.handMode === 1 ? ['sendL', 'sendR'] : ['sendBest', 'sendOther']) if (BIND.pressed(id, inp)) {
       const code = BIND.get(id).find(c => c && (c.startsWith('Mouse') ? inp.clicks.some(k => 'Mouse' + k.button === c) : inp.pressed(c)));
       add(`${foot || BIND.pressedWithShift(id, inp) ? BIND.first('foot') + '+' : ''}${BIND.name(code)} (${BIND.BY[id].label.split(' ·')[0]})`); }
+    for (const [id, t] of [['moveUp', '위'], ['moveDown', '아래'], ['moveLeft', '왼쪽'], ['moveRight', '오른쪽']]) if (BIND.pressed(id, inp)) add(`${BIND.first(id)} (몸통 ${t})`);
     const sp = BIND.down('power', inp); if (sp !== spWas) add(`${BIND.first('power')} ${sp ? '누름 (모으기)' : '뗌 (던지기)'}`); spWas = sp;
     if (BIND.pressed('cancel', inp)) add(`${BIND.first('cancel')} (취소)`);
   }
@@ -151,7 +152,8 @@
     if (jump && jump.off && jump.tR === null && !hands.length) jump.tR = S.t;
     if (jump && jump.off && !hands.length && !feet.length && trail.length < 400 && Math.round(S.t * 120) % 4 === 0) trail.push([c.x, c.y]);
     // 반동: 손으로만 매달려 있을 때 가슴이 손 아래에서 벗어난 각도의 반주기별 최고값
-    if (hands.length && !feet.length) {
+    const hanging = hands.length && Math.hypot(S.p[2 + hands[0]].x - c.x, S.p[2 + hands[0]].y - c.y) > 0.8 * C.A; // 팔이 펴져 매달려 있을 때만(당겨 올라간 자세는 흔들림이 아님)
+    if (hands.length && !feet.length && hanging) {
       const a = L[hands[0]].anchor, phi = Math.atan2(c.x - a.x, c.y - a.y) * 180 / Math.PI;
       if (!swing || swing.ax !== a.x) swing = { ax: a.x, ay: a.y, side: Math.sign(phi) || 1, cur: 0, peak: 0, prev: 0 };
       if (Math.sign(phi) === -swing.side && Math.abs(phi) > 2) { swing.prev = swing.peak; swing.peak = swing.cur; swing.cur = 0; swing.side = -swing.side; }
@@ -263,6 +265,11 @@
       G.panel(bx, e.y - 32, bw, 17, strong ? col : 'rgba(255,255,255,0.8)', '#fff'); G.text(bt, bx + bw / 2, e.y - 19, { size: 11, weight: 800, align: 'center', color: '#111' });
       if (strong) G.circle(e.x, e.y, 18 + (best ? Math.sin(S.t * 10) * 2 : 0), null, col, 2.5);
     });
+    if (st.move) { // 몸통 이동(WASD) 방향과 막힌 이유
+      const ch = S.p[0], ex = ch.x + st.move.dx * 34, ey = ch.y + st.move.dy * 34, a = Math.atan2(st.move.dy, st.move.dx), col = st.move.blocked ? '#ff5a5a' : '#111';
+      G.line(ch.x, ch.y, ex, ey, col, 4); G.line(ex, ey, ex - 10 * Math.cos(a - 0.5), ey - 10 * Math.sin(a - 0.5), col, 4); G.line(ex, ey, ex - 10 * Math.cos(a + 0.5), ey - 10 * Math.sin(a + 0.5), col, 4);
+      if (st.move.blocked) G.text(`더 못 감 — ${st.move.blocked} ${st.move.blocked === '손 각도' ? '한계(더 가면 미끄러짐)' : '길이 한계'}`, ch.x, ch.y - 40, { size: 12, weight: 800, align: 'center', color: '#a01010', stroke: 'rgba(255,255,255,0.9)', strokeW: 3 });
+    }
     if (charge && (st.mark[0] || st.mark[1])) { const t = `${BIND.first('cancel')}: 놓기 지정 모두 취소`; G.text(t, ax, ay + 52, { size: 11, weight: 800, align: 'center', color: '#333', stroke: 'rgba(255,255,255,0.85)', strokeW: 3 }); }
   }
   function drawLog() {
@@ -371,7 +378,7 @@
     const lines = mode === 'intent' ? [
       hm === 1 ? `${B('sendL')} 왼손 · ${B('sendR')} 오른손 보내기 → 겨눈 구간에 닿으면 잡음   ${B('foot')} 누른 채 손 입력 = 발   조준 ${B1('aimUp')}${B1('aimLeft')}${B1('aimDown')}${B1('aimRight')} 또는 마우스`
                : `${B('sendBest')} 추천 손 · ${B('sendOther')} 다른 손 보내기 → 겨눈 구간에 닿으면 잡음   ${B('foot')} 누른 채 = 발   조준 ${B1('aimUp')}${B1('aimLeft')}${B1('aimDown')}${B1('aimRight')} 또는 마우스`,
-      `${B('power')} 누르고 있기 = 힘 모으기, 떼기 = 던지기 · 모으는 중 손 입력 = 도약 때 놓을 손 지정/취소 · ${B('cancel')} 취소`,
+      `${B1('moveUp')}${B1('moveLeft')}${B1('moveDown')}${B1('moveRight')} 몸통 옮기기(누른 채, 붙은 팔다리로) · ${B('power')} 누르고 있기 = 모으기, 떼기 = 던지기 · 모으는 중 손 입력 = 놓을 손 지정/취소 · ${B('cancel')} 취소`,
       `손 선택 ${hm}번(${B1('handMode')}) · 잡기 범위 ${O.assistRange === 'near' ? '커서 근처' : '턱 전체'}(${B1('assistRange')}) · 자동 발 ${onoff(O.autoFeet)}(${B1('autoFeet')}) · 체중 이동 ${onoff(O.autoShift)}(${B1('autoShift')}) · 닿으면 잡기 ${onoff(O.assist)}(${B1('assist')}) · ${B1('settings')} 키 설정 · ${B1('log')} 기록`,
     ] : mode === 'pick' ? [
       `${kn(K.lh)} 왼손 · ${kn(K.rh)} 오른손 · ${kn(K.lf)} 왼발 · ${kn(K.rf)} 오른발 : 한 번 눌러 집기 (떼어져서 커서를 따라온다. 누르고 있지 않아도 된다)`,
@@ -398,7 +405,7 @@
     if (showLog && mode === 'intent') drawLog();
     if (ui) drawSettings();
     if (remap) { G.panel(W / 2 - 220, 200, 440, 70, 'rgba(20,30,60,0.95)', '#fff'); G.text(`키 다시 지정 (${remap.i + 1}/${remap.list.length}) — Esc 그만`, W / 2, 226, { size: 13, align: 'center', weight: 600 }); G.text(`「${CTRL.LABEL[remap.list[remap.i]]}」에 쓸 키를 누르세요`, W / 2, 252, { size: 18, align: 'center', weight: 800 }); }
-    G.text('실험 빌드 v0.6', W - 10, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
+    G.text('실험 빌드 v0.6.1', W - 10, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
     if (endT > 0) G.banner('매트에 떨어짐 — 바로 다시', why && (!air || why.t >= air.t - 0.05) ? why.text : hint() ? '도약이 다음 턱에 이어지지 않았다' : air && air.gap > 0 && air.gap < 1e8 ? `손이 잡을 곳에 닿지 못했다 — 가장 가까웠을 때 ${Math.ceil(air.gap)}px 모자람` : air && air.gap <= 0 ? '손이 닿는 거리였지만 잡지 않았다(버튼을 떼야 잡는다)' : '붙잡은 곳 없이 떨어졌다', 'fail', 380);
     if (endT > 0 && hint()) { const t = hint(), w = G.textW(t, 14, 800) + 28; G.panel(W / 2 - w / 2, 458, w, 28, 'rgba(255,214,102,0.96)'); G.text(t, W / 2, 477, { size: 14, weight: 800, align: 'center', color: '#111' }); }
     else if (S.won) G.banner('목표 도달!', `${S.t.toFixed(1)}초 · 시도 ${tries} — R 또는 스페이스로 다시`, 'win', 400);

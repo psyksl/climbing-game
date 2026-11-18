@@ -16,12 +16,13 @@ const PH = (() => {
     SMOOTH: 1, SMOOTH_FOOT: 1, MJ_T0: 0.14, MJ_TK: 0.28,
     // v0.5 관절 힘: 붙은 팔다리는 자기 축 방향(밀고 당기기)뿐 아니라 옆으로도 몸을 움직일 수 있다(무릎·고관절·어깨 회전력). 체중의 배수, 0이면 꺼짐
     LAT_LEG: 0.6, LAT_ARM: 0.25, LAT_D: 30, MU_LAT: 0.8,
+    PALM: 1, // 손으로 눌러 버틸 때 균형 힘(턱 위로 올라선 자세)
   };
   const MASS = C.MC + C.MP + 2 * C.MH + 2 * C.MF, W = MASS * C.G;
   // 힘 한계(체중 W의 배수)와 스프링 값
   const M = {
     armPull: 1.3 * W, armPush: 0.9 * W, armK: 1.3 * W / 3, armC: 2000, armRate: 320,
-    legPush: 1.8 * W, legPull: 0, legPress: 0.15 * W, ankle: 0.15 * W, ankleK: 0.02 * W, ankleC: 300, legK: 1.8 * W / 3, legC: 2400, legRate: 750,
+    legPush: 1.8 * W, legPull: 0, legPress: 0.15 * W, ankle: 0.15 * W, ankleK: 0.02 * W, ankleC: 300, palm: 0.3 * W, palmK: 0.03 * W, palmC: 400, legK: 1.8 * W / 3, legC: 2400, legRate: 750,
     handReach: 0.3 * W, handKp: 0.3 * W / 15, handKd: 110,
     footReach: 0.5 * W, footKp: 0.5 * W / 15, footKd: 250,
     upK: 0.1 * W, upC: 1500, upMax: 1.5 * W,
@@ -141,7 +142,7 @@ const PH = (() => {
             s.events.push({ type: 'grab', limb: i, x: g.x, y: g.y, poly: g.poly });
           } else { lb.mode = 'free'; s.events.push({ type: 'miss', limb: i, x: e.x, y: e.y, d: g ? g.d - C.GRAB_R : 999 }); }
         } else {
-          const q = nearestSurface(s.world, e.x, e.y), near = q && q.d <= C.PLANT_R, sp = Math.hypot(e.vx, e.vy), ok = near && sp <= C.PLANT_V;
+          const q = nearestSurface(s.world, e.x, e.y), near = q && q.d <= C.PLANT_R && q.ny < 0.3, sp = Math.hypot(e.vx, e.vy), ok = near && sp <= C.PLANT_V; // 아래를 향한 면(천장)에는 디딜 수 없다
           if (ok) { e.x = q.x + q.nx * C.FOOT_R; e.y = q.y + q.ny * C.FOOT_R; e.vx = r.vx; e.vy = r.vy; lb.poly = q.poly; lb.cnx = q.nx; lb.cny = q.ny; }
           if (ok) { lb.mode = 'plant'; lb.brace = false; lb.noContactT = 0; lb.contact = true; lb.cmp = Math.max(0, lb.min - Math.hypot(e.x - r.x, e.y - r.y)); lb.ext = Math.max(0, Math.hypot(e.x - r.x, e.y - r.y) - lb.max); lb.L0 = Math.max(lb.min, Math.min(lb.max, Math.hypot(e.x - r.x, e.y - r.y))); s.events.push({ type: 'plant', limb: i, x: e.x, y: e.y }); }
           else { lb.mode = 'free'; s.events.push({ type: 'footmiss', limb: i, x: e.x, y: e.y, d: q ? q.d - C.PLANT_R : 999, fast: near ? sp : 0 }); }
@@ -223,6 +224,11 @@ const PH = (() => {
           const over = -(ux * lb.cnx + uy * lb.cny) > 0.64;
           if (!over || len > lb.L0) { lb.L0 = len; Fa = 0; }
           if ((r.x - e.x) * lb.cnx + (r.y - e.y) * lb.cny > 0) { e.fx -= lb.cnx * M.legPress; e.fy -= lb.cny * M.legPress; r.fx += lb.cnx * M.legPress; r.fy += lb.cny * M.legPress; }
+        }
+        if (arm && C.PALM && Fa < 0 && lb.anchor && lb.anchor.ny < -0.5 && (r.y < e.y)) {
+          // 손으로 눌러 버틸 때(턱 위로 올라선 자세): 손목·어깨 힘으로 가슴을 손 위로 되돌린다. 반력은 잡은 손이 받는다
+          const f = Math.max(-M.palm, Math.min(M.palm, -M.palmK * (r.x - e.x) - M.palmC * r.vx));
+          r.fx += f;
         }
         if (!arm && Fa < 0 && lb.cny < -0.7 && !inp.power) {
           // 발목: 체중을 받치고 있는 발은 엉덩이를 발 위로 되돌리는 작은 힘을 낸다(한 발 서기). 반력은 발의 마찰이 받는다

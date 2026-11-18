@@ -2,7 +2,7 @@
 // 자동 조작기는 상태를 읽고 정확한 시점에 키를 누르므로, 사람이 할 만한지의 증거는 아니다.
 'use strict';
 const PH = require('../src/physics.js'), CTRL = require('../src/controls.js');
-if (!process.env.V05) for (const k of ['MUSCLE', 'SMOOTH', 'SMOOTH_FOOT', 'LAT_LEG', 'LAT_ARM']) PH.C[k] = 0; // v0.4 물리 기준 측정(A·B·C안 비교용)
+if (!process.env.V05) for (const k of ['MUSCLE', 'SMOOTH', 'SMOOTH_FOOT', 'LAT_LEG', 'LAT_ARM', 'PALM']) PH.C[k] = 0; // v0.4 물리 기준 측정(A·B·C안 비교용)
 const dt = 1 / 120, d = (a, x, y) => Math.hypot(a.x - x, a.y - y);
 function sim(mode, station, variant, policy, T = 12) {
   const s = PH.create(PH.makeWorld(variant), station), ctl = CTRL.make(mode), K = CTRL.KEYMAP[mode];

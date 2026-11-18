@@ -66,6 +66,15 @@ const sx = x => x - OX, sy = y => y - OY; // 게임 좌표 → 화면 좌표
   check('2번 방식: 커서를 반대쪽 멀리 옮기면 추천이 바뀜', (await pg.evaluate(() => window.__lab.ctrlState().rec.hand)) !== rec || ms[rec] === 'reach');
   await pg.keyboard.press('KeyH'); await pg.waitForTimeout(80);
   check('H로 1번 방식으로 돌아오기', (await pg.evaluate(() => window.__lab.opt().handMode)) === 1);
+  // 8-1. WASD 몸통: 두 손 매달림에서 W를 누르면 당겨 올라가고, 떼면 그 높이에서 버틴다. S는 팔이 다 펴져 있어 더 내려가지 않는다
+  await fresh(1); await pg.mouse.move(sx(400), sy(250)); await pg.waitForTimeout(200);
+  const y0 = await pg.evaluate(() => window.__lab.s.p[0].y);
+  await pg.keyboard.down('KeyW'); await pg.waitForTimeout(900); await pg.keyboard.up('KeyW'); await pg.waitForTimeout(600);
+  const y1 = await pg.evaluate(() => window.__lab.s.p[0].y);
+  check('W를 누른 채: 턱걸이처럼 가슴이 올라가고, 떼면 그 높이에서 버팀', y0 - y1 > 30 && (await modes()).startsWith('grip@A,grip@A'), `${Math.round(y0 - y1)}px 올라감`);
+  await pg.keyboard.down('KeyD'); await pg.waitForTimeout(500); const xd = await pg.evaluate(() => [window.__lab.s.p[0].x, window.__lab.ctrlState().move]); await pg.keyboard.up('KeyD');
+  check('D를 누른 채: 몸통이 오른쪽으로 가거나, 한계면 막힌 이유를 보여 줌', xd[1] && (xd[1].blocked || xd[0] > 300), JSON.stringify(xd[1]));
+  if (shot) await pg.screenshot({ path: shot + '_wasd.png' });
   // 9. 키 설정: 열기, 칸 바꾸기, 겹침 안내, 기본값 복원, 저장·다시 실행 복원
   await fresh(1); await pg.keyboard.press('Escape'); await pg.waitForTimeout(150);
   check('Esc로 키 설정 열기', !!(await pg.evaluate(() => window.__lab.ui())));

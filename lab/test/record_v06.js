@@ -17,6 +17,15 @@ async function clip(name, act) {
     await pg.waitForTimeout(500); await pg.keyboard.up('Space'); await pg.waitForTimeout(2600);
     return await pg.evaluate(() => window.__lab.s.limb.map(l => l.mode + (l.anchor ? '@' + l.anchor.poly : '')).join(','));
   });
+  // 턱 위로 올라서기: 건너편 턱으로 뛰어 잡은 뒤 W를 누르고 있으면 당겨 올라가 턱 위로 올라서고, 발이 턱 윗면을 딛는다
+  if (process.argv[2] === 'mantle' || process.argv[2] === 'all') await clip('v061_mantle', async pg => {
+    await pg.mouse.move(sx(545), sy(348), { steps: 15 }); await pg.waitForTimeout(500);
+    await pg.keyboard.down('Space'); await pg.waitForTimeout(200); await pg.mouse.click(sx(545), sy(348)); await pg.waitForTimeout(120); await pg.mouse.click(sx(545), sy(348), { button: 'right' });
+    await pg.waitForTimeout(500); await pg.keyboard.up('Space'); await pg.waitForTimeout(2200);
+    await pg.mouse.move(sx(560), sy(220), { steps: 10 }); await pg.keyboard.down('KeyW'); await pg.waitForTimeout(2200); await pg.keyboard.up('KeyW'); await pg.waitForTimeout(2200);
+    return await pg.evaluate(() => (345 - window.__lab.s.p[0].y).toFixed(0) + 'px above ledge, ' + window.__lab.s.limb.map(l => l.mode + (l.anchor ? '@' + l.anchor.poly : l.poly && l.mode === 'plant' ? '@' + l.poly : '')).join(','));
+  });
+  if (process.argv[2] === 'mantle') return;
   // 실패: 턱 가까운 끝을 겨누고 길게 모아(세기를 잘못 골라) 손이 겨눈 구간을 지나쳐 떨어진다 → 화면에 원인과 바꿀 것
   await clip('v06_fail', async pg => {
     await pg.mouse.move(sx(400), sy(330), { steps: 10 }); await pg.waitForTimeout(400); await pg.mouse.move(sx(482), sy(348), { steps: 15 }); await pg.waitForTimeout(800);
