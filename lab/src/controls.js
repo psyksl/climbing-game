@@ -85,8 +85,8 @@ const CTRL = (() => {
     return { st, step, mode };
   }
   // ---- D안: 의도 조작. 플레이어는 어느 손발을 어디로, 언제 던질지만 정하고 균형·발 위치·손 놓는 순간은 게임이 채운다
-  const OPT = { autoFeet: true, autoShift: true, assist: true };
-  const P = { CATCH_R: 45, FOOT_CATCH_R: 30, SHIFT_T: 0.2, THROW_T: 0.32, REL_MIN: 0.03, REL_MAX: 0.14, CROUCH: 40, THROW_D: 250, FEET_V: 150, FULL_CHARGE: 0.35, ROCK_MAX: 0.45, CROUCH_MODE: 'away' };
+  const OPT = { autoFeet: true, autoShift: true, assist: true, handMode: 1, assistRange: 'near' }; // assistRange: 'near' 커서 근처 구간만 / 'ledge' 겨눈 턱 전체
+  const P = { CATCH_SPAN: 28, REC_MARGIN: 22, REC_HOLD: 0.15, CATCH_R: 45, FOOT_CATCH_R: 30, SHIFT_T: 0.2, THROW_T: 0.32, REL_MIN: 0.03, REL_MAX: 0.14, CROUCH: 40, THROW_D: 250, FEET_V: 150, FULL_CHARGE: 0.6, ROCK_MAX: 0.45, GAIN0: 0.25, CROUCH_MODE: 'away' };
   function footCandidates(s, i) { // 발을 디딜 만한 곳: 위를 향한 면, 다리가 닿는 곳, 엉덩이보다 아래
     const hp = s.p[1], L = PHX.C.L, side = i === 2 ? -1 : 1, other = s.limb[5 - i], op = s.p[2 + (5 - i)];
     const cx = hp.x + side * 12, cy = hp.y + 0.72 * L; let best = null;
@@ -104,37 +104,80 @@ const CTRL = (() => {
     }
     return best;
   }
+  // 잡기 보조가 허용하는 곳. 'near': 커서에서 가장 가까운 잡을 곳 주변 ±CATCH_SPAN 구간(같은 지형), 'ledge': 그 지형 전체
+  function aimSeg(s, io) {
+    const a = PHX.nearestGrip(s.world, io.mx, io.my); if (!a || a.d > 60) return null;
+    return { poly: a.poly, x: a.x, y: a.y, whole: OPT.assistRange === 'ledge' };
+  }
+  // true = 잡아도 됨, 숫자 = 허용 구간 밖에 닿음(구간 끝까지 거리), null = 겨눈 곳이 아님
+  function catchAllowed(s, g, io) {
+    const a = aimSeg(s, io);
+    if (!a) return Math.hypot(g.x - io.mx, g.y - io.my) <= P.CATCH_SPAN ? true : null;
+    if (g.poly !== a.poly) return null;
+    if (a.whole) return true;
+    const d = Math.hypot(g.x - a.x, g.y - a.y); return d <= P.CATCH_SPAN ? true : d - P.CATCH_SPAN;
+  }
   function makeIntent() {
     const st = { mode: 'intent', act: [false, false, false, false], armT: [0, 0, 0, 0], mark: [false, false], manual: [false, false, false, false], auto: [null, null, null, null],
       tryNow: [false, false, false, false], pend: [false, false, false, false], block: [0, 0, 0, 0], staleT: [0, 0, 0, 0], cool: [0, 0, 0, 0],
-      phase: 'idle', pt: 0, power: 1, shift: null, air: [], swingLegs: false, opt: OPT, last: '' };
+      phase: 'idle', pt: 0, power: 1, shift: null, air: [], swingLegs: false, opt: OPT, last: '',
+      rec: { hand: 1, foot: 3, pendH: null, pendF: null, tH: 0, tF: 0 }, sent: [], miss: [], seg: null };
     const K = KEYMAP.intent;
     const gripping = (s, i) => s.limb[i].mode === 'grip';
     function attempt(i) { st.tryNow[i] = true; }
     function detach(s, i) { st.act[i] = true; st.armT[i] = 0; st.auto[i] = null; }
+    // 2번 방식의 추천: 커서까지 가깝고, 덜 매달려 있고, 이미 떨어져 있는 손을 고른다. 다른 손이 확실히(REC_MARGIN) 낫고 그 상태가 REC_HOLD초 이어질 때만 바꾼다
+    function recScore(s, i, io) {
+      const lb = s.limb[i], r = s.p[lb.root], side = i % 2 ? 1 : -1, sx = r.x + side * 10, d = Math.hypot(io.mx - sx, io.my - r.y);
+      let sc = d;
+      if (lb.mode === 'grip' || lb.mode === 'plant') sc += 40 * Math.max(0, lb.arm ? lb.tens : -lb.force) / PHX.W;
+      else sc -= 50; // 이미 떨어져 있는 손발이 우선
+      const o = s.limb[i < 2 ? 1 - i : 5 - i];
+      if ((lb.mode === 'grip' || lb.mode === 'plant') && !(o.mode === 'grip' || o.mode === 'plant') && i < 2) sc += 150; // 마지막 남은 손은 되도록 놓지 않는다
+      return sc;
+    }
+    function updateRec(s, io, dt) {
+      for (const [key, a, b, pk, tk] of [['hand', 0, 1, 'pendH', 'tH'], ['foot', 2, 3, 'pendF', 'tF']]) {
+        const cur = st.rec[key], other = cur === a ? b : a;
+        if (recScore(s, other, io) < recScore(s, cur, io) - P.REC_MARGIN) { if (st.rec[pk] !== other) { st.rec[pk] = other; st.rec[tk] = 0; } st.rec[tk] += dt; if (st.rec[tk] >= P.REC_HOLD) { st.rec[key] = other; st.rec[pk] = null; } }
+        else st.rec[pk] = null;
+      }
+    }
     function step(s, io, dt) {
       const C = PHX.C, c = s.p[0], hp = s.p[1];
+      st.seg = aimSeg(s, io);
       const inp = { cx: io.mx, cy: io.my, hand: [false, false], foot: [false, false], power: false, t: [null, null, null, null], drop: [false, false, false, false] };
       st.air.length = 0;
       for (let i = 0; i < 4; i++) if (st.pend[i]) { st.pend[i] = false; const m = s.limb[i].mode; if (m === 'grip' || m === 'plant') { st.act[i] = false; st.manual[i] = false; st.auto[i] = null; } else { st.block[i] = s.t + 0.25; if (st.auto[i]) st.auto[i] = null; } }
       for (let i = 0; i < 4; i++) { if (st.act[i]) st.armT[i] += dt; if (st.act[i] && s.limb[i].mode === 'free' && !st.pend[i] && st.armT[i] > 0.05) st.act[i] = true; }
-      if (io.pressed(K.autoFeet)) OPT.autoFeet = !OPT.autoFeet;
-      if (io.pressed(K.autoShift)) OPT.autoShift = !OPT.autoShift;
-      if (io.pressed(K.assist)) OPT.assist = !OPT.assist;
-      if (io.pressed(K.cancel)) for (let i = 0; i < 4; i++) if (st.act[i]) { st.act[i] = false; st.manual[i] = false; inp.drop[i] = true; }
+      st.sent.length = 0; st.miss.length = 0;
+      // (보조 켜고 끄기는 화면 쪽에서 항상 받는다: 떨어지는 중에도 놓치지 않게)
+      if (io.pressed('cancel')) {
+        if (st.phase === 'charge' && (st.mark[0] || st.mark[1])) { st.mark = [false, false]; st.last = '놓을 손 지정 모두 취소'; }
+        else for (let i = 0; i < 4; i++) if (st.act[i]) { st.act[i] = false; st.manual[i] = false; inp.drop[i] = true; }
+      }
+      updateRec(s, io, dt);
       // Space: 누르고 있으면 힘 모으기, 떼면 던지기
-      const sp = io.key(K.power);
+      const sp = io.down('power');
       const spDown = sp && !st.spPrev; st.spPrev = sp;
       if (spDown && st.phase !== 'charge') { if (st.phase === 'throw') st.mark = [false, false]; if (st.shift) { detach(s, st.shift.i); st.shift = null; } st.phase = 'charge'; st.pt = 0; st.anchor = [c.x, c.y]; }
       if (!sp && st.phase === 'charge') { st.power = Math.max(0.15, Math.min(1, (st.pt - 0.04) / P.FULL_CHARGE));
         // 놓을 손을 정하지 않았고 아직 붙든 손이 있으면 뛰지 않는다: 발을 디딘 채 몸만 싣는 작은 반동으로 제한
-        if (!st.mark[0] && !st.mark[1] && (gripping(s, 0) || gripping(s, 1))) st.power = Math.min(st.power, P.ROCK_MAX); st.phase = 'throw'; st.pt = 0; st.tAnchor = [c.x, c.y]; } // 짧게 누르면 작은 반동, 오래 누르면 힘껏 던지기
+        st.jump = st.mark[0] || st.mark[1] || !(gripping(s, 0) || gripping(s, 1));
+        if (!st.jump) st.power = Math.min(st.power, P.ROCK_MAX); st.phase = 'throw'; st.pt = 0; st.tAnchor = [c.x, c.y]; } // 짧게 누르면 작은 반동, 오래 누르면 힘껏 던지기
       // 클릭: 손발 하나에 대한 의도
-      const footMod = io.key(K.foot) || io.key('ShiftRight');
-      for (const [btn, side, sh] of [[io.lmb, 0, io.lshift], [io.rmb, 1, io.rshift]]) {
-        if (!btn) continue;
-        const i = footMod || sh ? 2 + side : side, lb = s.limb[i];
-        if (st.phase === 'charge' && i < 2 && lb.mode === 'grip') { st.mark[i] = !st.mark[i]; st.last = st.mark[i] ? `${['왼손', '오른손'][i]}: 던질 때 놓음` : ''; continue; }
+      // 입력 → 손발: 1번 방식은 입력마다 손이 정해져 있고, 2번 방식은 누르는 순간의 추천 손(또는 그 반대 손)으로 확정한다
+      const footMod = io.down('foot');
+      const ins = OPT.handMode === 1 ? [['sendL', 0], ['sendR', 1]] : [['sendBest', 'best'], ['sendOther', 'other']];
+      for (const [id, which] of ins) {
+        if (!io.pressed(id)) continue;
+        const foot = footMod || io.pressedShift(id);
+        let side = which;
+        if (which === 'best') side = (foot ? st.rec.foot : st.rec.hand) % 2;
+        if (which === 'other') side = 1 - (foot ? st.rec.foot : st.rec.hand) % 2;
+        const i = foot ? 2 + side : side, lb = s.limb[i];
+        st.sent.push({ i, id, t: s.t, mode: lb.mode, phase: st.phase });
+        if (st.phase === 'charge' && i < 2 && lb.mode === 'grip') { st.mark[i] = !st.mark[i]; st.last = st.mark[i] ? `${['왼손', '오른손'][i]}: 도약할 때 놓음` : `${['왼손', '오른손'][i]}: 놓기 지정 취소`; continue; }
         if (lb.mode === 'grip' || lb.mode === 'plant') {
           const other = 1 - i;
           if (i < 2 && OPT.autoShift && st.phase === 'idle' && gripping(s, other) && !st.shift) { st.shift = { i, t: 0 }; st.phase = 'shift'; }
@@ -148,7 +191,7 @@ const CTRL = (() => {
       const anyFoot = s.limb[2].mode === 'plant' || s.limb[3].mode === 'plant', anyHold = s.limb.some(l => l.mode === 'grip' || l.mode === 'plant');
       if (st.phase === 'charge') { st.pt += dt; inp.power = true; const A = st.anchor; if (P.CROUCH_MODE === 'down') { inp.px = A[0]; inp.py = A[1] + P.CROUCH; } else { inp.px = A[0] - ux * P.CROUCH * 0.6; inp.py = A[1] + P.CROUCH * 0.8; } } // 누른 순간의 자리 기준으로 목표 쪽 반대·아래로 몸을 싣는다
       else if (st.phase === 'throw') {
-        st.pt += dt; inp.power = true; const D = 10 + (P.THROW_D - 10) * st.power ** 3, A = st.tAnchor, ax = io.mx - A[0], ay = io.my - A[1], al = Math.hypot(ax, ay) || 1; inp.px = A[0] + ax / al * D; inp.py = A[1] + ay / al * D; // 뗀 순간의 자리 기준 inp.gain = 0.3 + 0.7 * st.power;
+        st.pt += dt; inp.power = true; const jumpT = st.jump, D = jumpT ? P.THROW_D : 10 + (P.THROW_D - 10) * st.power ** 3, A = st.tAnchor, ax = io.mx - A[0], ay = io.my - A[1], al = Math.hypot(ax, ay) || 1; inp.px = A[0] + ax / al * D; inp.py = A[1] + ay / al * D; // 뗀 순간의 자리 기준 inp.gain = jumpT ? P.GAIN0 + (1 - P.GAIN0) * st.power : 0.3 + 0.7 * st.power; // 뛸 때는 다리를 끝까지 펴되, 미는 빠르기를 모은 정도에 비례시킨다
         for (const i of [0, 1]) if (st.mark[i] && gripping(s, i)) { // 표시한 손은 게임이 놓는 순간을 고른다: 팔이 몸을 붙잡기 시작하거나, 늦어도 REL_MAX초
           const restrain = st.pt > 0.04 && s.limb[i].tens > 0.15 * PHX.W, feetOff = !anyFoot;
           if (st.pt >= P.REL_MIN && (restrain || feetOff || st.pt >= P.REL_MAX)) { st.mark[i] = false; detach(s, i); }
@@ -158,11 +201,12 @@ const CTRL = (() => {
         if (!anyHold || (st.pt >= P.THROW_T * (0.5 + 0.5 * st.power) && (!anyFoot || settled || st.pt > 0.6))) { st.phase = 'idle'; st.mark = [false, false]; }
       } else if (st.phase === 'shift') { // 손을 떼기 전에 몸을 남은 지지점 쪽으로 먼저 옮긴다
         const sh = st.shift; sh.t += dt; const o = s.limb[1 - sh.i].anchor;
+        if (!o) { detach(s, sh.i); st.shift = null; st.phase = 'idle'; } else {
         const xs = [o.x]; for (const f of [2, 3]) if (s.limb[f].mode === 'plant') xs.push(s.p[2 + f].x);
         // 발이 디뎌져 있으면 지지점들 사이에 이미 있을 때 옮기지 않는다(밖에 있을 때만 가장 가까운 끝으로). 손만 남으면 그 손 아래로
         const tx = xs.length > 1 ? Math.max(Math.min(...xs), Math.min(Math.max(...xs), c.x)) : o.x;
         inp.power = true; inp.px = tx; inp.py = c.y;
-        if ((sh.t > 0.06 && Math.abs(c.x - tx) < 6 && Math.abs(c.vx) < 40) || sh.t >= P.SHIFT_T) { detach(s, sh.i); st.shift = null; st.phase = 'idle'; }
+        if ((sh.t > 0.06 && Math.abs(c.x - tx) < 6 && Math.abs(c.vx) < 40) || sh.t >= P.SHIFT_T) { detach(s, sh.i); st.shift = null; st.phase = 'idle'; } } // 옮기는 동안 남은 손마저 떨어지면 바로 뗀다
       }
       // 발이 하나도 디뎌지지 않은 채 모으기·던지기: 다리를 접었다가 커서 쪽으로 차서 몸에 반동을 준다(엉덩이·상체 반동)
       st.swingLegs = !anyFoot && (st.phase === 'charge' || st.phase === 'throw') && (gripping(s, 0) || gripping(s, 1));
@@ -190,10 +234,10 @@ const CTRL = (() => {
       for (let i = 0; i < 4; i++) {
         const lb = s.limb[i], e = s.p[2 + i];
         if (lb.mode !== 'reach' || st.tryNow[i] || s.t < st.block[i]) continue;
-        if (i < 2 && st.act[i] && OPT.assist && st.armT[i] > 0.06) { // 커서로 겨눈 턱(커서에서 가장 가까운 잡을 곳의 지형)에 닿으면 어디든 잡는다
-          const g = PHX.nearestGrip(s.world, e.x, e.y), aim = PHX.nearestGrip(s.world, io.mx, io.my);
-          const aimed = aim && aim.d <= 60 && g && g.poly === aim.poly;
-          if (g && g.d <= C.GRAB_R && (aimed || Math.hypot(g.x - io.mx, g.y - io.my) <= P.CATCH_R)) attempt(i); }
+        if (i < 2 && st.act[i] && OPT.assist && st.armT[i] > 0.06) {
+          const g = PHX.nearestGrip(s.world, e.x, e.y);
+          if (g && g.d <= C.GRAB_R) { const ok = catchAllowed(s, g, io); if (ok === true) attempt(i); else if (ok !== null) st.miss.push({ i, x: g.x, y: g.y, d: ok }); }
+        }
         if (i >= 2 && st.act[i] && st.manual[i]) { const q = PHX.nearestSurface(s.world, e.x, e.y); if (q && q.d <= C.PLANT_R && Math.hypot(q.x - io.mx, q.y - io.my) <= P.FOOT_CATCH_R && Math.hypot(e.vx, e.vy) < C.PLANT_V) attempt(i); }
         if (i >= 2 && st.auto[i] && !st.auto[i].swing) { const a = st.auto[i]; if (Math.hypot(e.x - a.x, e.y - a.y) < 8 && Math.hypot(e.vx - hp.vx, e.vy - hp.vy) < C.PLANT_V) attempt(i); }
       }
@@ -211,6 +255,6 @@ const CTRL = (() => {
     }
     return { st, step, mode: 'intent' };
   }
-  return { KEYMAP, LABEL, MODES, OPT, P, make, inRange, footCandidates };
+  return { KEYMAP, LABEL, MODES, OPT, P, make, inRange, footCandidates, catchAllowed, aimSeg };
 })();
 if (typeof module !== 'undefined') module.exports = CTRL;

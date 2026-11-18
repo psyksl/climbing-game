@@ -24,8 +24,9 @@ const sx = x => x - OX, sy = y => y - OY; // 게임 좌표 → 화면 좌표
   await fresh(1); await pg.mouse.click(sx(420), sy(250), { button: 'right' }); await pg.waitForTimeout(300); // 자동 체중 이동이 켜져 있으면 최대 0.2초 뒤에 떨어진다
   check('Space 없이 우클릭: 오른손이 (체중을 옮긴 뒤) 떨어져 커서로 감', (await modes()).split(',')[1] === 'reach', await modes());
   // 4. 두 손 다이노
-  await fresh(3); await pg.mouse.move(sx(490), sy(345)); await pg.keyboard.down('Space'); await pg.waitForTimeout(250);
-  await pg.mouse.click(sx(490), sy(345)); await pg.mouse.click(sx(490), sy(345), { button: 'right' }); await pg.waitForTimeout(150);
+  // 길게 모으면 멀리 가므로 턱 가운데(545)를 겨눈다(잡기 보조가 커서 근처 구간만 허용)
+  await fresh(3); await pg.mouse.move(sx(545), sy(348)); await pg.keyboard.down('Space'); await pg.waitForTimeout(250);
+  await pg.mouse.click(sx(545), sy(348)); await pg.mouse.click(sx(545), sy(348), { button: 'right' }); await pg.waitForTimeout(150);
   const marked = await pg.evaluate(() => window.__lab.ctrlState().mark.join(','));
   check('Space를 누른 채 클릭: 손이 떨어지지 않고 "던질 때 놓음" 표시', marked === 'true,true' && (await modes()).startsWith('grip@A,grip@A'), marked);
   if (shot) await pg.screenshot({ path: shot + '_charge.png' });
@@ -36,5 +37,58 @@ const sx = x => x - OX, sy = y => y - OY; // 게임 좌표 → 화면 좌표
   await fresh(3); await pg.mouse.move(sx(490), sy(345)); await pg.mouse.click(sx(490), sy(345), { button: 'right' }); await pg.waitForTimeout(500);
   await pg.keyboard.down('Space'); await pg.waitForTimeout(250); await pg.mouse.click(sx(490), sy(345)); await pg.waitForTimeout(250); await pg.keyboard.up('Space'); await pg.waitForTimeout(1400);
   check('오른손을 먼저 보내고, 왼손·두 발로 버티다 던져 오른손으로 건너편 잡기', (await modes()).split(',')[1] === 'grip@B', await modes());
+  // 6. 모으는 동안 지정 취소
+  await fresh(3); await pg.mouse.move(sx(490), sy(345)); await pg.keyboard.down('Space'); await pg.waitForTimeout(200);
+  await pg.mouse.click(sx(490), sy(345)); await pg.mouse.click(sx(490), sy(345), { button: 'right' }); await pg.waitForTimeout(100);
+  await pg.mouse.click(sx(490), sy(345)); await pg.waitForTimeout(100);
+  const m1 = await pg.evaluate(() => window.__lab.ctrlState().mark.join(','));
+  await pg.keyboard.press('KeyX'); await pg.waitForTimeout(100); const m2 = await pg.evaluate(() => window.__lab.ctrlState().mark.join(','));
+  await pg.keyboard.up('Space'); await pg.waitForTimeout(600);
+  check('모으는 중: 같은 손을 다시 누르면 지정 취소, X는 모두 취소, 지정 없이 떼면 뛰지 않음', m1 === 'false,true' && m2 === 'false,false' && (await modes()).startsWith('grip@A,grip@A'), `${m1} → ${m2} → ${await modes()}`);
+  // 7. 키보드만으로: 방향키로 조준, Space + Q·E로 두 손 지정, 떼서 다이노
+  await fresh(3); await pg.mouse.move(5, 5); await pg.waitForTimeout(100); // 마우스는 구석에 두고 건드리지 않는다
+  await pg.evaluate(() => { window.__lab.aim.x = 320; window.__lab.aim.y = 330; });
+  await pg.keyboard.down('ArrowRight'); for (let k = 0; k < 60; k++) { const ax = await pg.evaluate(() => window.__lab.aim.x); if (ax >= 486) break; await pg.waitForTimeout(16); } await pg.keyboard.up('ArrowRight');
+  await pg.keyboard.down('ArrowDown'); for (let k = 0; k < 60; k++) { const ay = await pg.evaluate(() => window.__lab.aim.y); if (ay >= 348) break; await pg.waitForTimeout(16); } await pg.keyboard.up('ArrowDown');
+  const aimPos = await pg.evaluate(() => [Math.round(window.__lab.aim.x), Math.round(window.__lab.aim.y)]);
+  await pg.keyboard.down('Space'); await pg.waitForTimeout(90); await pg.keyboard.press('KeyQ'); await pg.keyboard.press('KeyE'); await pg.waitForTimeout(80); await pg.keyboard.up('Space'); await pg.waitForTimeout(1500);
+  check('키보드만: 방향키로 조준점을 옮기고 Space+Q·E로 뛰어 건너편 잡기', (await modes()).split(',').slice(0, 2).some(m => m === 'grip@B'), `조준 ${aimPos} → ${await modes()}`);
+  // 8. 2번 방식: 추천 손이 커서를 조금 움직여도 바뀌지 않고, 누른 순간의 추천 손이 떨어진다
+  await pg.keyboard.press('KeyH'); await pg.waitForTimeout(80);
+  check('H로 손 선택 2번 방식 켜기', (await pg.evaluate(() => window.__lab.opt().handMode)) === 2);
+  await fresh(1);
+  await pg.mouse.move(sx(470), sy(290)); await pg.waitForTimeout(300); let flips = 0, prev = await pg.evaluate(() => window.__lab.ctrlState().rec.hand);
+  for (let k = 0; k < 40; k++) { await pg.mouse.move(sx(470 + (k % 2 ? 8 : -8)), sy(290 + (k % 3 - 1) * 6)); await pg.waitForTimeout(20); const r = await pg.evaluate(() => window.__lab.ctrlState().rec.hand); if (r !== prev) flips++; prev = r; }
+  const rec = prev; await pg.mouse.click(sx(470), sy(290)); await pg.waitForTimeout(350);
+  const ms = (await modes()).split(',');
+  check('2번 방식: 커서를 ±8px 흔들어도 추천 손이 바뀌지 않음, 누르면 추천 손이 떨어짐', flips === 0 && ms[rec] === 'reach' && ms[1 - rec].startsWith('grip'), `바뀐 횟수 ${flips}, 추천 ${['왼손', '오른손'][rec]} → ${ms.slice(0, 2)}`);
+  await pg.mouse.move(sx(240), sy(290)); await pg.waitForTimeout(400);
+  check('2번 방식: 커서를 반대쪽 멀리 옮기면 추천이 바뀜', (await pg.evaluate(() => window.__lab.ctrlState().rec.hand)) !== rec || ms[rec] === 'reach');
+  await pg.keyboard.press('KeyH'); await pg.waitForTimeout(80);
+  check('H로 1번 방식으로 돌아오기', (await pg.evaluate(() => window.__lab.opt().handMode)) === 1);
+  // 9. 키 설정: 열기, 칸 바꾸기, 겹침 안내, 기본값 복원, 저장·다시 실행 복원
+  await fresh(1); await pg.keyboard.press('Escape'); await pg.waitForTimeout(150);
+  check('Esc로 키 설정 열기', !!(await pg.evaluate(() => window.__lab.ui())));
+  const slotPos = await pg.evaluate(() => { const r = window.__lab.bind.ACTIONS.filter(a => !a.hm || a.hm === window.__lab.opt().handMode); const k = r.findIndex(a => a.id === 'sendL'); return k; });
+  // 왼손 보내기의 둘째 칸(Q)을 클릭하고 J를 누른다
+  await pg.mouse.click(30 + 354 + 40, 92 + slotPos * 22 - 5); await pg.waitForTimeout(80); await pg.keyboard.press('KeyJ'); await pg.waitForTimeout(80);
+  check('칸을 클릭하고 J → 왼손 보내기 둘째 칸이 J', (await pg.evaluate(() => window.__lab.bind.get('sendL')[1])) === 'KeyJ');
+  if (shot) await pg.screenshot({ path: shot + '_settings.png' });
+  // 오른손 보내기 둘째 칸에도 J → 겹침 안내
+  await pg.mouse.click(30 + 354 + 40, 92 + (slotPos + 1) * 22 - 5); await pg.waitForTimeout(80); await pg.keyboard.press('KeyJ'); await pg.waitForTimeout(80);
+  const msg = await pg.evaluate(() => window.__lab.ui().msg);
+  check('같은 키를 다른 동작에 넣으면 겹침 안내', msg.startsWith('주의') && msg.includes('J'), msg);
+  if (shot) await pg.screenshot({ path: shot + '_conflict.png' });
+  // 기본값 복원(방향키·Enter로)
+  for (let k = 0; k < 40; k++) { await pg.keyboard.press('ArrowDown'); await pg.waitForTimeout(20); } await pg.keyboard.press('ArrowLeft'); await pg.waitForTimeout(40);
+  await pg.keyboard.press('Enter'); await pg.waitForTimeout(80);
+  check('키보드로 "기본값 복원" → Q·E로 돌아옴', (await pg.evaluate(() => window.__lab.bind.get('sendL')[1] + ',' + window.__lab.bind.get('sendR')[1])) === 'KeyQ,KeyE');
+  // 다시 J로 바꾸고 닫은 뒤 새로고침 → 남아 있어야 함
+  await pg.mouse.click(30 + 354 + 40, 92 + slotPos * 22 - 5); await pg.waitForTimeout(80); await pg.keyboard.press('KeyJ'); await pg.waitForTimeout(80); await pg.keyboard.press('Escape'); await pg.waitForTimeout(100);
+  await pg.reload(); await pg.waitForTimeout(400);
+  check('새로고침(다시 실행) 뒤에도 바꾼 키가 남음', (await pg.evaluate(() => window.__lab.bind.get('sendL')[1])) === 'KeyJ');
+  await fresh(1); await pg.keyboard.press('KeyJ'); await pg.waitForTimeout(350);
+  check('바꾼 키(J)로 실제로 왼손이 움직임', (await modes()).split(',')[0] === 'reach', await modes());
+  await pg.evaluate(() => window.__lab.bind.resetAll());
   console.log('페이지 오류:', errs.join(';') || '없음', '| 실패', fail); await b.close(); process.exit(fail ? 1 : 0);
 })();

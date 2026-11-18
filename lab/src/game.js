@@ -8,26 +8,69 @@
   if (G.params.get('couple') !== null) C.COUPLE = +G.params.get('couple');
   const MODE_LIST = ['intent', 'pick', 'keys', 'hold'];
   try { const saved = JSON.parse(localStorage.getItem('climbKeys') || 'null'); if (saved) for (const m in saved) Object.assign(CTRL.KEYMAP[m], saved[m]); } catch (e) {}
-  let mode = MODE_LIST.includes(G.params.get('mode')) ? G.params.get('mode') : 'intent', ctrl = CTRL.make(mode), remap = null;
+  let mode = MODE_LIST.includes(G.params.get('mode')) ? G.params.get('mode') : 'intent', ctrl = CTRL.make(mode), remap = null, ui = null;
+  if (G.params.get('hand') === '2') CTRL.OPT.handMode = 2;
+  if (G.params.get('assist') === 'ledge') CTRL.OPT.assistRange = 'ledge';
+  const aim = { x: 400, y: 330, mx: null, my: null, held: 0 }; // 조준점(게임 좌표). 마우스를 움직이면 마우스로, 조준 키를 누르면 키로 움직인다
+  const plog = { sends: 0, confuse: 0, slips: 0, fallAfterSend: 0, lag: [], pending: [], lastSend: null, sendT: -9 };
   const V05 = { MUSCLE: C.MUSCLE, SMOOTH: C.SMOOTH, SMOOTH_FOOT: C.SMOOTH_FOOT, LAT_LEG: C.LAT_LEG, LAT_ARM: C.LAT_ARM };
   let v05 = G.params.get('phys') !== 'v04';
-  function setPhys(on) { for (const k in V05) C[k] = on ? V05[k] : 0; } // 9: v0.5 근육·궤적·관절 힘 ↔ v0.4 물리
+  function setPhys(on) { for (const k in V05) C[k] = on ? V05[k] : 0; } // 물리 v0.6(근육·궤적·관절 힘) ↔ v0.4
   if (autoList.length) v05 = false; // 자동 시연(?auto=)은 v0.4 물리에 맞춰 만든 조작기라 v0.4 물리로 돈다
   setPhys(v05);
   const kn = c => (c || '?').replace('Key', '').replace('Digit', '').replace('Arrow', '');
-  let S, station = 1, tries = 0, fx = [], why = null, endT = 0, slow = false, tick = 0, bot = null, autoI = 0, doneT = 0, air = null, jump = null, trail = [], swing = null, last = BOTS.idle();
-  window.__lab = { ctrlState: () => ctrl.st, opt: () => CTRL.OPT, raw: () => { const m = G.input.mouse; return (m.down[0] || G.input.key('KeyQ') ? 'L' : '-') + (m.down[2] || G.input.key('KeyE') ? 'R' : '-'); }, get s() { return S; }, get bot() { return bot; }, finished: false, results: [] };
+  let recent = [], spWas = false, lastMiss = null, showLog = false, S, station = 1, tries = 0, fx = [], why = null, endT = 0, slow = false, tick = 0, bot = null, autoI = 0, doneT = 0, air = null, jump = null, trail = [], swing = null, last = BOTS.idle();
+  window.__lab = { ctrlState: () => ctrl.st, opt: () => CTRL.OPT, aim, plog, ui: () => ui, bind: BIND, raw: () => { const m = G.input.mouse; return (m.down[0] || G.input.key('KeyQ') ? 'L' : '-') + (m.down[2] || G.input.key('KeyE') ? 'R' : '-'); }, get s() { return S; }, get bot() { return bot; }, finished: false, results: [] };
 
   function reset(st) {
     if (st) station = st;
     if (autoList.length) { bot = BOTS.make(autoList[autoI % autoList.length]); station = bot.def.station; }
-    S = PH.create(world, station); tries++; fx = []; why = null; endT = 0; doneT = 0; air = null; jump = null; trail = []; swing = null; ctrl = CTRL.make(mode);
+    S = PH.create(world, station); tries++; fx = []; why = null; endT = 0; doneT = 0; air = null; jump = null; trail = []; swing = null; lastMiss = null; ctrl = CTRL.make(mode);
+  }
+  // 최근 입력 표시(영상에서 어떤 입력을 썼는지 보이게)
+  function noteInputs(inp) {
+    const add = t => { recent.push({ t: 1.4, text: t }); if (recent.length > 5) recent.shift(); };
+    const foot = BIND.down('foot', inp);
+    for (const id of CTRL.OPT.handMode === 1 ? ['sendL', 'sendR'] : ['sendBest', 'sendOther']) if (BIND.pressed(id, inp)) {
+      const code = BIND.get(id).find(c => c && (c.startsWith('Mouse') ? inp.clicks.some(k => 'Mouse' + k.button === c) : inp.pressed(c)));
+      add(`${foot || BIND.pressedWithShift(id, inp) ? BIND.first('foot') + '+' : ''}${BIND.name(code)} (${BIND.BY[id].label.split(' ·')[0]})`); }
+    const sp = BIND.down('power', inp); if (sp !== spWas) add(`${BIND.first('power')} ${sp ? '누름 (모으기)' : '뗌 (던지기)'}`); spWas = sp;
+    if (BIND.pressed('cancel', inp)) add(`${BIND.first('cancel')} (취소)`);
+  }
+  function updateAim(inp, dt) {
+    const m = inp.mouse;
+    if (aim.mx === null || Math.abs(m.x - aim.mx) > 0.5 || Math.abs(m.y - aim.my) > 0.5) { if (aim.mx !== null) { aim.x = m.x + OX; aim.y = m.y + OY; } aim.mx = m.x; aim.my = m.y; }
+    const dx = (BIND.down('aimRight', inp) ? 1 : 0) - (BIND.down('aimLeft', inp) ? 1 : 0), dy = (BIND.down('aimDown', inp) ? 1 : 0) - (BIND.down('aimUp', inp) ? 1 : 0);
+    if (dx || dy) { aim.held += dt; const sp = BIND.down('aimSlow', inp) ? 90 : Math.min(520, 220 + 600 * aim.held), n = Math.hypot(dx, dy); aim.x += dx / n * sp * dt; aim.y += dy / n * sp * dt; } else aim.held = 0;
+    aim.x = Math.max(OX + 4, Math.min(OX + W - 4, aim.x)); aim.y = Math.max(OY + 4, Math.min(OY + H - 30, aim.y));
   }
   function readInput(inp) {
-    const m = inp.mouse, io = { mx: m.x + OX, my: m.y + OY, lheld: m.down[0], rheld: m.down[2], lmb: inp.clicks.some(c => c.button === 0), rmb: inp.clicks.some(c => c.button === 2), lshift: inp.clicks.some(c => c.button === 0 && c.shift), rshift: inp.clicks.some(c => c.button === 2 && c.shift), key: c => inp.key(c), pressed: c => inp.pressed(c) };
+    let io;
+    if (mode === 'intent') {
+      const footShift = BIND.get('foot').some(c => c === 'ShiftLeft' || c === 'ShiftRight');
+      io = { mx: aim.x, my: aim.y, down: id => BIND.down(id, inp), pressed: id => BIND.pressed(id, inp), pressedShift: id => footShift && BIND.pressedWithShift(id, inp) };
+    } else {
+      const m = inp.mouse; io = { mx: m.x + OX, my: m.y + OY, lheld: m.down[0], rheld: m.down[2], lmb: inp.clicks.some(c => c.button === 0), rmb: inp.clicks.some(c => c.button === 2), lshift: inp.clicks.some(c => c.button === 0 && c.shift), rshift: inp.clicks.some(c => c.button === 2 && c.shift), key: c => inp.key(c), pressed: c => inp.pressed(c) };
+    }
     const out = ctrl.step(S, io, 1 / 120);
     for (const i of ctrl.st.air) fx.push({ x: S.p[2 + i].x, y: S.p[2 + i].y, t: 0.9, kind: 'text', text: `${LIMB[i]}: 닿은 곳이 없다 — 그대로 들고 있음` });
+    if (mode === 'intent') {
+      for (const m of ctrl.st.miss || []) { lastMiss = { d: m.d, t: S.t }; } for (const m of ctrl.st.miss || []) if (!fx.some(f => f.miss === m.i && f.t > 0.6)) fx.push({ x: m.x, y: m.y, t: 1.0, kind: 'text', miss: m.i, text: `${LIMB[m.i]}: 겨눈 구간 밖에 닿음 (${Math.ceil(m.d)}px 벗어남)` });
+      logSends(inp);
+    }
     return out;
+  }
+  // 첫 플레이 확인용 기록: 손 선택 헷갈림(추정), 원치 않은 손 놓기, 입력 후 반응 지연
+  function logSends(inp) {
+    const st = ctrl.st;
+    for (const e of st.sent) {
+      plog.sends++;
+      if (plog.lastSend && S.t - plog.lastSend.t < 0.8 && plog.lastSend.i !== e.i && (plog.lastSend.i < 2) === (e.i < 2)) plog.confuse++; // 0.8초 안에 다른 손으로 바꿈
+      if (e.phase !== 'charge' && (e.mode === 'grip' || e.mode === 'plant')) plog.pending.push({ i: e.i, t: S.t });
+      plog.lastSend = e; plog.sendT = S.t;
+    }
+    if (BIND.pressed('cancel', inp) && plog.lastSend && S.t - plog.lastSend.t < 0.8) plog.confuse++; // 보내자마자 취소
+    plog.pending = plog.pending.filter(p => { const m = S.limb[p.i].mode; if (m === 'reach' || m === 'free') { plog.lag.push(S.t - p.t); return false; } return S.t - p.t < 1; });
   }
   function note(e) {
     const n = LIMB[e.limb];
@@ -36,9 +79,9 @@
     else if (e.type === 'miss') { if (e.d < 40) { say(e, `${n} 허공 — 잡을 곳까지 ${Math.ceil(e.d)}px 모자람`); G.sfx.miss(); } } // 멀리서 뗀 것은 일부러 놓은 것으로 본다
     else if (e.type === 'nohold') { say(e, `${n} 걸리지 않음 — 면 기울기 ${Math.round(e.ang)}°, ${PH.GRIP[e.kind].name}은 ${e.lim}°까지`); G.sfx.miss(); }
     else if (e.type === 'footmiss') { if (e.fast) say(e, `${n} 디디지 못함 — 발이 너무 빠르다`, true); else if (e.d < 30) say(e, `${n} 헛디딤 — 면까지 ${Math.ceil(e.d)}px`, true); }
-    else if (e.type === 'slip') { say(e, `${n} 미끄러짐 — 당기는 방향 ${Math.round(e.ang)}°, 이 ${PH.GRIP[e.kind].name}의 한계 ${e.lim}°`); G.sfx.fail(); }
+    else if (e.type === 'slip') { plog.slips++; say(e, `${n} 미끄러짐 — 당기는 방향 ${Math.round(e.ang)}°, 이 ${PH.GRIP[e.kind].name}의 한계 ${e.lim}°`); G.sfx.fail(); }
     else if (e.type === 'footoff') say(e, e.hang ? `${n} 떨어짐 — 발에 매달릴 수는 없다(몸이 발 아래에 있다)` : `${n} 접촉 끊김 — 누르는 힘이 없어 발이 떴다`, !e.hang);
-    else if (e.type === 'mat') { endT = bot ? 2.6 : 1.6; G.sfx.thud(); G.shake(5, 0.2); }
+    else if (e.type === 'mat') { if (S.t - plog.sendT < 1.5) plog.fallAfterSend++; endT = bot ? 2.6 : 1.6; G.sfx.thud(); G.shake(5, 0.2); }
     else if (e.type === 'win') G.sfx.win();
   }
   function say(e, text, minor) { fx.push({ x: e.x, y: e.y, t: 1.6, kind: 'text', text }); if (!minor) why = { text, t: S.t }; }
@@ -46,25 +89,37 @@
   const game = {
     init() { reset(1); },
     update(dt, inp) {
-      for (const f of fx) f.t -= dt; fx = fx.filter(f => f.t > 0);
-      if (remap) { // 키 다시 지정: 순서대로 누른다. Esc로 그만둔다
+      for (const f of fx) f.t -= dt; fx = fx.filter(f => f.t > 0); for (const r of recent) r.t -= dt; recent = recent.filter(r => r.t > 0);
+      if (ui) { ui.frame = (ui.frame || 0) + 1; settingsUpdate(inp); return; }
+      if (remap) { // (A·B·C안) 키 다시 지정: 순서대로 누른다. Esc로 그만둔다
         const codes = inp.codes();
         if (codes.includes('Escape')) remap = null;
         else if (codes.length) { CTRL.KEYMAP[mode][remap.list[remap.i]] = codes[0]; remap.i++; if (remap.i >= remap.list.length) { try { localStorage.setItem('climbKeys', JSON.stringify(CTRL.KEYMAP)); } catch (e) {} remap = null; reset(); } }
         return;
       }
       if (!bot) {
-        if (inp.pressed('KeyR')) { reset(); return; }
-        for (let k = 1; k <= 5; k++) if (inp.pressed('Digit' + k)) { tries = 0; reset(k); return; }
-        if (inp.pressed('Tab')) { mode = MODE_LIST[(MODE_LIST.indexOf(mode) + 1) % MODE_LIST.length]; tries = 0; reset(); return; }
-        if (inp.pressed('Digit6')) slow = !slow;
-        if (inp.pressed('Digit7')) C.COUPLE = C.COUPLE ? 0 : 0.15;
-        if (inp.pressed('Digit8')) { layout = layout ? null : 'near'; world = PH.makeWorld(layout); tries = 0; reset(); return; }
-        if (inp.pressed('Digit9')) { v05 = !v05; setPhys(v05); tries = 0; reset(); return; }
-        if (inp.pressed('Digit0')) { remap = { list: Object.keys(CTRL.KEYMAP[mode]), i: 0 }; return; }
+        const P_ = id => BIND.pressed(id, inp);
+        if (P_('settings')) { if (mode === 'intent') openSettings(); else remap = { list: Object.keys(CTRL.KEYMAP[mode]), i: 0 }; return; }
+        if (P_('reset')) { reset(); return; }
+        for (let k = 1; k <= 5; k++) if (P_('st' + k)) { tries = 0; reset(k); return; }
+        if (P_('scheme')) { mode = MODE_LIST[(MODE_LIST.indexOf(mode) + 1) % MODE_LIST.length]; tries = 0; reset(); return; }
+        if (P_('slow')) slow = !slow;
+        if (P_('couple')) C.COUPLE = C.COUPLE ? 0 : 0.15;
+        if (P_('layout')) { layout = layout ? null : 'near'; world = PH.makeWorld(layout); tries = 0; reset(); return; }
+        if (P_('phys')) { v05 = !v05; setPhys(v05); tries = 0; reset(); return; }
+        if (mode === 'intent') {
+          if (P_('log')) showLog = !showLog;
+          const O = CTRL.OPT;
+          if (P_('autoFeet')) O.autoFeet = !O.autoFeet;
+          if (P_('autoShift')) O.autoShift = !O.autoShift;
+          if (P_('assist')) O.assist = !O.assist;
+          if (P_('handMode')) O.handMode = O.handMode === 1 ? 2 : 1;
+          if (P_('assistRange')) O.assistRange = O.assistRange === 'near' ? 'ledge' : 'near';
+        }
+        updateAim(inp, dt); if (mode === 'intent') noteInputs(inp);
       }
       if (endT > 0) { endT -= dt; if (endT <= 0 || (!bot && endT < 1.2 && inp.any())) { if (bot) nextAuto(false); reset(); } return; }
-      if (S.won && !bot) { if (inp.pressed('Space') || inp.pressed('Enter')) reset(); }
+      if (S.won && !bot) { if (BIND.pressed('power', inp) || inp.pressed('Enter')) reset(); }
       tick++; if (slow && tick % 2) return;
       last = bot ? bot.step(S) : readInput(inp);
       PH.step(S, last, dt);
@@ -108,6 +163,7 @@
     const d = jump.tR === null ? 9 : jump.tR - jump.tP, o = jump.off, ang = Math.round(Math.atan2(-o.vy, o.vx) * 180 / Math.PI), sp = Math.round(Math.hypot(o.vx, o.vy));
     const win = (C.COUPLE || 0) + 0.15;
     if (mode === 'intent' && !bot) { // D안: 손 놓는 순간은 게임이 고르므로 모으기·발 위치·방향만 본다
+      if (lastMiss && jump.off && lastMiss.t >= jump.off.t) return `바꿀 것: 세기 또는 겨냥 — 손이 겨눈 구간을 ${Math.ceil(lastMiss.d)}px 벗어났다. 덜 모으거나 손이 닿는 곳을 겨눈다`;
       if (ctrl.st.power < 0.7) return `바꿀 것: 모으기 — Space를 짧게 눌렀다(세기 ${Math.round(ctrl.st.power * 100)}%). ${CTRL.P.FULL_CHARGE}초 넘게 누르면 힘껏 던진다`;
     } else if (d > win) return `바꿀 것: 타이밍 — 손 놓기가 밀기보다 ${d > 5 ? '너무' : d.toFixed(2) + '초'} 늦어 팔에 붙잡혔다 (여유 약 ${win.toFixed(2)}초)`;
     if (jump.lean < 4) return `바꿀 것: 발 위치 — 발이 엉덩이보다 앞(가려는 쪽)에 있어 ${ang > 90 ? '뒤로' : '위로만'} 밀렸다. 발을 반대쪽에 두기`;
@@ -155,8 +211,9 @@
         const st = ctrl.st;
         if (i < 2 && st.mark[i]) { G.circle(e.x, e.y, 16 + Math.sin(S.t * 18) * 2, null, '#ffb020', 3);
           if (!(i === 1 && st.mark[0])) { const both = st.mark[0] && st.mark[1], lx = both ? (p[2].x + p[3].x) / 2 : e.x, ly = both ? Math.min(p[2].y, p[3].y) : e.y;
-            G.text(both ? '두 손 · 던질 때 놓음' : '던질 때 놓음', lx, ly - 20, { size: 11, weight: 800, align: 'center', color: '#7a4a00', stroke: 'rgba(255,255,255,0.85)', strokeW: 3 }); } }
+            G.text(both ? '두 손 · 도약 때 놓음' : '도약 때 놓음', lx, ly - 46, { size: 11, weight: 800, align: 'center', color: '#7a4a00', stroke: 'rgba(255,255,255,0.85)', strokeW: 3 }); } }
         if (i >= 2 && st.auto[i] && !st.auto[i].swing) { const a = st.auto[i]; G.circle(a.sx, a.sy, 6, null, 'rgba(40,40,40,0.55)', 2); }
+        if (st.act[i] && lb.mode === 'reach' && (st.phase === 'charge' || st.phase === 'throw')) { G.circle(e.x, e.y, 15, null, '#29d3e8', 3); G.text('이동 중', e.x, e.y + 26, { size: 11, weight: 800, align: 'center', color: '#0b5d68', stroke: 'rgba(255,255,255,0.85)', strokeW: 3 }); }
         if (st.shift && st.shift.i === i) G.text('체중 옮기는 중', e.x, e.y - 18, { size: 11, weight: 800, align: 'center', color: '#333', stroke: 'rgba(255,255,255,0.85)', strokeW: 3 });
       }
       if (lb.mode === 'reach') {
@@ -174,7 +231,108 @@
   function key(c, x, label, sub, on, col, k) {
     G.panel(x, H - 26, 122, 21, on ? col : 'rgba(10,12,16,0.55)', on ? '#fff' : null);
     G.text(`${k} ${label}`, x + 6, H - 11, { size: 12, weight: 800, color: on ? '#111' : '#e8e8e4' });
-    G.text(sub, x + 117, H - 11, { size: 10, weight: 600, align: 'right', color: on ? '#222' : 'rgba(255,255,255,0.55)' });
+    if (G.textW(`${k} ${label}`, 12, 800) + G.textW(sub, 10, 600) < 108) G.text(sub, x + 117, H - 11, { size: 10, weight: 600, align: 'right', color: on ? '#222' : 'rgba(255,255,255,0.55)' });
+  }
+  // ---- D안 도움 표시: 입력별로 움직일 손(1번 방식) 또는 추천 손(2번 방식)을 누르기 전에 보여 준다. 잡기 보조가 허용하는 구간도 표시
+  function drawIntentHelp(c) {
+    const st = ctrl.st, O = CTRL.OPT, ax = last.cx, ay = last.cy, foot = BIND.down('foot', G.input), charge = st.phase === 'charge';
+    // 잡기 허용 구간
+    if (st.seg && O.assist) {
+      const pl = world.find(p => p.id === st.seg.poly);
+      if (pl) for (const e of pl.edges) if (e.grip) {
+        if (st.seg.whole) { G.line(e.ax, e.ay, e.bx, e.by, 'rgba(61,255,143,0.55)', 7); continue; }
+        const dx = e.bx - e.ax, dy = e.by - e.ay, L = Math.hypot(dx, dy), t = Math.max(0, Math.min(1, ((st.seg.x - e.ax) * dx + (st.seg.y - e.ay) * dy) / (L * L)));
+        const qx = e.ax + dx * t, qy = e.ay + dy * t; if (Math.hypot(qx - st.seg.x, qy - st.seg.y) > 1) continue;
+        const sp = CTRL.P.CATCH_SPAN / L, t0 = Math.max(0, t - sp), t1 = Math.min(1, t + sp);
+        G.line(e.ax + dx * t0, e.ay + dy * t0, e.ax + dx * t1, e.ay + dy * t1, 'rgba(61,255,143,0.75)', 7);
+      }
+    }
+    // 입력 → 손발
+    const ids = O.handMode === 1 ? [['sendL', foot ? 2 : 0, false], ['sendR', foot ? 3 : 1, false]]
+      : (() => { const r = foot ? st.rec.foot : st.rec.hand, o = foot ? 5 - r : 1 - r; return [['sendBest', r, true], ['sendOther', o, false]]; })();
+    ids.forEach(([id, li, best], k) => {
+      const lb = S.limb[li], e = S.p[lb.end], col = COL[li], strong = O.handMode === 1 || best;
+      const verb = charge && li < 2 && lb.mode === 'grip' ? (st.mark[li] ? '놓기 취소' : '도약 때 놓기') : '보내기';
+      G.line(e.x, e.y, ax, ay, strong ? col : 'rgba(80,80,80,0.35)', strong ? 2 : 1, [5, 5]);
+      const tag = `${BIND.first(id)} → ${LIMB[li]} ${verb}${best ? ' (추천)' : ''}`, tw = G.textW(tag, 12, 800) + 12;
+      let tx, ty;
+      if (O.handMode === 1) { tx = k === 0 ? ax - 16 - tw : ax + 16; ty = ay - 30; } else { tx = ax - tw / 2; ty = best ? ay - 44 : ay + 16; }
+      G.panel(tx, ty, tw, 20, strong ? col : 'rgba(255,255,255,0.8)', strong ? '#fff' : 'rgba(0,0,0,0.3)'); G.text(tag, tx + 6, ty + 14, { size: 12, weight: 800, color: '#111' });
+      // 같은 표시를 그 손발에도
+      const bt = BIND.first(id), bw = G.textW(bt, 11, 800) + 10, bx = e.x + (li % 2 ? 6 : -6 - bw); // 왼쪽 손발은 왼쪽 위, 오른쪽은 오른쪽 위에 붙여 겹치지 않게
+      G.panel(bx, e.y - 32, bw, 17, strong ? col : 'rgba(255,255,255,0.8)', '#fff'); G.text(bt, bx + bw / 2, e.y - 19, { size: 11, weight: 800, align: 'center', color: '#111' });
+      if (strong) G.circle(e.x, e.y, 18 + (best ? Math.sin(S.t * 10) * 2 : 0), null, col, 2.5);
+    });
+    if (charge && (st.mark[0] || st.mark[1])) { const t = `${BIND.first('cancel')}: 놓기 지정 모두 취소`; G.text(t, ax, ay + 52, { size: 11, weight: 800, align: 'center', color: '#333', stroke: 'rgba(255,255,255,0.85)', strokeW: 3 }); }
+  }
+  function drawLog() {
+    const l = plog, avg = l.lag.length ? l.lag.reduce((a, b) => a + b, 0) / l.lag.length : 0, mx = l.lag.length ? Math.max(...l.lag) : 0, slowN = l.lag.filter(x => x > 0.15).length;
+    const rows = ['플레이 기록 (새로고침하면 지워짐)', `손발 입력 ${l.sends}회`, `손 선택 헷갈림 추정 ${l.confuse}회 (0.8초 안에 다른 손으로 바꾸거나 취소)`, `미끄러져 놓침 ${l.slips}회`, `손을 보낸 뒤 1.5초 안에 떨어짐 ${l.fallAfterSend}회`,
+      `입력 → 손이 떨어지기까지 평균 ${(avg * 1000).toFixed(0)}ms · 최대 ${(mx * 1000).toFixed(0)}ms · 0.15초 넘음 ${slowN}회`];
+    G.panel(W - 470, 120, 460, 20 + rows.length * 18, 'rgba(10,12,16,0.85)');
+    rows.forEach((t, k) => G.text(t, W - 460, 138 + k * 18, { size: 12, weight: k ? 600 : 800, color: k ? '#e8e8e4' : '#ffd166' }));
+  }
+  // ---- 키 설정 화면(배틀그라운드식): 동작마다 두 칸, 칸을 고르고 새 키나 마우스 버튼을 누른다
+  function settingsRows() { const hm = CTRL.OPT.handMode; return BIND.ACTIONS.filter(a => !a.hm || a.hm === hm); }
+  function openSettings() { ui = { sel: 0, slot: 0, cap: null, msg: '', frame: 0 }; }
+  function settingsLayout() {
+    const rows = settingsRows(), per = Math.ceil(rows.length / 2), out = [];
+    rows.forEach((a, k) => { const col = k < per ? 0 : 1, r = col ? k - per : k, x = 30 + col * 452, y = 92 + r * 22; out.push({ a, k, x, y, s0: [x + 268, y - 14, 82, 19], s1: [x + 354, y - 14, 82, 19] }); });
+    const by = 92 + per * 22 + 16;
+    return { rows: out, per, btn: { mode: [30, 52, 330, 22], reset: [W / 2 - 170, by, 160, 26], close: [W / 2 + 10, by, 160, 26] }, by };
+  }
+  const inBox = (b, x, y) => x >= b[0] && x <= b[0] + b[2] && y >= b[1] && y <= b[1] + b[3];
+  function settingsUpdate(inp) {
+    const L = settingsLayout(), n = L.rows.length;
+    if (ui.cap) { // 새 입력 받기
+      if (ui.cap.t === ui.frame) return;
+      if (inp.pressed('Escape')) { ui.cap = null; ui.msg = '취소했다'; return; }
+      const code = inp.codes().find(c => c !== 'Escape') || (inp.clicks[0] ? 'Mouse' + inp.clicks[0].button : null);
+      if (!code) return;
+      BIND.set(ui.cap.id, ui.cap.slot, code);
+      const cf = BIND.conflicts(CTRL.OPT.handMode)[ui.cap.id];
+      ui.msg = cf ? `주의: ${BIND.name(code)}이(가) '${cf.map(id => BIND.BY[id].label.split(' (')[0].split(' ·')[0]).join("', '")}'에도 쓰이고 있다 (빨간 칸)` : `${BIND.name(code)}로 바꿈 · 저장됨`;
+      ui.cap = null; return;
+    }
+    if (ui.frame > 1 && (inp.pressed('Escape') || BIND.get('settings').some(c => c && !c.startsWith('Mouse') && inp.pressed(c)))) { ui = null; ctrl = CTRL.make(mode); return; }
+    const per = L.per, col = ui.sel < n ? (ui.sel < per ? 0 : 1) : -1;
+    if (inp.pressed('ArrowDown')) ui.sel = Math.min(n + 1, ui.sel + 1);
+    if (inp.pressed('ArrowUp')) ui.sel = Math.max(0, ui.sel - 1);
+    if (inp.pressed('ArrowRight')) { if (ui.sel >= n) ui.sel = n + 1; else if (ui.slot === 0) ui.slot = 1; else if (col === 0 && ui.sel + per < n) { ui.sel += per; ui.slot = 0; } }
+    if (inp.pressed('ArrowLeft')) { if (ui.sel >= n) ui.sel = n; else if (ui.slot === 1) ui.slot = 0; else if (col === 1) { ui.sel -= per; ui.slot = 1; } }
+    const act = () => { if (ui.sel < n) { ui.cap = { id: L.rows[ui.sel].a.id, slot: ui.slot, t: ui.frame }; ui.msg = ''; } else if (ui.sel === n) { BIND.resetAll(); ui.msg = '기본값으로 되돌림 · 저장됨'; } else { ui = null; ctrl = CTRL.make(mode); } };
+    if (inp.pressed('Enter') || inp.pressed('NumpadEnter')) { act(); return; }
+    if ((inp.pressed('Delete') || inp.pressed('Backspace')) && ui.sel < n) { BIND.set(L.rows[ui.sel].a.id, ui.slot, null); ui.msg = '비움 · 저장됨'; }
+    for (const ck of inp.clicks) {
+      if (ck.button !== 0) continue; const x = ck.x, y = ck.y;
+      if (inBox(L.btn.mode, x, y)) { CTRL.OPT.handMode = CTRL.OPT.handMode === 1 ? 2 : 1; ui.sel = 0; ui.msg = `손 선택 ${CTRL.OPT.handMode}번 방식의 키를 보여 준다`; return; }
+      if (inBox(L.btn.reset, x, y)) { ui.sel = n; act(); return; }
+      if (inBox(L.btn.close, x, y)) { ui.sel = n + 1; act(); return; }
+      for (const r of L.rows) for (const sl of [0, 1]) if (inBox(sl ? r.s1 : r.s0, x, y)) { ui.sel = r.k; ui.slot = sl; ui.cap = { id: r.a.id, slot: sl, t: ui.frame }; ui.msg = ''; return; }
+    }
+  }
+  function drawSettings() {
+    const L = settingsLayout(), n = L.rows.length, cf = BIND.conflicts(CTRL.OPT.handMode), c = G.ctx;
+    c.fillStyle = 'rgba(0,0,0,0.55)'; c.fillRect(0, 0, W, H);
+    G.panel(16, 10, W - 32, H - 20, 'rgba(18,22,30,0.97)', '#7a8599');
+    G.text('키 설정', 30, 36, { size: 18, weight: 800 });
+    G.text('칸을 클릭하거나 방향키로 고르고 Enter → 새 키나 마우스 버튼을 누른다 · Delete 비우기 · Esc 닫기 · 바꾸면 바로 저장되고 다시 열어도 남는다', 112, 36, { size: 11.5, color: '#c8ccd6', weight: 500 });
+    const mb = L.btn.mode; G.panel(mb[0], mb[1], mb[2], mb[3], '#2c3b55', '#9fb4d9'); G.text(`손 선택 방식: ${CTRL.OPT.handMode}번 ${CTRL.OPT.handMode === 1 ? '(입력마다 손이 정해짐)' : '(게임이 추천하는 손)'} — 클릭해서 바꾸기`, mb[0] + 8, mb[1] + 16, { size: 12, weight: 700 });
+    let lastG = null;
+    for (const r of L.rows) {
+      const a = r.a, sel = ui.sel === r.k;
+      let lb = (a.g !== lastG ? a.g + ' · ' : '') + a.label.replace(/…$/, ''); const wt = sel ? 800 : 500; while (G.textW(lb, 11, wt) > 262 && lb.length > 4) lb = lb.slice(0, -2) + '…'; // 칸을 넘지 않게 줄임
+      G.text(lb, r.x, r.y, { size: 11, weight: wt, color: sel ? '#ffd166' : '#e8e8e4' }); lastG = a.g;
+      if (sel) G.text(a.label, W / 2, L.by + 70, { size: 11.5, weight: 600, align: 'center', color: '#c8ccd6' }); // 고른 동작의 전체 설명
+      for (const sl of [0, 1]) {
+        const b = sl ? r.s1 : r.s0, code = BIND.get(a.id)[sl], capping = ui.cap && ui.cap.id === a.id && ui.cap.slot === sl, bad = code && cf[a.id];
+        G.panel(b[0], b[1], b[2], b[3], capping ? '#ffd166' : bad ? '#7a1f1f' : '#2a2f3a', sel && ui.slot === sl ? '#fff' : bad ? '#ff6b6b' : '#4a5263');
+        G.text(capping ? '누르세요…' : BIND.name(code), b[0] + b[2] / 2, b[1] + 14, { size: 11.5, weight: 700, align: 'center', color: capping ? '#111' : code ? '#fff' : '#777' });
+      }
+    }
+    for (const [k, t] of [['reset', '기본값 복원'], ['close', '닫기 (Esc)']]) { const b = L.btn[k], sel = ui.sel === (k === 'reset' ? n : n + 1); G.panel(b[0], b[1], b[2], b[3], sel ? '#3d5a8a' : '#2a2f3a', sel ? '#fff' : '#4a5263'); G.text(t, b[0] + b[2] / 2, b[1] + 17, { size: 13, weight: 800, align: 'center' }); }
+    const anyCf = Object.keys(cf).length;
+    G.text(ui.msg || (anyCf ? `겹친 입력이 있다(빨간 칸). 같은 입력을 두 동작에 쓰면 둘 다 함께 실행된다` : '겹친 입력 없음'), W / 2, L.by + 48, { size: 12, weight: 700, align: 'center', color: ui.msg.startsWith('주의') || (!ui.msg && anyCf) ? '#ff8a8a' : '#a8e6b8' });
   }
   function draw(c) {
     c.save(); c.translate(-OX, -OY);
@@ -204,14 +362,17 @@
       c.fillStyle = '#ffd166'; c.fillRect(mx + 4, my + 4, 88 * shown, 7); c.fillStyle = '#7dffb0'; c.fillRect(mx + 4, my + 15, 88 * S.act, 5);
       G.text(st.phase === 'throw' ? '던지는 중' : full ? '모으는 중 → 떼면 뜀' : '모으는 중 → 반동(놓을 손 없음)', mx + 48, my - 5, { size: 11, weight: 800, align: 'center', color: '#111', stroke: 'rgba(255,255,255,0.85)', strokeW: 3 });
     }
+    if (mode === 'intent' && !bot && !S.dead && !ui) drawIntentHelp(c);
     if (!S.dead && (bot || mode !== 'keys')) { G.line(last.cx - 9, last.cy, last.cx + 9, last.cy, '#111', 2); G.line(last.cx, last.cy - 9, last.cx, last.cy + 9, '#111', 2); G.circle(last.cx, last.cy, 5, null, '#fff', 1.5); }
     c.restore();
     const K = CTRL.KEYMAP[mode], sp = kn(K.power);
     const O = CTRL.OPT, onoff = v => v ? '켬' : '끔';
+    const B = BIND.label, B1 = BIND.first, hm = O.handMode;
     const lines = mode === 'intent' ? [
-      `좌클릭 왼손 · 우클릭 오른손 : 그 손을 커서로 보낸다 → 겨눈 턱에 닿으면 잡음 (닿지 않으면 뻗은 채 기다림)   Shift+클릭 : 발`,
-      `${sp} 누르고 있기 : 힘 모으기(몸을 뒤로 싣기)   떼기 : 커서 쪽으로 던지기   모으는 동안 클릭한 손 = 던질 때 놓음(주황)`,
-      `${kn(K.autoFeet)} 자동 발 ${onoff(O.autoFeet)} · ${kn(K.autoShift)} 자동 체중 이동 ${onoff(O.autoShift)} · ${kn(K.assist)} 닿으면 잡기 ${onoff(O.assist)} · ${kn(K.cancel)} 든 손발 힘 빼기`,
+      hm === 1 ? `${B('sendL')} 왼손 · ${B('sendR')} 오른손 보내기 → 겨눈 구간에 닿으면 잡음   ${B('foot')} 누른 채 손 입력 = 발   조준 ${B1('aimUp')}${B1('aimLeft')}${B1('aimDown')}${B1('aimRight')} 또는 마우스`
+               : `${B('sendBest')} 추천 손 · ${B('sendOther')} 다른 손 보내기 → 겨눈 구간에 닿으면 잡음   ${B('foot')} 누른 채 = 발   조준 ${B1('aimUp')}${B1('aimLeft')}${B1('aimDown')}${B1('aimRight')} 또는 마우스`,
+      `${B('power')} 누르고 있기 = 힘 모으기, 떼기 = 던지기 · 모으는 중 손 입력 = 도약 때 놓을 손 지정/취소 · ${B('cancel')} 취소`,
+      `손 선택 ${hm}번(${B1('handMode')}) · 잡기 범위 ${O.assistRange === 'near' ? '커서 근처' : '턱 전체'}(${B1('assistRange')}) · 자동 발 ${onoff(O.autoFeet)}(${B1('autoFeet')}) · 체중 이동 ${onoff(O.autoShift)}(${B1('autoShift')}) · 닿으면 잡기 ${onoff(O.assist)}(${B1('assist')}) · ${B1('settings')} 키 설정 · ${B1('log')} 기록`,
     ] : mode === 'pick' ? [
       `${kn(K.lh)} 왼손 · ${kn(K.rh)} 오른손 · ${kn(K.lf)} 왼발 · ${kn(K.rf)} 오른발 : 한 번 눌러 집기 (떼어져서 커서를 따라온다. 누르고 있지 않아도 된다)`,
       `좌클릭 : 집은 손발을 그 자리에 붙이기      우클릭 또는 같은 키 다시 : 붙이지 않고 힘 빼기`,
@@ -227,14 +388,17 @@
     G.panel(8, 6, 716, 84, 'rgba(255,255,255,0.82)');
     G.text(`조작 ${CTRL.MODES[mode]}`, 18, 25, { size: 14, weight: 800, color: '#222' });
     lines.forEach((t, k) => G.text(t, 18, 43 + k * 15, { size: 11.5, color: '#222', weight: 600 }));
-    G.text(`Tab 조작 방식 · R 다시 · 1~5 시작 자세 · 6 느리게 · 7 도약 연결 · 8 연습 배치 · 9 물리 ${v05 ? 'v0.5' : 'v0.4'} · 0 키 다시 지정`, 18, 104, { size: 11, color: '#333', weight: 600, stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
+    G.text(`${BIND.first('scheme')} 조작 방식 · ${BIND.first('reset')} 다시 · ${BIND.first('st1')}~${BIND.first('st5')} 시작 자세 · ${BIND.first('slow')} 느리게 · ${BIND.first('couple')} 도약 연결 · ${BIND.first('layout')} 연습 배치 · ${BIND.first('phys')} 물리 ${v05 ? 'v0.6' : 'v0.4'} · ${BIND.label('settings')} 키 설정`, 18, 104, { size: 11, color: '#333', weight: 600, stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
     G.text(bot ? bot.def.title : `${station}. ${PH.STATIONS[station].name}   시도 ${tries}${slow ? '   느리게 ×0.5' : ''}`, W - 12, 24, { size: 13, align: 'right', color: '#222', weight: 800, stroke: 'rgba(255,255,255,0.8)' });
     G.text(`${bot ? '자동 시연(사람과 같은 입력만 사용) · ' : ''}도약 연결 ${C.COUPLE ? '켬' : '끔'} · ${layout ? '연습 배치' : '기존 벽'}`, W - 12, 42, { size: 11, align: 'right', color: '#333', stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
-    const kname = mode === 'intent' ? ['좌클릭', '우클릭', 'Shift+좌', 'Shift+우'] : mode === 'hold' ? ['좌클릭', '우클릭', kn(K.lf), kn(K.rf)] : [kn(K.lh), kn(K.rh), kn(K.lf), kn(K.rf)];
+    const sh = t => t.replace(/^(왼|오른)/, '').replace('클릭', ''), kname = mode === 'intent' ? (O.handMode === 1 ? [B1('sendL'), B1('sendR'), sh(B1('foot')) + '+' + sh(B1('sendL')), sh(B1('foot')) + '+' + sh(B1('sendR'))] : ['추천/다른', '추천/다른', sh(B1('foot')) + '+손', sh(B1('foot')) + '+손']) : mode === 'hold' ? ['좌클릭', '우클릭', kn(K.lf), kn(K.rf)] : [kn(K.lh), kn(K.rh), kn(K.lf), kn(K.rf)];
     for (let i = 0; i < 4; i++) { const m = S.limb[i].mode, on = m === 'reach'; key(c, 10 + i * 126, LIMB[i], on ? (mode === 'intent' && i >= 2 && !ctrl.st.manual[i] ? '자동' : '움직이는 중') : m === 'free' ? '힘 빠짐' : '붙음', on, COL[i], kname[i]); }
-    key(c, 514, mode === 'intent' ? '모으기·던지기' : '힘주기', '', last.power, '#ffd166', sp);
+    key(c, 514, mode === 'intent' ? '모으기·던지기' : '힘주기', '', last.power, '#ffd166', mode === 'intent' ? B1('power') : sp);
+    if (mode === 'intent' && recent.length && !ui) recent.forEach((r, k) => { const y = H - 40 - (recent.length - 1 - k) * 20, w = G.textW(r.text, 12, 800) + 14; G.ctx.globalAlpha = Math.min(1, r.t * 2); G.panel(W - 12 - w, y - 15, w, 19, 'rgba(10,12,16,0.8)'); G.text(r.text, W - 12 - w + 7, y, { size: 12, weight: 800, color: '#ffd166' }); G.ctx.globalAlpha = 1; });
+    if (showLog && mode === 'intent') drawLog();
+    if (ui) drawSettings();
     if (remap) { G.panel(W / 2 - 220, 200, 440, 70, 'rgba(20,30,60,0.95)', '#fff'); G.text(`키 다시 지정 (${remap.i + 1}/${remap.list.length}) — Esc 그만`, W / 2, 226, { size: 13, align: 'center', weight: 600 }); G.text(`「${CTRL.LABEL[remap.list[remap.i]]}」에 쓸 키를 누르세요`, W / 2, 252, { size: 18, align: 'center', weight: 800 }); }
-    G.text('실험 빌드 v0.5', W - 10, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
+    G.text('실험 빌드 v0.6', W - 10, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
     if (endT > 0) G.banner('매트에 떨어짐 — 바로 다시', why && (!air || why.t >= air.t - 0.05) ? why.text : hint() ? '도약이 다음 턱에 이어지지 않았다' : air && air.gap > 0 && air.gap < 1e8 ? `손이 잡을 곳에 닿지 못했다 — 가장 가까웠을 때 ${Math.ceil(air.gap)}px 모자람` : air && air.gap <= 0 ? '손이 닿는 거리였지만 잡지 않았다(버튼을 떼야 잡는다)' : '붙잡은 곳 없이 떨어졌다', 'fail', 380);
     if (endT > 0 && hint()) { const t = hint(), w = G.textW(t, 14, 800) + 28; G.panel(W / 2 - w / 2, 458, w, 28, 'rgba(255,214,102,0.96)'); G.text(t, W / 2, 477, { size: 14, weight: 800, align: 'center', color: '#111' }); }
     else if (S.won) G.banner('목표 도달!', `${S.t.toFixed(1)}초 · 시도 ${tries} — R 또는 스페이스로 다시`, 'win', 400);

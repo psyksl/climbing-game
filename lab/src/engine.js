@@ -24,13 +24,14 @@ const G = (() => {
   const real = { keys: {}, action: false };
   const virt = { keys: {}, action: false };
   const edge = { pressed: {}, released: {}, aPress: false, aRelease: false, clicks: [] };
-  const mouse = { x: W / 2, y: H / 2, down: [false, false, false] };
+  const mouse = { x: W / 2, y: H / 2, down: [false, false, false, false, false] };
   let oneButton = false;
   const actionKeys = ['Space'];
   function keyDown(code) { edge.pressed[code] = true; if (actionKeys.includes(code)) edge.aPress = true; }
   function keyUp(code) { edge.released[code] = true; if (actionKeys.includes(code)) edge.aRelease = true; }
   window.addEventListener('keydown', e => {
-    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'Quote', 'Slash'].includes(e.code)) e.preventDefault();
+    // 게임이 쓰는 키가 브라우저 기능(스크롤, 포커스 이동, 빠른 찾기 등)으로 새지 않게 막는다. 새로고침·전체화면·개발자 도구와 Ctrl 조합은 그대로 둔다
+    if (!['F5', 'F11', 'F12'].includes(e.code) && !e.ctrlKey && !e.metaKey) e.preventDefault();
     unlockAudio(); paused = false;
     if (e.repeat || auto) return;
     real.keys[e.code] = true; keyDown(e.code);
@@ -38,6 +39,7 @@ const G = (() => {
   window.addEventListener('keyup', e => { if (auto) return; real.keys[e.code] = false; keyUp(e.code); });
   function toLogical(cx, cy) { return { x: (cx - offX) / scale, y: (cy - offY) / scale }; }
   window.addEventListener('contextmenu', e => e.preventDefault());
+  for (const t of ['auxclick', 'mouseup']) window.addEventListener(t, e => { if (e.button >= 3) e.preventDefault(); }); // 마우스 옆 버튼이 뒤로·앞으로 가기로 쓰이지 않게
   // 마우스 버튼: 이벤트 종류가 아니라 매 이벤트의 buttons 값(지금 눌린 버튼 전체)으로 맞춘다.
   // 한 버튼을 누른 채 다른 버튼을 누르거나 떼면 브라우저는 pointerdown/up이 아니라 pointermove로 알려 주기 때문이다.
   let guard = false; // 포커스를 잃었다 돌아온 뒤에는 버튼을 모두 뗀 것이 확인될 때까지 누름을 듣지 않는다
@@ -51,7 +53,7 @@ const G = (() => {
     const p = toLogical(e.clientX, e.clientY); mouse.x = p.x; mouse.y = p.y;
     const b = e.buttons;
     if (guard) { if (b === 0) guard = false; else return; }
-    setBtn(0, !!(b & 1), e.shiftKey); setBtn(2, !!(b & 2), e.shiftKey); setBtn(1, !!(b & 4), e.shiftKey);
+    setBtn(0, !!(b & 1), e.shiftKey); setBtn(2, !!(b & 2), e.shiftKey); setBtn(1, !!(b & 4), e.shiftKey); setBtn(3, !!(b & 8), e.shiftKey); setBtn(4, !!(b & 16), e.shiftKey);
   }
   for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'mousedown', 'mouseup', 'mousemove', 'mouseenter'])
     window.addEventListener(t, e => {
@@ -61,7 +63,7 @@ const G = (() => {
     }, { passive: false });
   function dropAll() { // 포커스를 잃으면 누르고 있던 것을 모두 뗀 것으로 본다(잡고 있는 손은 영향 없음)
     for (const k in real.keys) if (real.keys[k]) { real.keys[k] = false; keyUp(k); }
-    setBtn(0, false); setBtn(1, false); setBtn(2, false);
+    for (let k = 0; k < 5; k++) setBtn(k, false);
   }
   let paused = false;
   window.addEventListener('blur', () => { if (auto) return; dropAll(); guard = true; paused = true; });
