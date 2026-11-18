@@ -107,6 +107,12 @@ const sx = x => x - OX, sy = y => y - OY; // 게임 좌표 → 화면 좌표
   check('실패 안내: 가까운 끝을 겨누고 길게 → "지나쳐 … 덜 모으거나"', !jh.m.includes('@B') && jh.h.includes('지나쳐') && jh.h.includes('덜 모으'), jh.h);
   jh = await jumpHint(600, 150);
   check('실패 안내: 먼 끝을 겨누고 짧게 → "못 미쳐 … 더 모으거나"', !jh.m.includes('@B') && jh.h.includes('못 미쳐') && !jh.h.includes('지나'), jh.h);
+  // 2단계 ②: 모으는 동안 A로 몸을 왼쪽에 싣는다(Space를 먼저 누르고 A)
+  await fresh(3); await pg.mouse.move(sx(545), sy(348)); await pg.keyboard.down('Space'); await pg.waitForTimeout(80); await pg.keyboard.down('KeyA'); await pg.waitForTimeout(300);
+  const sw = await pg.evaluate(() => { const st = window.__lab.ctrlState(); return { sway: st.sway, phase: st.phase, vx: window.__lab.s.p[1].vx }; });
+  check('모으는 중 A: 몸 싣기 값이 왼쪽(음수)이고 엉덩이가 왼쪽으로 움직임', sw.phase === 'charge' && sw.sway < -10 && sw.vx < 0, JSON.stringify(sw));
+  if (shot) await pg.screenshot({ path: shot + '_sway.png' });
+  await pg.keyboard.up('KeyA'); await pg.keyboard.up('Space'); await pg.waitForTimeout(800);
   // 몸 비율 바꾸기(- 키): 같은 벽에서 몸만 바뀌고, 다시 누르면 돌아온다
   await pg.keyboard.press('Minus'); await pg.waitForTimeout(300);
   let bd = await pg.evaluate(() => [window.__lab.s.limb[0].max, window.__lab.s.limb[2].max].join('/'));

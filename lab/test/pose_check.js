@@ -18,4 +18,11 @@ for (const body of ['base', 'prop']) { PH.setBody(body); const B = body === 'bas
   for (const st of [1, 2, 3, 4, 5]) { let crossed = false; run(st, a => { const s = a.s; if (s.limb[2].mode === 'plant' && s.limb[3].mode === 'plant' && s.p[4].x > s.p[5].x + 4) crossed = true; }, 3, {});
     check(`${B} · 자세 ${st}: 자동 발이 꼬이지 않음`, !crossed); }
 }
+// 4) 2단계 성공 기준: 모으는 동안 A/D로 흔들다 제때(돌아서고 0.1초) 떼면 같은 힘준 시간의 흔들기 없이보다 멀리, 너무 늦게(0.45초) 떼면 더 불리
+{ const SW = require('./sway_study.js');
+  for (const body of ['base', 'prop']) { PH.setBody(body); const B = body === 'base' ? '기존' : '새 비율';
+    const good = SW.farthest('sway', { tA: 0.35, off: 0.1 }), goodN = SW.farthest('none', { hold: good.rec.hold });
+    const late = SW.farthest('sway', { tA: 0.35, off: 0.45 }), lateN = SW.farthest('none', { hold: late.rec.hold });
+    check(`${B} · 흔들기 제때 떼기가 같은 시간 흔들기 없이보다 20px 이상 멀리`, good.best >= goodN.best + 20, `${good.best}px vs ${goodN.best}px`);
+    check(`${B} · 흔들기 너무 늦게 떼기는 흔들기 없이보다 불리`, late.best < lateN.best, `${late.best}px vs ${lateN.best}px`); } }
 PH.setBody('base'); process.exit(fail ? 1 : 0);

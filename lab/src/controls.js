@@ -86,7 +86,7 @@ const CTRL = (() => {
   }
   // ---- D안: 의도 조작. 플레이어는 어느 손발을 어디로, 언제 던질지만 정하고 균형·발 위치·손 놓는 순간은 게임이 채운다
   const OPT = { autoFeet: true, autoShift: true, assist: true, handMode: 1, assistRange: 'near' }; // assistRange: 'near' 커서 근처 구간만 / 'ledge' 겨눈 턱 전체
-  const P = { MOVE_STEP: 26, MOVE_GAIN: 0.55, MOVE_MARGIN: 0.95, ANGLE_MARGIN: 10, CATCH_SPAN: 28, REC_MARGIN: 22, REC_HOLD: 0.15, CATCH_R: 45, FOOT_CATCH_R: 30, SHIFT_T: 0.2, THROW_T: 0.32, REL_MIN: 0.03, REL_MAX: 0.14, CROUCH: 40, THROW_D: 250, FEET_V: 150, FULL_CHARGE: 0.6, ROCK_MAX: 0.45, GAIN0: 0.25, CROUCH_MODE: 'away' };
+  const P = { MOVE_STEP: 26, MOVE_GAIN: 0.55, MOVE_MARGIN: 0.95, ANGLE_MARGIN: 10, CATCH_SPAN: 28, REC_MARGIN: 22, REC_HOLD: 0.15, CATCH_R: 45, FOOT_CATCH_R: 30, SHIFT_T: 0.2, THROW_T: 0.32, REL_MIN: 0.03, REL_MAX: 0.14, CROUCH: 40, THROW_D: 250, FEET_V: 150, FULL_CHARGE: 0.6, ROCK_MAX: 0.45, GAIN0: 0.25, CROUCH_MODE: 'away', SWAY_V: 160, SWAY_MAX: 40 };
   function footCandidates(s, i, ot = null) { // ot: 다른 발이 가려는 곳(있으면) // 발을 디딜 만한 곳: 위를 향한 면, 다리가 닿는 곳, 엉덩이보다 아래
     const hp = s.p[1], L = PHX.C.L, side = i === 2 ? -1 : 1, other = s.limb[5 - i], op = s.p[2 + (5 - i)];
     const cx = hp.x + side * 12, cy = hp.y + 0.72 * L; let best = null;
@@ -134,6 +134,16 @@ const CTRL = (() => {
     }
     return null;
   }
+  // 몸 싣기(모으는 중 A/D): 몸통 옮기기와 같은 한계(팔다리 길이·손 각도)를 본다.
+  // 다만 두 손이 다 잡혀 있으면 가슴은 두 팔에 매달린 채 몸통이 기울어 엉덩이만 옆으로 갈 수 있으므로, 팔 길이 때문에 막힐 때는 디딘 다리만 본다
+  function swayOk(s, dx) {
+    const why = moveOk(s, dx, 0);
+    if (why !== '팔' || !(s.limb[0].mode === 'grip' && s.limb[1].mode === 'grip')) return why;
+    const hp = s.p[1];
+    for (const i of [2, 3]) { const lb = s.limb[i]; if (lb.mode !== 'plant') continue; const e = s.p[2 + i], L = Math.hypot(hp.x + dx - e.x, hp.y - e.y), cur = Math.hypot(hp.x - e.x, hp.y - e.y);
+      if (L > cur && L > lb.max * P.MOVE_MARGIN) return '다리'; if (L < cur && L < lb.min * 1.15) return '다리'; }
+    return null;
+  }
   function makeIntent() {
     const st = { mode: 'intent', act: [false, false, false, false], armT: [0, 0, 0, 0], mark: [false, false], manual: [false, false, false, false], auto: [null, null, null, null],
       tryNow: [false, false, false, false], pend: [false, false, false, false], block: [0, 0, 0, 0], staleT: [0, 0, 0, 0], cool: [0, 0, 0, 0],
@@ -178,7 +188,9 @@ const CTRL = (() => {
       // Space: 누르고 있으면 힘 모으기, 떼면 던지기
       const sp = io.down('power');
       const spDown = sp && !st.spPrev; st.spPrev = sp;
-      if (spDown && st.phase !== 'charge') { if (st.phase === 'throw') st.mark = [false, false]; if (st.shift) { detach(s, st.shift.i); st.shift = null; } st.phase = 'charge'; st.pt = 0; st.anchor = [c.x, c.y]; }
+      if (spDown && st.phase !== 'charge') { if (st.phase === 'throw') st.mark = [false, false]; if (st.shift) { detach(s, st.shift.i); st.shift = null; } st.phase = 'charge'; st.pt = 0; st.anchor = [c.x, c.y]; st.sway = 0; st.swayUsed = false;
+        // A/D를 누른 채 모으기 시작하면: 자동으로 목표 반대쪽에 싣지 않고, 지금 엉덩이 속도를 이어 가는 자리에서 시작한다
+        if (io.down('moveLeft') || io.down('moveRight')) { st.swayUsed = true; st.sway = Math.max(-P.SWAY_MAX, Math.min(P.SWAY_MAX, hp.vx * 0.15)); } }
       if (!sp && st.phase === 'charge') { st.power = Math.max(0.15, Math.min(1, (st.pt - 0.04) / P.FULL_CHARGE));
         // 놓을 손을 정하지 않았고 아직 붙든 손이 있으면 뛰지 않는다: 발을 디딘 채 몸만 싣는 작은 반동으로 제한
         st.jump = st.mark[0] || st.mark[1] || !(gripping(s, 0) || gripping(s, 1));
@@ -209,7 +221,14 @@ const CTRL = (() => {
       }
       const dx0 = io.mx - c.x, dy0 = io.my - c.y, dl = Math.hypot(dx0, dy0) || 1, ux = dx0 / dl, uy = dy0 / dl;
       const anyFoot = s.limb[2].mode === 'plant' || s.limb[3].mode === 'plant', anyHold = s.limb.some(l => l.mode === 'grip' || l.mode === 'plant');
-      if (st.phase === 'charge') { st.pt += dt; inp.power = true; const A = st.anchor; if (P.CROUCH_MODE === 'down') { inp.px = A[0]; inp.py = A[1] + P.CROUCH; } else { inp.px = A[0] - ux * P.CROUCH * 0.6; inp.py = A[1] + P.CROUCH * 0.8; } } // 누른 순간의 자리 기준으로 목표 쪽 반대·아래로 몸을 싣는다
+      st.swayKey = 0;
+      if (st.phase === 'charge') { st.pt += dt; inp.power = true; const A = st.anchor;
+        // 2단계 ②: 모으는 동안 A/D로 몸을 좌우로 싣는다(웅크림·세기는 Space가 정한다). 누른 순간 자리에서 ±SWAY_MAX px까지, 떼면 그 자리를 유지
+        const sk = (io.down('moveRight') ? 1 : 0) - (io.down('moveLeft') ? 1 : 0); st.swayKey = sk;
+        // 팔다리 길이·손 각도 한계에 닿으면 더 싣지 않는다(다리가 다 펴져 발이 떨어지지 않게). 반대쪽으로 되돌리는 것은 언제나 된다
+        st.swayBlock = sk && Math.sign(st.sway || sk) === sk ? swayOk(s, sk * 8) : null;
+        if (sk && !st.swayBlock) st.sway = Math.max(-P.SWAY_MAX, Math.min(P.SWAY_MAX, st.sway + sk * P.SWAY_V * dt));
+        if (P.CROUCH_MODE === 'down') { inp.px = A[0] + st.sway; inp.py = A[1] + P.CROUCH; } else { inp.px = A[0] + st.sway - (st.swayUsed ? 0 : ux * P.CROUCH * 0.6); inp.py = A[1] + P.CROUCH * 0.8; } } // 누른 순간의 자리 기준으로 목표 쪽 반대·아래로 몸을 싣는다
       else if (st.phase === 'throw') {
         st.pt += dt; inp.power = true; const jumpT = st.jump, D = jumpT ? P.THROW_D : 10 + (P.THROW_D - 10) * st.power ** 3, A = st.tAnchor, ax = io.mx - A[0], ay = io.my - A[1], al = Math.hypot(ax, ay) || 1; inp.px = A[0] + ax / al * D; inp.py = A[1] + ay / al * D; // 뗀 순간의 자리 기준
         inp.gain = jumpT ? P.GAIN0 + (1 - P.GAIN0) * st.power : 0.3 + 0.7 * st.power; // 뛸 때는 다리를 끝까지 펴되, 미는 빠르기를 모은 정도에 비례시킨다
