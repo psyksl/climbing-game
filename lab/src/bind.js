@@ -30,7 +30,9 @@ const BIND = (() => {
     { id: 'log', g: '보조', label: '플레이 기록 보기', def: ['KeyL', null] },
     { id: 'demo', g: '연습', label: '시범 보기 (지금 연습 과제의 시범을 재생)', def: ['KeyP', null] },
     { id: 'lessonNext', g: '연습', label: '다음 연습 과제 (끝까지 가면 자유 연습)', def: ['KeyO', null] },
-    { id: 'chart', g: '연습', label: '입력 기록 차트 켬·끔', def: ['KeyT', null] },
+    { id: 'chart', g: '연습', label: '입력 비교 차트 (작게 → 펼침 → 끔)', def: ['KeyT', null] },
+    { id: 'chartLeft', g: '연습', label: '입력 비교 차트의 시간축을 앞(이른 쪽)으로', def: ['Comma', null] },
+    { id: 'chartRight', g: '연습', label: '입력 비교 차트의 시간축을 뒤(늦은 쪽)로', def: ['Period', null] },
     { id: 'ghost', g: '연습', label: '시범 유령 켬·끔 (내 첫 입력에 맞춰 시범 캐릭터가 흐릿하게 함께 움직임)', def: ['KeyU', null] },
     { id: 'reset', g: '실험실', label: '같은 자세로 다시', def: ['KeyR', null] },
     { id: 'scheme', g: '실험실', label: '조작 방식 바꾸기 (D·A·B·C안)', def: ['Tab', null] },
@@ -68,15 +70,19 @@ const BIND = (() => {
   const mouseBtn = c => c && c.startsWith('Mouse') ? +c.slice(5) : -1;
   function down(id, raw) { for (const c of get(id)) { if (!c) continue; const b = mouseBtn(c); if (b >= 0 ? raw.mouse.down[b] : raw.key(c)) return true; } return false; }
   function pressed(id, raw) { for (const c of get(id)) { if (!c) continue; const b = mouseBtn(c); if (b >= 0 ? raw.clicks.some(k => k.button === b) : raw.pressed(c)) return true; } return false; }
+  // 그 동작의 두 칸(주·보조) 가운데 지금 실제로 쓰이고 있는 입력: 이번 프레임에 새로 눌린 것이 먼저, 없으면 눌려 있는 것. 기록과 화면이 "실제로 누른 키"를 보이는 데 쓴다
+  function active(id, raw) { let dn = null; for (const c of get(id)) { if (!c) continue; const b = mouseBtn(c); if (b >= 0 ? raw.clicks.some(k => k.button === b) : raw.pressed(c)) return c; if (!dn && (b >= 0 ? raw.mouse.down[b] : raw.key(c))) dn = c; } return dn; }
+  const codeDown = (c, raw) => { if (!c) return false; const b = mouseBtn(c); return b >= 0 ? !!raw.mouse.down[b] : !!raw.key(c); };
   // 마우스 버튼으로 눌렸고 그 순간 Shift가 눌려 있었나(Shift를 빨리 떼도 발 조작으로 인식하기 위해)
   function pressedWithShift(id, raw) { for (const c of get(id)) { const b = mouseBtn(c); if (b >= 0 && raw.clicks.some(k => k.button === b && k.shift)) return true; } return false; }
   const NAMES = { Mouse0: '좌클릭', Mouse1: '휠 클릭', Mouse2: '우클릭', Mouse3: '마우스 뒤', Mouse4: '마우스 앞', Space: 'Space', Escape: 'Esc', Tab: 'Tab', Enter: 'Enter', Backspace: 'Backspace',
     ShiftLeft: '왼Shift', ShiftRight: '오른Shift', ControlLeft: '왼Ctrl', ControlRight: '오른Ctrl', AltLeft: '왼Alt', AltRight: '오른Alt', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→',
     Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', Backslash: '\\', BracketLeft: '[', BracketRight: ']', Minus: '-', Equal: '=', Backquote: '`', CapsLock: 'CapsLock' };
-  function name(c) { if (!c) return '—'; if (NAMES[c]) return NAMES[c]; if (c.startsWith('Key')) return c.slice(3); if (c.startsWith('Digit')) return c.slice(5); if (c.startsWith('Numpad')) return '숫자패드 ' + c.slice(6); return c; }
+  function name(c) { if (!c) return '—'; if (NAMES[c]) return NAMES[c]; if (c.startsWith('Key')) return c.slice(3); if (c.startsWith('Digit')) return c.slice(5); if (c.startsWith('Numpad')) return '숫자패드 ' + c.slice(6);
+    const cat = typeof ClimbInputCatalog !== 'undefined' && ClimbInputCatalog.keys[c]; return cat ? cat.label : c; } // 나머지는 입력 도감의 글자(한/영, 한자 …)를 쓴다. 도감에도 없으면 코드 그대로
   const label = id => { const b = get(id).filter(Boolean); return b.length ? b.map(name).join(' / ') : '없음'; };
   const first = id => name(get(id).find(Boolean) || null);
   load();
-  return { ACTIONS, BY, load, save, resetAll, set, get, conflicts, down, pressed, pressedWithShift, name, label, first, STORE };
+  return { ACTIONS, BY, load, save, resetAll, set, get, conflicts, down, pressed, pressedWithShift, active, codeDown, name, label, first, STORE };
 })();
 if (typeof module !== 'undefined') module.exports = BIND;

@@ -58,15 +58,18 @@ const LESSON = (() => {
   const HOLD = ['power', 'moveUp', 'moveDown', 'moveLeft', 'moveRight', 'foot'], TAP = ['sendL', 'sendR', 'sendBest', 'sendOther', 'cancel', 'foot'];
   function recorder(meta) {
     const rec = { bars: [], taps: [], open: {}, t0: null, end: 0, meta: meta || null, ev: [], aim: [], optLog: [] }; let ax = null, ay = null, ok = '';
+    // codeOf: 그 동작에 지금 실제로 쓰인 입력(주·보조 가운데 누른 쪽). 시범처럼 적어 둔 입력에는 없다(null)
+    const codeOf = (io, id) => io.code ? io.code(id) : null, openCode = {};
     rec.tick = (t, io, sent, opt) => { rec.end = t; const f = Math.round(t * 120);
       if (io.mx !== ax || io.my !== ay) { ax = io.mx; ay = io.my; rec.aim.push([f, ax, ay]); }
       if (opt) { const k = JSON.stringify(opt); if (k !== ok) { ok = k; rec.optLog.push([f, JSON.parse(k)]); } }
       for (const id of HOLD) { const on = io.down(id);
-        if (on && rec.open[id] === undefined) { rec.open[id] = t; rec.ev.push([f, 'down', id]); if (rec.t0 === null) rec.t0 = t; }
-        if (!on && rec.open[id] !== undefined) { rec.bars.push({ id, a: rec.open[id], b: t }); rec.ev.push([f, 'up', id]); delete rec.open[id]; } }
+        if (on && rec.open[id] === undefined) { rec.open[id] = t; openCode[id] = codeOf(io, id); rec.ev.push([f, 'down', id]); if (rec.t0 === null) rec.t0 = t; }
+        if (!on && rec.open[id] !== undefined) { rec.bars.push({ id, a: rec.open[id], b: t, code: openCode[id] }); rec.ev.push([f, 'up', id]); delete rec.open[id]; } }
       for (const id of TAP) { if (io.pressed(id)) rec.ev.push([f, 'press', id]); if (id.startsWith('send') && io.pressedShift(id)) rec.ev.push([f, 'pressShift', id]); }
-      for (const sd of sent || []) { rec.taps.push({ limb: sd.i, t, phase: sd.phase }); if (rec.t0 === null) rec.t0 = t; } };
-    rec.all = () => rec.bars.concat(Object.keys(rec.open).map(id => ({ id, a: rec.open[id], b: rec.end, live: true })));
+      // 손발 보내기: 결정된 팔다리(limb), 쓴 동작(id: 손 선택 2번이면 sendBest·sendOther), 실제 누른 입력(code), 발이면 함께 누른 수정 키(mod)
+      for (const sd of sent || []) { rec.taps.push({ limb: sd.i, t, phase: sd.phase, id: sd.id, code: codeOf(io, sd.id), mod: sd.i >= 2 ? codeOf(io, 'foot') : null }); if (rec.t0 === null) rec.t0 = t; } };
+    rec.all = () => rec.bars.concat(Object.keys(rec.open).map(id => ({ id, a: rec.open[id], b: rec.end, live: true, code: openCode[id] })));
     rec.zero = () => rec.t0 ?? 0; // 차트의 0초 = 첫 입력(키를 누르거나 손을 보낸 순간)
     return rec;
   }
