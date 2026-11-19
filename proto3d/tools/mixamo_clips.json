@@ -1,8 +1,10 @@
 {
-  "idle":   { "file": "Idle (4).fbx", "loop": true },
-  "walk":   { "file": "Walking.fbx", "loop": true },
-  "walk2":  { "file": "Walking (2).fbx", "loop": true },
-  "run":    { "file": "Running (4).fbx", "loop": true },
-  "run2":   { "file": "Standard Run.fbx", "loop": true },
-  "sprint": { "file": "Running.fbx", "loop": true }
+  "idle":       { "file": "Idle (4).fbx", "loop": true },
+  "walk":       { "file": "Walking.fbx", "loop": true },
+  "run":        { "file": "Running (4).fbx", "loop": true },
+  "crouchIdle": { "file": "Crouching Idle.fbx", "loop": true },
+  "sneak":      { "file": "Sneak Walk.fbx", "loop": true },
+  "jump":       { "file": "Jumping.fbx", "marks": true },
+  "runJump":    { "file": "Running Jump.fbx", "inplace": true, "marks": true },
+  "fall":       { "file": "Falling Idle.fbx", "loop": true }
 }

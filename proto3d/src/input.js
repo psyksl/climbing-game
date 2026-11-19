@@ -1,5 +1,5 @@
 // 입력: 동작 표(BIND)와 문맥. 키 이름을 코드에 고정해 쓰지 않고 이 표에서 읽는다(2D판의 원칙을 이어받음).
-// 문맥: ground = 지상 이동, camera = 시점(언제나), wall = 벽 등반(W2에서 쓴다), any = 언제나.
+// 문맥: ground = 지상 이동, camera = 시점(언제나), wall = 벽 등반(W2에서 쓴다), gallery = 동작 보기, any = 언제나.
 // 같은 키를 두 동작에 쓰면, 두 동작이 쓰이는 문맥이 겹칠 때만 겹침이다(겹침 검사와 실제 실행이 같은 기준 = ctxOverlap).
 export const BIND = [
   { id: 'moveF', ctx: ['ground'], keys: ['KeyW'], label: '앞으로' },
@@ -15,10 +15,15 @@ export const BIND = [
   { id: 'bones', ctx: ['any'], keys: ['KeyB'], label: '뼈대 보기' },
   { id: 'slow', ctx: ['any'], keys: ['KeyN'], label: '느리게(0.25배)' },
   { id: 'motionMode', ctx: ['any'], keys: ['KeyM'], label: '모션 바꾸기(캡처 ↔ 자작)' },
+  { id: 'gallery', ctx: ['any'], keys: ['KeyG'], label: '동작 보기 켬·끔' },
+  { id: 'galPrev', ctx: ['gallery'], keys: ['BracketLeft'], label: '동작 보기: 앞 동작' },
+  { id: 'galNext', ctx: ['gallery'], keys: ['BracketRight'], label: '동작 보기: 다음 동작' },
+  { id: 'galCatPrev', ctx: ['gallery'], keys: ['Minus'], label: '동작 보기: 앞 분류' },
+  { id: 'galCatNext', ctx: ['gallery'], keys: ['Equal'], label: '동작 보기: 다음 분류' },
 ];
 const ctxOverlap = (a, b) => a.includes('any') || b.includes('any') || a.some(c => b.includes(c));
 export function conflicts() { const out = []; for (let i = 0; i < BIND.length; i++) for (let j = i + 1; j < BIND.length; j++) { const a = BIND[i], b = BIND[j]; for (const k of a.keys) if (b.keys.includes(k) && ctxOverlap(a.ctx, b.ctx)) out.push({ key: k, a: a.id, b: b.id }); } return out; }
-export const keyName = c => ({ Space: 'Space', ShiftLeft: 'L Shift', AltLeft: 'Alt', AltRight: 'Alt', Wheel: '휠' }[c] || c.replace(/^Key/, ''));
+export const keyName = c => ({ Space: 'Space', ShiftLeft: 'L Shift', AltLeft: 'Alt', AltRight: 'Alt', Wheel: '휠', BracketLeft: '[', BracketRight: ']', Minus: '-', Equal: '=' }[c] || c.replace(/^Key/, ''));
 
 export function makeInput(el) {
   const down = new Set(), pressed = new Set(), st = { mdx: 0, mdy: 0, wheel: 0, alt: false };

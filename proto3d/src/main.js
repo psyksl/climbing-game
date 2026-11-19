@@ -6,9 +6,11 @@ import { makeWorld, buildWorldMeshes, rayHit } from './world.js';
 import { PHY } from './controller.js';
 import { makeSim } from './sim.js';
 import { BIND, conflicts, keyName, makeInput } from './input.js';
-import CLIPS from 'clip-data'; // 캡처 동작 자료(빌드할 때 assets_local/clips.json이 있으면 들어온다. 없으면 null)
+import CLIPS from 'clip-data';
+import GALLERY from 'gallery-data'; // 동작 보기용 자료(받은 동작 전부를 이 뼈대로 옮긴 값. 있을 때만)
+import { poseRaw } from './clipmotion.js'; // 캡처 동작 자료(빌드할 때 assets_local/clips.json이 있으면 들어온다. 없으면 null)
 
-export const VERSION = 'p3d-0.2.0';
+export const VERSION = 'p3d-0.3.0';
 const params = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: params.has('test') });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = !params.has('noshadow');
@@ -24,6 +26,12 @@ const skel = new THREE.SkeletonHelper(rig.mesh); skel.visible = false; scene.add
 const sim = makeSim(rig, world, CLIPS); let body = sim.body, motion = sim.motion;
 const input = makeInput(renderer.domElement);
 const cam = { yaw: Math.PI + 0.35, pitch: 0.28, dist: 4.2, target: new THREE.Vector3(0, 1.1, 2), eff: 4.2, follow: null, followOff: 0, blocked: false }; // eff = 벽에 막혀 줄인 실제 거리, follow = 영상용 따라가기(몸 방향 기준 각도)
+// 동작 보기: 받은 동작을 하나씩 이 캐릭터로 튼다(게임 계산은 멈춘다. 발 고정·IK 없이 옮긴 자세 그대로)
+const gal = { on: false, i: 0, t: 0, names: GALLERY ? Object.keys(GALLERY.clips) : [], origin: new THREE.Vector3(), yaw: 0 };
+if (GALLERY) for (const c of Object.values(GALLERY.clips)) { c.hip = Float32Array.from(c.hip); c.q = Float32Array.from(c.q); }
+const galClip = () => GALLERY.clips[gal.names[gal.i]], galPose = () => poseRaw(rig, GALLERY.bones, galClip(), Math.min(gal.t, galClip().dur), gal.origin, gal.yaw);
+function galOpen(v) { gal.on = v && !!GALLERY; if (gal.on) { gal.origin.copy(body.pos); gal.yaw = body.yaw; gal.t = 0; galPose(); } else reset({ pos: gal.origin.toArray(), yaw: gal.yaw }); }
+function galGo(d, cat) { const n = gal.names.length; if (cat) { const c0 = galClip().cat; let k = gal.i; do { k = (k + d + n) % n; } while (GALLERY.clips[gal.names[k]].cat === c0 && k !== gal.i); if (d < 0) { const c1 = GALLERY.clips[gal.names[k]].cat; while (GALLERY.clips[gal.names[(k - 1 + n) % n]].cat === c1 && k !== 0) k = (k - 1 + n) % n; } gal.i = k; } else gal.i = (gal.i + d + n) % n; gal.t = 0; }
 let slow = false, acc = 0, last = performance.now(), override = null, paused = false, fresh = true, lastDelta = []; // override = 시험에서 넣는 입력
 
 function readInput() {
@@ -41,7 +49,7 @@ function updateCamera(dt) {
   if (input.isDown('camRotate') || input.st.alt) { cam.yaw -= input.st.mdx * 0.005; cam.pitch = THREE.MathUtils.clamp(cam.pitch + input.st.mdy * 0.004, -0.2, 1.2); cam.follow = null; } // 시점만 돈다(손발·이동 명령으로 새지 않음)
   if (input.st.wheel) cam.dist = THREE.MathUtils.clamp(cam.dist * (1 + input.st.wheel * 0.1), 1.2, 12);
   if (cam.follow !== null) { let d = body.yaw + cam.followOff - cam.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); cam.yaw += d * (1 - Math.exp(-6 * dt)); }
-  const want = new THREE.Vector3(body.pos.x, rig.bones.hips.position.y + 0.25, body.pos.z); cam.target.lerp(want, 1 - Math.exp(-8 * dt));
+  const hw = gal.on ? rig.bones.hips.getWorldPosition(new THREE.Vector3()) : null, want = gal.on ? new THREE.Vector3(hw.x, hw.y + 0.25, hw.z) : new THREE.Vector3(body.pos.x, rig.bones.hips.position.y + 0.25, body.pos.z); cam.target.lerp(want, 1 - Math.exp(-8 * dt));
   // 벽 통과 막기: 목표에서 원하는 자리까지 지형과 맞댄다. 막히면 ① 카메라를 조금씩 위로 올려(내려다봄) 1m 넘게 떨어질 수 있는 자리를 찾고 ② 없으면 가장 먼 자리를 벽 앞 0.2m까지만 쓴다. 당길 때는 바로, 물러날 때는 천천히
   let best = null;
   for (const up of [0, 0.25, 0.5, 0.8, 1.1]) {
@@ -71,6 +79,7 @@ function stateName() {
   return v < 0.12 ? '대기' : motion.prm.runW > 0.5 ? '달리기' : '걷기';
 }
 function drawHud(fps) {
+  if (gal.on) { const c = galClip(); hud.innerHTML = `<div class=ver>3D 모션 시제품 ${VERSION} · 임시 캐릭터(자작)</div><div><b>동작 보기</b> ${gal.i + 1} / ${gal.names.length} &nbsp; <b>${gal.names[gal.i]}</b></div><div><b>분류</b> ${c.cat} &nbsp; <b>시각</b> ${Math.min(gal.t, c.dur).toFixed(2)} / ${c.dur.toFixed(2)}초</div><div class=dim>받은 동작을 이 캐릭터로 옮긴 그대로(원본의 이동 포함 · 발 고정 없음 · 게임 계산은 멈춤)</div><div class=${slow ? 'slow' : 'real'}>${slow ? '느리게 ×0.25' : '실제 속도'}</div>`; return; }
   const v = Math.hypot(body.vel.x, body.vel.z), st = motion.stats;
   const C = sim.clip, cap = C && C.w > 0.5, footName = (L, i) => cap ? (C.feet[i].step ? '고쳐 디딤' : C.feet[i].lock ? (C.feet[i].kind === 'heel' ? '디딤(뒤꿈치)' : '디딤(발끝)') : '옮기는 중') : L.mode === 'plant' ? (L.heel > 0 ? '디딤(뒤꿈치 듦)' : '디딤') : L.mode === 'swing' ? '옮기는 중' : '공중';
   hud.innerHTML = `<div class=ver>3D 모션 시제품 ${VERSION} · 임시 캐릭터(자작)</div>`
@@ -84,6 +93,7 @@ function drawHud(fps) {
 let fpsS = 60, tickInput = null; // tickInput = 시험이 계산 걸음마다 넣는 입력(걸음 번호 → 입력)
 // 한 화면 프레임: ① 누적 시간만큼 고정 걸음 계산(이동·상태·자세 모두 sim.step) ② 확정된 자세를 그린다. 실제 루프와 시험(simFrames)이 같이 쓴다
 function frameCore(dtR, inp, onTick) {
+  if (gal.on) { gal.t += dtR * (slow ? 0.25 : 1); if (gal.t > galClip().dur + 0.5) gal.t = 0; galPose(); updateCamera(dtR); renderer.render(scene, camera); drawHud(fpsS); return; } // 동작 보기: 게임 계산을 하지 않는다
   acc += dtR * (slow ? 0.25 : 1);
   while (acc >= PHY.DT) { physStep(tickInput ? tickInput(sim.tick) : inp); acc -= PHY.DT; if (onTick) onTick(); }
   if (body.pos.y < -8) reset(); // 바닥 밖으로 떨어지면 처음 자리로
@@ -95,6 +105,8 @@ function frame(now) {
   if (input.wasPressed('bones')) { skel.visible = !skel.visible; rig.mesh.material.wireframe = skel.visible; }
   if (input.wasPressed('slow')) slow = !slow;
   if (input.wasPressed('motionMode') && sim.clipSet) sim.useClip = !sim.useClip;
+  if (input.wasPressed('gallery') && GALLERY) galOpen(!gal.on);
+  if (gal.on) { if (input.wasPressed('galNext')) galGo(1); if (input.wasPressed('galPrev')) galGo(-1); if (input.wasPressed('galCatNext')) galGo(1, true); if (input.wasPressed('galCatPrev')) galGo(-1, true); }
   if (!paused) frameCore(dtR, readInput()); else renderer.render(scene, camera); // 시험이 걸음을 직접 진행하는 동안 화면 쪽 계산은 멈춘다
   input.endFrame(); requestAnimationFrame(frame);
 }
@@ -130,6 +142,8 @@ window.__p3 = {
   // 시험용 한 장: 시점을 몸 기준으로 바로 놓고 그린다(멈춘 채 찍을 때). off = 몸이 보는 쪽 기준 시점 각도
   shot(o = {}) { cam.yaw = body.yaw + (o.off ?? Math.PI / 2); cam.pitch = o.pitch ?? 0.1; cam.dist = cam.eff = o.dist ?? 3.2; cam.follow = null; cam.dirEff = null; cam.target.set(body.pos.x, body.pos.y + (o.h ?? 0.95), body.pos.z); updateCamera(0); renderer.render(scene, camera); drawHud(fpsS); },
   boneNames: () => rig.list.map(b => b.name),
+  galleryList: () => GALLERY ? gal.names.map(n => ({ name: n, cat: GALLERY.clips[n].cat, dur: GALLERY.clips[n].dur })) : null,
+  gallery(name, t = 0, o = {}) { if (!GALLERY) return false; if (name === null) { galOpen(false); return true; } if (!gal.on) galOpen(true); gal.i = Math.max(0, gal.names.indexOf(name)); gal.t = t; galPose(); const h = rig.bones.hips.getWorldPosition(new THREE.Vector3()); cam.yaw = gal.yaw + (o.off ?? Math.PI / 2); cam.pitch = o.pitch ?? 0.1; cam.dist = cam.eff = o.dist ?? 3.4; cam.follow = null; cam.dirEff = null; cam.target.set(o.fixed ? gal.origin.x : h.x, (o.fixed ? gal.origin.y + 1.0 : h.y) + (o.up ?? 0.1), o.fixed ? gal.origin.z : h.z); const want = cam.target.clone(); updateCamera(0); cam.target.copy(want); camera.position.copy(cam.target).addScaledVector(cam.dirEff, cam.dist); camera.lookAt(cam.target); renderer.render(scene, camera); drawHud(fpsS); return true; },
   hasClips: () => !!sim.clipSet, setMode: m => { if (sim.clipSet) sim.useClip = m === 'clip'; return sim.useClip ? 'clip' : 'proc'; }, mode: () => (sim.useClip ? 'clip' : 'proc'),
   clip: () => sim.clip ? { w: sim.clip.w, on: sim.clip.on, phase: sim.clip.phase, wLoc: sim.clip.wLoc, r: sim.clip.r, stride: sim.clip.stride, feet: sim.clip.feet.map(f => ({ s: f.s, lock: !!f.lock, kind: f.kind, step: !!f.step, off: f.off.length() })) } : null,
   clipInfo: () => sim.clipSet ? Object.fromEntries(Object.entries(sim.clipSet.clips).map(([k, c]) => [k, { src: c.src, n: c.n, dur: c.dur, stride: c.stride, speed: c.speed, duty: c.duty, flight: c.flight }])) : null,
