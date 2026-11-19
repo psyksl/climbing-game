@@ -31,16 +31,16 @@ const BIND = (() => {
     { id: 'log', g: '연습', label: '로그 켬·끔 (경고·점프·결과가 시각과 함께 남는 칸. 차트 구역 옆)', def: ['KeyL', null] },
     { id: 'demo', g: '연습', label: '시범 보기 (지금 연습 과제의 시범을 재생)', def: ['KeyP', null] },
     { id: 'lessonNext', g: '연습', label: '다음 연습 과제 (끝까지 가면 자유 연습)', def: ['KeyO', null] },
-    { id: 'chart', g: '연습', label: '입력 비교 차트 구역 켬·끔 (화면을 차트 구역과 플레이 구역으로 나눈다)', def: ['KeyT', null] },
+    { id: 'chart', g: '연습', label: '입력 타임라인 구역 켬·끔 (화면을 차트 구역과 플레이 구역으로 나눈다)', def: ['KeyT', null] },
     { id: 'dock', g: '연습', label: '차트 구역 자리 옮기기 (아래 → 왼쪽 → 위 → 오른쪽. 마우스로 구역을 끌어다 놓아도 된다)', def: ['KeyJ', null] },
-    { id: 'viewMenu', g: '연습', label: '보기 설정 열기·닫기 (연습을 돕는 표시들을 체크박스로 켜고 끈다)', def: ['KeyC', null] },
+    { id: 'viewMenu', g: '연습', label: '보기 설정 열기·닫기 (연습을 돕는 표시들을 체크박스로 켜고 끈다. 다시 누르면 닫힌다)', def: ['Tab', null] },
     { id: 'viewFit', g: '연습', label: '게임 화면 맞춤 (휠로 확대·축소한 게임 화면을 플레이 구역에 맞는 크기로 되돌린다)', def: ['KeyZ', null] },
     { id: 'guide', g: '연습', label: '키 안내 보이기·가리기 (플레이 구역 옆의 반투명 키 안내)', def: ['KeyK', null] },
-    { id: 'chartLeft', g: '연습', label: '입력 비교 차트의 시간축을 앞(이른 쪽)으로', def: ['Comma', null] },
-    { id: 'chartRight', g: '연습', label: '입력 비교 차트의 시간축을 뒤(늦은 쪽)로', def: ['Period', null] },
-    { id: 'chartZoomOut', g: '연습', label: '입력 비교 차트의 시간축 축소(더 긴 시간을 한눈에)', def: ['BracketLeft', null] },
-    { id: 'chartZoomIn', g: '연습', label: '입력 비교 차트의 시간축 확대', def: ['BracketRight', null] },
-    { id: 'chartFit', g: '연습', label: '입력 비교 차트 전체 보기(처음부터 끝까지)', def: ['Backslash', null] },
+    { id: 'chartLeft', g: '연습', label: '입력 타임라인의 시간축을 앞(이른 쪽)으로', def: ['Comma', null] },
+    { id: 'chartRight', g: '연습', label: '입력 타임라인의 시간축을 뒤(늦은 쪽)로', def: ['Period', null] },
+    { id: 'chartZoomOut', g: '연습', label: '입력 타임라인의 시간축 축소(더 긴 시간을 한눈에)', def: ['BracketLeft', null] },
+    { id: 'chartZoomIn', g: '연습', label: '입력 타임라인의 시간축 확대', def: ['BracketRight', null] },
+    { id: 'chartFit', g: '연습', label: '입력 타임라인 전체 보기(처음부터 끝까지)', def: ['Backslash', null] },
     { id: 'replay', g: '연습', label: '리플레이 보기·닫기 (시도가 끝난 뒤. 하는 중에 누르면 거기서 끝내고 본다)', def: ['KeyY', null] },
     { id: 'rpPlay', g: '리플레이', ctx: 'replay', label: '리플레이 재생·멈춤', def: ['Space', null] },
     { id: 'rpBack', g: '리플레이', ctx: 'replay', label: '리플레이 뒤로 (한 번 = 0.05초, 누르고 있으면 계속)', def: ['ArrowLeft', null] },
@@ -48,7 +48,7 @@ const BIND = (() => {
     { id: 'rpSpeed', g: '리플레이', ctx: 'replay', label: '리플레이 재생 속도 (1 → 0.5 → 0.25배)', def: ['ArrowDown', null] },
     { id: 'ghost', g: '연습', label: '시범 유령 켬·끔 (내 첫 입력에 맞춰 시범 캐릭터가 흐릿하게 함께 움직임)', def: ['KeyU', null] },
     { id: 'reset', g: '실험실', label: '같은 자세로 다시', def: ['KeyR', null] },
-    { id: 'scheme', g: '실험실', label: '조작 방식 바꾸기 (D·A·B·C안)', def: ['Tab', null] },
+    { id: 'scheme', g: '실험실', label: '조작 방식 바꾸기 (D·A·B·C안)', def: ['Backquote', null] },
     { id: 'st1', g: '실험실', label: '시작 자세 1 · 두 손 매달리기', def: ['Digit1', null] },
     { id: 'st2', g: '실험실', label: '시작 자세 2 · 한 손 매달리기', def: ['Digit2', null] },
     { id: 'st3', g: '실험실', label: '시작 자세 3 · 발판 위 웅크리기', def: ['Digit3', null] },
@@ -73,7 +73,9 @@ const BIND = (() => {
   function defaults() { map = Object.fromEntries(ACTIONS.map(a => [a.id, [a.def[0] || null, a.def[1] || null]])); }
   function load() {
     defaults();
-    try { const s = typeof localStorage !== 'undefined' && JSON.parse(localStorage.getItem(STORE) || 'null'); if (s) for (const id in s) if (map[id] && Array.isArray(s[id])) map[id] = [s[id][0] || null, s[id][1] || null]; } catch (e) {}
+    try { const s = typeof localStorage !== 'undefined' && JSON.parse(localStorage.getItem(STORE) || 'null'); if (s) for (const id in s) if (map[id] && Array.isArray(s[id])) map[id] = [s[id][0] || null, s[id][1] || null];
+      // v0.15.0: Tab은 보기 설정의 기본 키가 됐다. 예전에 저장된 배정에 조작 방식 = Tab이 남아 있으면 겹치므로 조작 방식을 새 기본 키로 옮긴다
+      if (s && map.viewMenu.includes('Tab') && map.scheme.includes('Tab')) map.scheme = map.scheme.map(c => c === 'Tab' ? 'Backquote' : c); } catch (e) {}
   }
   function save() { try { localStorage.setItem(STORE, JSON.stringify(map)); return true; } catch (e) { return false; } }
   function resetAll() { defaults(); save(); }

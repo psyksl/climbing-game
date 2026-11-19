@@ -60,7 +60,7 @@ const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), shot = pro
   check('내 시도의 기록을 다시 계산하면 화면의 몸과 같은 자리', rp.d < 1e-6 && rp.d0 < 0.01 && rp.aim > 5 && rp.ev >= 4 && rp.moved > 30, `차이 ${rp.d.toExponential(1)}px · ${rp.t.toFixed(2)}초 · 조준 ${rp.aim}개 · 입력 ${rp.ev}개 · 몸이 움직인 거리 ${Math.round(rp.moved)}px`);
   check('기록에 판 번호·설정·출발 상태가 붙는다', !!rp.meta && /^v\d/.test(rp.meta.build) && /^v\d/.test(rp.meta.phys) && rp.meta.lessons >= 1 && rp.meta.lesson === 'jump1' && rp.meta.body === 'joint' && rp.meta.opt.handMode === 1 && rp.meta.start.length === 6, rp.meta ? `빌드 ${rp.meta.build} · 물리 ${rp.meta.phys} · 과제 묶음 ${rp.meta.lessons}판 · ${rp.meta.lesson}` : '없음');
   // 과제 중에는 몸·물리·벽·조작 방식을 바꾸는 키가 잠긴다
-  await pg.keyboard.press('Minus'); await pg.keyboard.press('Tab'); await pg.waitForTimeout(150);
+  await pg.keyboard.press('Minus'); await pg.keyboard.press('Backquote'); await pg.waitForTimeout(150); // 조작 방식 키는 v0.15.0부터 ` (Tab은 보기 설정)
   check('과제 중에는 몸·조작 방식 바꾸기가 잠긴다', await pg.evaluate(() => PH.getBody() === 'joint' && window.__lab.lesson().i === 3 && !!window.__lab.ctrlState().mark));
   for (let i = 0; i < 3; i++) { await pg.keyboard.press('KeyO'); await pg.waitForTimeout(140); }
   // 내 설정이 달라도 시범은 기준 설정으로 성공한다: 손 선택 2번(H) + 자동 발 끔(F) + 닿으면 잡기 끔(V) + 자동 싣기 켬(N)으로 바꾸고 다시 여섯 과제
