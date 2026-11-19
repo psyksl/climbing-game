@@ -1,7 +1,7 @@
 // 등반 조작 실험실 · 화면과 입력
 'use strict';
 (() => {
-  const W = G.W, H = G.H, OX = -30, OY0 = 130, C = PH.C, BUILD = 'v0.16.3';
+  const W = G.W, H = G.H, OX = -30, OY0 = 130, C = PH.C, BUILD = 'v0.16.4';
   let OY = OY0; // 화면 세로 기준. 과제가 정하면(view) 그 값을 쓴다: 높은 턱이 화면 밖으로 나가지 않게
   const LIMB = ['왼손', '오른손', '왼발', '오른발'], COL = ['#e86a5a', '#4fb3e8', '#e86a5a', '#4fb3e8'], DARK = ['#8a3b3b', '#2a6f97', '#8a3b3b', '#2a6f97'];
   let world = PH.makeWorld(), layout = null;
@@ -211,6 +211,7 @@
       else { if (!air) air = { t: S.t, gap: 1e9 }; if (S.t - air.t > 0.25) for (const i of [0, 1]) { const q = PH.nearestGrip(world, S.p[2 + i].x, S.p[2 + i].y); air.gap = Math.min(air.gap, q.d - C.GRAB_R); } }
       track(dt);
       if (mode === 'intent' && !bot && ctrl.st.footFar && ctrl.st.footFar.t === S.t) logAdd(footFarText(ctrl.st.footFar), 'warn'); // 직접 보낸 발이 닿지 못하고 멈춘 까닭
+      if (mode === 'intent' && !bot && ctrl.st.gaveUp && !ctrl.st.gaveUp.logged) { ctrl.st.gaveUp.logged = true; logAdd(gaveUpText(ctrl.st.gaveUp), 'warn', ctrl.st.gaveUp.t); } // 같은 자리에서 거듭 거부되어 그만둔 까닭(v0.16.4)
       if (jump && jump.off && !jump.logged && (jump.tR !== null || S.t - jump.off.t > 0.3)) { jump.logged = true; const o = jump.off; // 이륙한 순간의 빠르기·방향·손 놓은 때를 로그에 남긴다
         logAdd(`점프 속도 ${Math.round(Math.hypot(o.vx, o.vy))} · 각도 ${Math.round(Math.atan2(-o.vy, o.vx) * 180 / Math.PI)}°${jump.tR !== null && jump.tP !== null ? ` · 손 놓기 ${jump.tR - jump.tP >= 0 ? '+' : ''}${(jump.tR - jump.tP).toFixed(2)}초` : ''}`, 'info', o.t); } // 시각은 발이 떨어진 순간
       for (const e of S.events) note(e);
@@ -1059,6 +1060,7 @@
     atLabel(ch.x + ux * 42, ch.y + uy * 42, () => G.text('시범', ch.x + ux * 42, ch.y + uy * 42 + 3, { size: 9, weight: 800, align: 'center', color: '#2f6fa8', stroke: 'rgba(255,255,255,0.75)', strokeW: 3 }));
   }
   // 왼쪽 아래 상태 칸: 모으기 세기, 놓을 손·이동 중인 손, 체중 이동, 몸통이 막힌 이유, 최근 경고를 한곳에 모은다(캐릭터 주변에 글이 겹치지 않게)
+  const gaveUpText = g => `${LIMB[g.i]}: 그만둠 — ${g.why === 'hang' ? '그 자리에 디디면 발에 매달리게 된다(몸이 발보다 아래). 몸을 올린 뒤 다시 보낸다' : '같은 자리에서 두 번 붙지 못했다'}`;
   const footFarText = f => `${LIMB[f.i]}: 겨눈 자리에 닿지 않는다 — ${f.why === 'len' ? '다리 길이보다 멀다. 몸을 그쪽으로 옮긴 뒤 디딘다' : '그 높이까지 다리를 들 수 없다. 몸을 더 올린 뒤(몸 위로) 디딘다'}`;
   function drawStatus() {
     const st = ctrl.st, rows = [], L2 = i => ['왼손', '오른손'][i];
@@ -1077,6 +1079,7 @@
     if (st.phase === 'throw' && st.pulling) rows.push({ t: '팔로 끌어 올리는 중 (온몸 도약)', c: '#ffd166' });
     if (st.noStandT !== undefined && S.t - st.noStandT < 1.5) rows.push({ t: '손으로 잡은 턱에는 발을 올려 설 수 없다', c: '#ff8a8a' });
     if (st.footFar && S.t - st.footFar.t < 0.4) rows.push({ t: footFarText(st.footFar), c: '#ff8a8a' });
+    if (st.gaveUp && S.t - st.gaveUp.t < 2.5) rows.push({ t: gaveUpText(st.gaveUp), c: '#ff8a8a' });
     if (st.phase === 'charge' && (st.sway || st.swayKey)) rows.push({ t: `몸 싣기 ${st.sway < 0 ? '← 왼쪽' : st.sway > 0 ? '오른쪽 →' : ''} ${Math.round(Math.abs(st.sway))}px / ${CTRL.P.SWAY_MAX} (${BIND.first('moveLeft')}·${BIND.first('moveRight')})`, c: '#ffd166' });
     if (st.move && st.move.blocked) rows.push({ t: st.move.blocked === '손 각도' ? `몸통: 더 못 감 — ${st.move.hand !== null && st.move.hand !== undefined ? LIMB[st.move.hand] : '손'}이 미끄러질 각도. 그 손을 옮기거나 놓으면 갈 수 있다` : `몸통: 더 못 감 — ${st.move.blocked} 길이 한계`, c: '#ff8a8a' });
     const warns = fx.filter(f => f.kind === 'text').slice(-3);

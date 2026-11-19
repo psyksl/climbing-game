@@ -86,7 +86,7 @@ const CTRL = (() => {
   }
   // ---- D안: 의도 조작. 플레이어는 어느 손발을 어디로, 언제 던질지만 정하고 균형·발 위치·손 놓는 순간은 게임이 채운다
   const OPT = { autoFeet: true, autoShift: true, assist: true, handMode: 1, assistRange: 'near', autoLoad: false }; // autoLoad: 모을 때 목표 반대쪽으로 자동으로 싣기(비교용. 기본은 끔 = Space는 아래로 웅크리기만, 좌우는 A/D) // assistRange: 'near' 커서 근처 구간만 / 'ledge' 겨눈 턱 전체
-  const P = { MOVE_STEP: 26, MOVE_GAIN: 0.55, MOVE_MARGIN: 0.95, ANGLE_MARGIN: 10, CATCH_SPAN: 28, REC_MARGIN: 22, REC_HOLD: 0.15, CATCH_R: 45, FOOT_CATCH_R: 30, FOOT_LAND_R: 18, FOOT_REACH_K: 1.1, SHIFT_T: 0.2, THROW_T: 0.32, REL_MIN: 0.03, REL_MAX: 0.14, CROUCH: 40, THROW_D: 250, FEET_V: 150, FULL_CHARGE: 0.6, ROCK_MAX: 0.45, GAIN0: 0.25, CROUCH_MODE: 'away', SWAY_V: 160, SWAY_MAX: 40, LEAN_MAX: 24, DIP_V: 160, DIP_MAX: 28, PULL_T: 0.45, SPLIT_MAX: 58 }; // SPLIT_MAX: 거의 편 다리가 몸통 아래 방향에서 옆으로 벌어질 수 있는 각도(°). 넘으면 자동 발이 그 발을 다시 디딘다
+  const P = { MOVE_STEP: 26, MOVE_GAIN: 0.55, MOVE_MARGIN: 0.95, ANGLE_MARGIN: 10, CATCH_SPAN: 28, REC_MARGIN: 22, REC_HOLD: 0.15, CATCH_R: 45, FOOT_CATCH_R: 30, FOOT_LAND_R: 18, FOOT_REACH_K: 1.1, REJ_MAX: 2, SHIFT_T: 0.2, THROW_T: 0.32, REL_MIN: 0.03, REL_MAX: 0.14, CROUCH: 40, THROW_D: 250, FEET_V: 150, FULL_CHARGE: 0.6, ROCK_MAX: 0.45, GAIN0: 0.25, CROUCH_MODE: 'away', SWAY_V: 160, SWAY_MAX: 40, LEAN_MAX: 24, DIP_V: 160, DIP_MAX: 28, PULL_T: 0.45, SPLIT_MAX: 58 }; // SPLIT_MAX: 거의 편 다리가 몸통 아래 방향에서 옆으로 벌어질 수 있는 각도(°). 넘으면 자동 발이 그 발을 다시 디딘다
   const handHolds = (s, poly) => [0, 1].some(k => s.limb[k].mode === 'grip' && s.limb[k].anchor.poly === poly);
   function footCandidates(s, i, ot = null) { // ot: 다른 발이 가려는 곳(있으면) // 발을 디딜 만한 곳: 위를 향한 면, 다리가 닿는 곳, 엉덩이보다 아래
     const hp = s.p[1], hj = PHX.rootPos(s, i), L = PHX.C.L, side = i === 2 ? -1 : 1, other = s.limb[5 - i], op = s.p[2 + (5 - i)]; // hj: 이 다리가 붙은 골반 자리(기존 두 몸은 엉덩이 점)
@@ -193,13 +193,13 @@ const CTRL = (() => {
   }
   function makeIntent() {
     const st = { mode: 'intent', act: [false, false, false, false], armT: [0, 0, 0, 0], mark: [false, false], manual: [false, false, false, false], auto: [null, null, null, null],
-      tryNow: [false, false, false, false], pend: [false, false, false, false], block: [0, 0, 0, 0], staleT: [0, 0, 0, 0], cool: [0, 0, 0, 0], placed: [false, false, false, false], // placed = 플레이어가 직접 디딘 발(자동 발이 다시 디디지 않는다)
+      tryNow: [false, false, false, false], pend: [false, false, false, false], block: [0, 0, 0, 0], staleT: [0, 0, 0, 0], cool: [0, 0, 0, 0], placed: [false, false, false, false], rej: [null, null, null, null], gaveUp: null, // placed = 플레이어가 직접 디딘 발(자동 발이 다시 디디지 않는다)
       trail: [false, false], phase: 'idle', pt: 0, power: 1, move: null, shift: null, air: [], swingLegs: false, opt: OPT, last: '',
       rec: { hand: 1, foot: 3, pendH: null, pendF: null, tH: 0, tF: 0 }, sent: [], miss: [], seg: null };
     const K = KEYMAP.intent;
     const gripping = (s, i) => s.limb[i].mode === 'grip';
     function attempt(i) { st.tryNow[i] = true; }
-    function detach(s, i) { st.act[i] = true; st.armT[i] = 0; st.auto[i] = null; }
+    function detach(s, i) { st.act[i] = true; st.armT[i] = 0; st.auto[i] = null; st.rej[i] = null; } // 새로 보낼 때마다 거부 횟수를 지운다
     // 2번 방식의 추천: 커서까지 가깝고, 덜 매달려 있고, 이미 떨어져 있는 손을 고른다. 다른 손이 확실히(REC_MARGIN) 낫고 그 상태가 REC_HOLD초 이어질 때만 바꾼다
     function recScore(s, i, io) {
       const lb = s.limb[i], r = PHX.rootPos(s, i), side = i % 2 ? 1 : -1, sx = r.x + (lb.k ? 0 : side * 10), d = Math.hypot(io.mx - sx, io.my - r.y);
@@ -223,7 +223,11 @@ const CTRL = (() => {
       const inp = { cx: io.mx, cy: io.my, hand: [false, false], foot: [false, false], power: false, t: [null, null, null, null], drop: [false, false, false, false] };
       st.air.length = 0;
       for (let i = 2; i < 4; i++) if (s.limb[i].mode !== 'plant') st.placed[i] = false; // 직접 디딘 발이 떨어지면 다시 자동 발이 맡는다
-      for (let i = 0; i < 4; i++) if (st.pend[i]) { st.pend[i] = false; const m = s.limb[i].mode; if (m === 'plant' && st.manual[i]) st.placed[i] = true; if (m === 'grip' || m === 'plant') { st.act[i] = false; st.manual[i] = false; st.auto[i] = null; } else { st.block[i] = s.t + 0.25; if (st.auto[i]) st.auto[i] = null; } }
+      for (let i = 0; i < 4; i++) if (st.pend[i]) { st.pend[i] = false; const m = s.limb[i].mode; if (m === 'plant' && st.manual[i]) st.placed[i] = true; if (m === 'grip' || m === 'plant') { st.act[i] = false; st.manual[i] = false; st.auto[i] = null; st.rej[i] = null; } else { st.block[i] = s.t + 0.25; if (st.auto[i]) st.auto[i] = null;
+        // 거부된 접촉(v0.16.4): 같은 자리(12px 안)에서 REJ_MAX번 거부되면 다시 시도하지 않고 그 손발을 그만둔다(발이면 자동 발이 맡는다). 전에는 0.25초마다 끝없이 다시 디뎠다 떨어졌다
+        const e = s.p[s.limb[i].end], hang = s.events.some(v => v.type === 'footoff' && v.limb === i && v.hang), q = st.rej[i];
+        if (q && Math.hypot(e.x - q.x, e.y - q.y) < 12) q.n++; else st.rej[i] = { x: e.x, y: e.y, n: 1 };
+        if (st.rej[i].n >= P.REJ_MAX && st.act[i]) { st.act[i] = false; st.manual[i] = false; inp.drop[i] = true; st.gaveUp = { i, t: s.t, why: hang ? 'hang' : 'rej' }; st.rej[i] = null; } } }
       for (let i = 0; i < 4; i++) { if (st.act[i]) st.armT[i] += dt; if (st.act[i] && s.limb[i].mode === 'free' && !st.pend[i] && st.armT[i] > 0.05) st.act[i] = true; }
       st.sent.length = 0; st.miss.length = 0;
       for (const i of [0, 1]) if (st.trail[i] && s.limb[i].mode === 'reach') { st.trail[i] = false; st.act[i] = false; inp.drop[i] = true; } // 놓기만 하는 손: 붙은 것을 뗀 다음 프레임에 힘을 뺀다
