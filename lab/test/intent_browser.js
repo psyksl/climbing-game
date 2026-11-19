@@ -7,7 +7,8 @@ const sx = x => x - OX, sy = y => y - OY; // 게임 좌표 → 화면 좌표
   const b = await chromium.launch(); let fail = 0;
   const check = (n, c, x = '') => { console.log(`${c ? 'PASS' : 'FAIL'}  ${n} ${x}`); if (!c) fail++; };
   const pg = await b.newPage({ viewport: { width: 960, height: 540 } }); const errs = []; pg.on('pageerror', e => errs.push(e.message));
-  await pg.goto(url + '?body=base'); await pg.waitForTimeout(300); // 기존 몸 기준 확인(관절 몸은 아래에서 따로)
+  await pg.goto(url + '?body=base&chart=off'); // 차트 구역을 끄고(화면 전체가 게임 화면) 조작만 본다. 차트 구역을 켠 채의 조준은 layout_browser.js가 본다
+  await pg.waitForTimeout(300); // 기존 몸 기준 확인(관절 몸은 아래에서 따로)
   const modes = () => pg.evaluate(() => window.__lab.s.limb.map(l => l.mode + (l.anchor ? '@' + l.anchor.poly : '')).join(','));
   const fresh = async k => { await pg.keyboard.press('Digit' + k); await pg.waitForTimeout(250); };
   // 1. 자동 발
@@ -79,25 +80,25 @@ const sx = x => x - OX, sy = y => y - OY; // 게임 좌표 → 화면 좌표
   await fresh(1); await pg.keyboard.press('Escape'); await pg.waitForTimeout(150);
   check('Esc로 키 설정 열기', !!(await pg.evaluate(() => window.__lab.ui())));
   const slotPos = await pg.evaluate(() => { const r = window.__lab.bind.ACTIONS.filter(a => !a.hm || a.hm === window.__lab.opt().handMode); const k = r.findIndex(a => a.id === 'sendL'); return k; });
-  // 왼손 보내기의 둘째 칸(Q)을 클릭하고 J를 누른다
-  await pg.mouse.click(30 + 354 + 40, 92 + slotPos * 22 - 5); await pg.waitForTimeout(80); await pg.keyboard.press('KeyJ'); await pg.waitForTimeout(80);
-  check('칸을 클릭하고 J → 왼손 보내기 둘째 칸이 J', (await pg.evaluate(() => window.__lab.bind.get('sendL')[1])) === 'KeyJ');
+  // 왼손 보내기의 둘째 칸(Q)을 클릭하고 M을 누른다
+  await pg.mouse.click(30 + 354 + 40, 92 + slotPos * 22 - 5); await pg.waitForTimeout(80); await pg.keyboard.press('KeyM'); await pg.waitForTimeout(80);
+  check('칸을 클릭하고 M → 왼손 보내기 둘째 칸이 M', (await pg.evaluate(() => window.__lab.bind.get('sendL')[1])) === 'KeyM');
   if (shot) await pg.screenshot({ path: shot + '_settings.png' });
-  // 오른손 보내기 둘째 칸에도 J → 겹침 안내
-  await pg.mouse.click(30 + 354 + 40, 92 + (slotPos + 1) * 22 - 5); await pg.waitForTimeout(80); await pg.keyboard.press('KeyJ'); await pg.waitForTimeout(80);
+  // 오른손 보내기 둘째 칸에도 M → 겹침 안내
+  await pg.mouse.click(30 + 354 + 40, 92 + (slotPos + 1) * 22 - 5); await pg.waitForTimeout(80); await pg.keyboard.press('KeyM'); await pg.waitForTimeout(80);
   const msg = await pg.evaluate(() => window.__lab.ui().msg);
-  check('같은 키를 다른 동작에 넣으면 겹침 안내', msg.startsWith('주의') && msg.includes('J'), msg);
+  check('같은 키를 다른 동작에 넣으면 겹침 안내', msg.startsWith('주의') && msg.includes('M'), msg);
   if (shot) await pg.screenshot({ path: shot + '_conflict.png' });
   // 기본값 복원(방향키·Enter로)
   for (let k = 0; k < 40; k++) { await pg.keyboard.press('ArrowDown'); await pg.waitForTimeout(20); } await pg.keyboard.press('ArrowLeft'); await pg.waitForTimeout(40);
   await pg.keyboard.press('Enter'); await pg.waitForTimeout(80);
   check('키보드로 "기본값 복원" → Q·E로 돌아옴', (await pg.evaluate(() => window.__lab.bind.get('sendL')[1] + ',' + window.__lab.bind.get('sendR')[1])) === 'KeyQ,KeyE');
-  // 다시 J로 바꾸고 닫은 뒤 새로고침 → 남아 있어야 함
-  await pg.mouse.click(30 + 354 + 40, 92 + slotPos * 22 - 5); await pg.waitForTimeout(80); await pg.keyboard.press('KeyJ'); await pg.waitForTimeout(80); await pg.keyboard.press('Escape'); await pg.waitForTimeout(100);
+  // 다시 M으로 바꾸고 닫은 뒤 새로고침 → 남아 있어야 함
+  await pg.mouse.click(30 + 354 + 40, 92 + slotPos * 22 - 5); await pg.waitForTimeout(80); await pg.keyboard.press('KeyM'); await pg.waitForTimeout(80); await pg.keyboard.press('Escape'); await pg.waitForTimeout(100);
   await pg.reload(); await pg.waitForTimeout(400);
-  check('새로고침(다시 실행) 뒤에도 바꾼 키가 남음', (await pg.evaluate(() => window.__lab.bind.get('sendL')[1])) === 'KeyJ');
-  await fresh(1); await pg.keyboard.press('KeyJ'); await pg.waitForTimeout(350);
-  check('바꾼 키(J)로 실제로 왼손이 움직임', (await modes()).split(',')[0] === 'reach', await modes());
+  check('새로고침(다시 실행) 뒤에도 바꾼 키가 남음', (await pg.evaluate(() => window.__lab.bind.get('sendL')[1])) === 'KeyM');
+  await fresh(1); await pg.keyboard.press('KeyM'); await pg.waitForTimeout(350);
+  check('바꾼 키(M)로 실제로 왼손이 움직임', (await modes()).split(',')[0] === 'reach', await modes());
   await pg.evaluate(() => window.__lab.bind.resetAll());
   // 실패 안내: 못 미침과 지나침을 구분한다(모은 힘이 낮다는 이유만으로 오래 누르라고 하지 않는다)
   const jumpHint = async (x, hold) => { await fresh(3); await pg.mouse.move(sx(x), sy(348)); await pg.waitForTimeout(200);

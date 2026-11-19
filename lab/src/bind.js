@@ -31,7 +31,9 @@ const BIND = (() => {
     { id: 'log', g: '보조', label: '플레이 기록 보기', def: ['KeyL', null] },
     { id: 'demo', g: '연습', label: '시범 보기 (지금 연습 과제의 시범을 재생)', def: ['KeyP', null] },
     { id: 'lessonNext', g: '연습', label: '다음 연습 과제 (끝까지 가면 자유 연습)', def: ['KeyO', null] },
-    { id: 'chart', g: '연습', label: '입력 비교 차트 (작게 → 펼침 → 끔)', def: ['KeyT', null] },
+    { id: 'chart', g: '연습', label: '입력 비교 차트 구역 켬·끔 (화면을 차트 구역과 플레이 구역으로 나눈다)', def: ['KeyT', null] },
+    { id: 'dock', g: '연습', label: '차트 구역 자리 옮기기 (아래 → 왼쪽 → 위 → 오른쪽. 마우스로 구역을 끌어다 놓아도 된다)', def: ['KeyJ', null] },
+    { id: 'guide', g: '연습', label: '키 안내 보이기·가리기 (플레이 구역 옆의 반투명 키 안내)', def: ['KeyK', null] },
     { id: 'chartLeft', g: '연습', label: '입력 비교 차트의 시간축을 앞(이른 쪽)으로', def: ['Comma', null] },
     { id: 'chartRight', g: '연습', label: '입력 비교 차트의 시간축을 뒤(늦은 쪽)로', def: ['Period', null] },
     { id: 'chartZoomOut', g: '연습', label: '입력 비교 차트의 시간축 축소(더 긴 시간을 한눈에)', def: ['BracketLeft', null] },
@@ -61,7 +63,7 @@ const BIND = (() => {
   // 시도의 단계: live(하는 중) · ended(결과 화면) · replay(리플레이). 동작이 실제로 실행되는 단계를 여기 한곳에서 정한다.
   //   all = 언제나(다시하기·리플레이·다음 과제·시범·차트·설정·시작 자세), opt = 하는 중과 결과 화면(보조 설정·실험실 전환), rp = 리플레이 도구, 나머지(손발·몸·조준) = 하는 중에만
   const PHASES = { all: ['live', 'ended', 'replay'], opt: ['live', 'ended'], rp: ['replay'], play: ['live'] };
-  const ALL_IDS = ['settings', 'reset', 'replay', 'lessonNext', 'demo', 'chart', 'chartLeft', 'chartRight', 'chartZoomOut', 'chartZoomIn', 'chartFit', 'st1', 'st2', 'st3', 'st4', 'st5'];
+  const ALL_IDS = ['settings', 'reset', 'replay', 'lessonNext', 'demo', 'chart', 'dock', 'guide', 'chartLeft', 'chartRight', 'chartZoomOut', 'chartZoomIn', 'chartFit', 'st1', 'st2', 'st3', 'st4', 'st5'];
   const OPT_IDS = ['handMode', 'assistRange', 'assist', 'autoFeet', 'autoShift', 'autoLoad', 'log', 'ghost', 'slow', 'scheme', 'couple', 'layout', 'phys', 'body'];
   const kindOf = id => BY[id] && BY[id].ctx === 'replay' ? 'rp' : ALL_IDS.includes(id) ? 'all' : OPT_IDS.includes(id) ? 'opt' : 'play';
   const phasesOf = id => PHASES[kindOf(id)];

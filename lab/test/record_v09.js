@@ -5,7 +5,8 @@ const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), out = path
 const sx = x => x + 30, sy = y => y - 40; // 6번 과제는 높은 턱이 보이게 화면 세로 기준이 40이다(lessons.js의 view)
 (async () => {
   const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 960, height: 540 }, recordVideo: { dir: out, size: { width: 960, height: 540 } } });
-  const pg = await ctx.newPage(); await pg.goto(url); await pg.waitForTimeout(500);
+  const pg = await ctx.newPage(); await pg.goto(url + '?chart=off'); // 차트 구역 없이(게임 화면 100%) 찍는다: 아래의 마우스 좌표가 그 기준이다
+  await pg.waitForTimeout(500);
   for (let i = 0; i < 6; i++) { await pg.keyboard.press('KeyO'); await pg.waitForTimeout(140); } // 6번째 과제: 온몸 도약
   await pg.waitForTimeout(900); await pg.keyboard.press('KeyP'); await pg.waitForTimeout(5400);       // 시범
   // 직접 해 보는 것처럼: 같은 순서인데 Space를 0.5초만 누르고 W를 누르지 않는다 → 못 미친다. 차트에서 시범과 차이가 보인다

@@ -9,7 +9,8 @@ const st = pg => pg.evaluate(() => { const s = window.__lab.s; return { dead: s.
 async function clip(name, station, act) {
   const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 960, height: 540 }, recordVideo: { dir: out, size: { width: 960, height: 540 } } });
   const pg = await ctx.newPage(); const errs = []; pg.on('pageerror', e => errs.push(e.message));
-  await pg.goto(url); await pg.waitForTimeout(500); await pg.keyboard.press('Digit' + station); await pg.waitForTimeout(900);
+  await pg.goto(url + '?chart=off'); // 차트 구역 없이(게임 화면 100%) 찍는다: 아래의 마우스 좌표가 그 기준이다
+  await pg.waitForTimeout(500); await pg.keyboard.press('Digit' + station); await pg.waitForTimeout(900);
   await act(pg); await pg.waitForTimeout(500); check(`${name}: 페이지 오류 없음`, !errs.length, errs.join(';'));
   const v = pg.video(); await ctx.close(); await b.close(); fs.renameSync(await v.path(), path.join(out, name + '.webm'));
 }

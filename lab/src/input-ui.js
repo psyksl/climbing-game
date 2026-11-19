@@ -83,7 +83,7 @@
   const textEm=t=>[...t].reduce((a,ch)=>a+em(ch),0);
   function smallSize(code,h,options={}){
     const item=catalog.resolve(code,options);
-    if(item.shape==='mouse'||item.shape==='mouseSide')return[h*.72,h];
+    if(item.shape==='mouse'||item.shape==='mouseSide')return[h*(h<16?.82:.72),h]; // 아주 작을 때는 조금 넓게(눌린 버튼의 색이 보이게)
     const label=String(options.label??item.label);
     if([...label].length<=1)return[h,h];
     return[Math.max(h*1.2,textEm(label)*h*.42+h*.5),h];
@@ -97,7 +97,7 @@
     ctx.save();if(options.state==='disabled')ctx.globalAlpha*=.4;else if(options.ghost)ctx.globalAlpha*=.62;
     ctx.lineJoin='round';ctx.lineWidth=lw;ctx.strokeStyle=options.outline?(role==='neutral'?'#f1e5cc':tint):ink;
     if(mouse){
-      const mx=x+lw,my=y+lw+press*h*.04,mw=w-2*lw,mh=h-2*lw,r=mw/2,split=my+mh*.42;
+      const mx=x+lw,my=y+lw+press*h*.04,mw=w-2*lw,mh=h-2*lw,r=mw/2,split=my+mh*(h<16?.52:.42);
       const body=()=>{ctx.beginPath();ctx.moveTo(mx,my+r);ctx.arc(mx+r,my+r,r,Math.PI,0);ctx.lineTo(mx+mw,my+mh-r);ctx.arc(mx+r,my+mh-r,r,0,Math.PI);ctx.closePath();};
       if(!options.outline){body();ctx.fillStyle='#efe6d2';ctx.fill();}
       const col=role==='neutral'?({Mouse0:'#f58b78',Mouse2:'#6abfe6',Mouse1:'#edc266',Mouse3:'#b7a1d5',Mouse4:'#b7a1d5'}[item.code]||tint):tint;

@@ -948,7 +948,9 @@ const BIND = (() => {
     { id: 'log', g: '보조', label: '플레이 기록 보기', def: ['KeyL', null] },
     { id: 'demo', g: '연습', label: '시범 보기 (지금 연습 과제의 시범을 재생)', def: ['KeyP', null] },
     { id: 'lessonNext', g: '연습', label: '다음 연습 과제 (끝까지 가면 자유 연습)', def: ['KeyO', null] },
-    { id: 'chart', g: '연습', label: '입력 비교 차트 (작게 → 펼침 → 끔)', def: ['KeyT', null] },
+    { id: 'chart', g: '연습', label: '입력 비교 차트 구역 켬·끔 (화면을 차트 구역과 플레이 구역으로 나눈다)', def: ['KeyT', null] },
+    { id: 'dock', g: '연습', label: '차트 구역 자리 옮기기 (아래 → 왼쪽 → 위 → 오른쪽. 마우스로 구역을 끌어다 놓아도 된다)', def: ['KeyJ', null] },
+    { id: 'guide', g: '연습', label: '키 안내 보이기·가리기 (플레이 구역 옆의 반투명 키 안내)', def: ['KeyK', null] },
     { id: 'chartLeft', g: '연습', label: '입력 비교 차트의 시간축을 앞(이른 쪽)으로', def: ['Comma', null] },
     { id: 'chartRight', g: '연습', label: '입력 비교 차트의 시간축을 뒤(늦은 쪽)로', def: ['Period', null] },
     { id: 'chartZoomOut', g: '연습', label: '입력 비교 차트의 시간축 축소(더 긴 시간을 한눈에)', def: ['BracketLeft', null] },
@@ -978,7 +980,7 @@ const BIND = (() => {
   // 시도의 단계: live(하는 중) · ended(결과 화면) · replay(리플레이). 동작이 실제로 실행되는 단계를 여기 한곳에서 정한다.
   //   all = 언제나(다시하기·리플레이·다음 과제·시범·차트·설정·시작 자세), opt = 하는 중과 결과 화면(보조 설정·실험실 전환), rp = 리플레이 도구, 나머지(손발·몸·조준) = 하는 중에만
   const PHASES = { all: ['live', 'ended', 'replay'], opt: ['live', 'ended'], rp: ['replay'], play: ['live'] };
-  const ALL_IDS = ['settings', 'reset', 'replay', 'lessonNext', 'demo', 'chart', 'chartLeft', 'chartRight', 'chartZoomOut', 'chartZoomIn', 'chartFit', 'st1', 'st2', 'st3', 'st4', 'st5'];
+  const ALL_IDS = ['settings', 'reset', 'replay', 'lessonNext', 'demo', 'chart', 'dock', 'guide', 'chartLeft', 'chartRight', 'chartZoomOut', 'chartZoomIn', 'chartFit', 'st1', 'st2', 'st3', 'st4', 'st5'];
   const OPT_IDS = ['handMode', 'assistRange', 'assist', 'autoFeet', 'autoShift', 'autoLoad', 'log', 'ghost', 'slow', 'scheme', 'couple', 'layout', 'phys', 'body'];
   const kindOf = id => BY[id] && BY[id].ctx === 'replay' ? 'rp' : ALL_IDS.includes(id) ? 'all' : OPT_IDS.includes(id) ? 'opt' : 'play';
   const phasesOf = id => PHASES[kindOf(id)];
@@ -1046,7 +1048,7 @@ const ACT = (() => {
     power: '모으기', cancel: '취소', moveUp: '몸 위로', moveDown: '몸 아래로', moveLeft: '몸 왼쪽', moveRight: '몸 오른쪽',
     aimUp: '조준 위', aimDown: '조준 아래', aimLeft: '조준 왼쪽', aimRight: '조준 오른쪽', aimSlow: '조준 천천히',
     handMode: '손 선택 방식', assistRange: '잡기 범위', assist: '닿으면 잡기', autoFeet: '자동 발', autoShift: '자동 체중 이동', autoLoad: '자동 싣기', log: '플레이 기록',
-    demo: '시범', lessonNext: '다음 과제', chart: '입력 비교', chartLeft: '시간축 앞으로', chartRight: '시간축 뒤로', chartZoomOut: '시간축 축소', chartZoomIn: '시간축 확대', chartFit: '전체 보기', ghost: '시범 유령',
+    demo: '시범', lessonNext: '다음 과제', chart: '입력 비교', dock: '차트 자리', guide: '키 안내', chartLeft: '시간축 앞으로', chartRight: '시간축 뒤로', chartZoomOut: '시간축 축소', chartZoomIn: '시간축 확대', chartFit: '전체 보기', ghost: '시범 유령',
     replay: '리플레이', rpPlay: '재생·멈춤', rpBack: '뒤로', rpFwd: '앞으로', rpSpeed: '재생 속도',
     reset: '다시', scheme: '조작 방식', st1: '시작 자세 1', st2: '시작 자세 2', st3: '시작 자세 3', st4: '시작 자세 4', st5: '시작 자세 5',
     slow: '절반 속도', couple: '도약 연결', layout: '연습 배치', phys: '물리 판', body: '몸 바꾸기', settings: '키 설정',
@@ -1056,7 +1058,8 @@ const ACT = (() => {
   // 실제로 수행된 동작(타임차트의 줄): 손발은 "결정된 팔다리", 몸은 누르고 있던 동작
   const LIMB = [{ name: '왼손', role: 'left' }, { name: '오른손', role: 'right' }, { name: '왼발', role: 'foot' }, { name: '오른발', role: 'foot' }];
   const HOLD = { power: { name: '모으기', role: 'power' }, moveUp: { name: '몸 위로', role: 'body' }, moveDown: { name: '몸 아래로', role: 'body' }, moveLeft: { name: '몸 왼쪽', role: 'body' }, moveRight: { name: '몸 오른쪽', role: 'body' } };
-  return { name, role, LIMB, HOLD, roleOf: id => role[id] || 'neutral' };
+  const PRESS = { cancel: { name: '취소', role: 'neutral' } }; // 한 번 누르는 동작 가운데 차트에 줄로 나오는 것
+  return { name, role, LIMB, HOLD, PRESS, roleOf: id => role[id] || 'neutral' };
 })();
 if (typeof module !== 'undefined') module.exports = ACT;
 
@@ -1187,7 +1190,7 @@ if (typeof module !== 'undefined') module.exports = ACT;
   const textEm=t=>[...t].reduce((a,ch)=>a+em(ch),0);
   function smallSize(code,h,options={}){
     const item=catalog.resolve(code,options);
-    if(item.shape==='mouse'||item.shape==='mouseSide')return[h*.72,h];
+    if(item.shape==='mouse'||item.shape==='mouseSide')return[h*(h<16?.82:.72),h]; // 아주 작을 때는 조금 넓게(눌린 버튼의 색이 보이게)
     const label=String(options.label??item.label);
     if([...label].length<=1)return[h,h];
     return[Math.max(h*1.2,textEm(label)*h*.42+h*.5),h];
@@ -1201,7 +1204,7 @@ if (typeof module !== 'undefined') module.exports = ACT;
     ctx.save();if(options.state==='disabled')ctx.globalAlpha*=.4;else if(options.ghost)ctx.globalAlpha*=.62;
     ctx.lineJoin='round';ctx.lineWidth=lw;ctx.strokeStyle=options.outline?(role==='neutral'?'#f1e5cc':tint):ink;
     if(mouse){
-      const mx=x+lw,my=y+lw+press*h*.04,mw=w-2*lw,mh=h-2*lw,r=mw/2,split=my+mh*.42;
+      const mx=x+lw,my=y+lw+press*h*.04,mw=w-2*lw,mh=h-2*lw,r=mw/2,split=my+mh*(h<16?.52:.42);
       const body=()=>{ctx.beginPath();ctx.moveTo(mx,my+r);ctx.arc(mx+r,my+r,r,Math.PI,0);ctx.lineTo(mx+mw,my+mh-r);ctx.arc(mx+r,my+mh-r,r,0,Math.PI);ctx.closePath();};
       if(!options.outline){body();ctx.fillStyle='#efe6d2';ctx.fill();}
       const col=role==='neutral'?({Mouse0:'#f58b78',Mouse2:'#6abfe6',Mouse1:'#edc266',Mouse3:'#b7a1d5',Mouse4:'#b7a1d5'}[item.code]||tint):tint;
@@ -1713,7 +1716,7 @@ const LESSON = (() => {
   // 다시 재생할 수 있게 날것의 입력도 계산 걸음 번호(초당 120걸음)와 함께 남긴다: ev = 누름·뗌, aim = 조준점이 바뀐 걸음, optLog = 보조 설정이 바뀐 걸음. meta = 출발 상태·설정·판 번호(게임이 채운다)
   const HOLD = ['power', 'moveUp', 'moveDown', 'moveLeft', 'moveRight', 'foot'], TAP = ['sendL', 'sendR', 'sendBest', 'sendOther', 'cancel', 'foot'];
   function recorder(meta) {
-    const rec = { bars: [], taps: [], open: {}, t0: null, end: 0, meta: meta || null, ev: [], aim: [], optLog: [] }; let ax = null, ay = null, ok = '';
+    const rec = { bars: [], taps: [], presses: [], open: {}, t0: null, end: 0, meta: meta || null, ev: [], aim: [], optLog: [] }; let ax = null, ay = null, ok = '';
     // codeOf: 그 동작에 지금 실제로 쓰인 입력(주·보조 가운데 누른 쪽). 시범처럼 적어 둔 입력에는 없다(null)
     const codeOf = (io, id) => io.code ? io.code(id) : null, openCode = {};
     rec.tick = (t, io, sent, opt) => { rec.end = t; const f = Math.round(t * 120);
@@ -1722,6 +1725,7 @@ const LESSON = (() => {
       for (const id of HOLD) { const on = io.down(id);
         if (on && rec.open[id] === undefined) { rec.open[id] = t; openCode[id] = codeOf(io, id); rec.ev.push([f, 'down', id]); if (rec.t0 === null) rec.t0 = t; }
         if (!on && rec.open[id] !== undefined) { rec.bars.push({ id, a: rec.open[id], b: t, code: openCode[id] }); rec.ev.push([f, 'up', id]); delete rec.open[id]; } }
+      if (io.pressed('cancel')) { rec.presses.push({ id: 'cancel', t, code: codeOf(io, 'cancel') }); if (rec.t0 === null) rec.t0 = t; } // 취소: 차트의 한 줄로 나온다(그때 누른 키와 함께)
       for (const id of TAP) { if (io.pressed(id)) rec.ev.push([f, 'press', id]); if (id.startsWith('send') && io.pressedShift(id)) rec.ev.push([f, 'pressShift', id]); }
       // 손발 보내기: 결정된 팔다리(limb), 쓴 동작(id: 손 선택 2번이면 sendBest·sendOther), 실제 누른 입력(code), 발이면 함께 누른 수정 키(mod)
       for (const sd of sent || []) { rec.taps.push({ limb: sd.i, t, phase: sd.phase, id: sd.id, code: codeOf(io, sd.id), mod: sd.i >= 2 ? codeOf(io, 'foot') : null }); if (rec.t0 === null) rec.t0 = t; } };
@@ -1747,7 +1751,7 @@ if (typeof module !== 'undefined') module.exports = LESSON;
 //            정해 둔 시간(기본 2분)까지만 연속으로 적고, 리플레이는 그 연속 구간만 재생한다
 //   clock  : 리플레이의 재생 시계(재생·멈춤, 시각 옮기기, 조금씩 넘기기, 속도)
 //   view   : 입력 비교 차트의 시야(보이는 시작 시각과 폭, 따라가기, 확대·축소, 옮기기, 전체 보기)
-//   zone·drag·fitRect : 창처럼 옮기고 가장자리로 크기를 바꾸는 사각형
+//   dockZones·dockTarget·splitSize·fitView·laneHeight : 화면을 차트 구역과 플레이 구역으로 나누는 계산(붙는 쪽, 경계선으로 크기 조절, 플레이 화면 맞춰 넣기, 줄 높이)
 // 연습 하나가 정해 주는 것은 벽·시작 자세·(있다면) 성공 조건뿐이다. 기록·끝난 뒤 화면(다시하기/리플레이)·차트는 모두 여기 부품으로 돌아간다
 'use strict';
 const PRACTICE = (() => {
@@ -1786,7 +1790,8 @@ const PRACTICE = (() => {
     const v = { start: 0, span: span0, span0, manual: false };
     const maxStart = end => Math.max(0, end - v.span * 0.25);
     v.reset = () => { v.start = 0; v.span = v.span0; v.manual = false; };
-    v.follow = (now, end) => { // 손으로 옮기지 않았다면 지금 시각을 따라간다
+    v.follow = (now, end, maxSpan) => { // 손으로 옮기지 않았다면: 기록이 길어질수록 시간축을 줄여 전체를 보이고(maxSpan까지), 그보다 길면 지금 시각을 따라간다
+      if (!v.manual && maxSpan) { const e = Math.max(end, now || 0); v.span = lim(e * 1.08 + 0.3, v.span0, Math.max(v.span0, maxSpan)); if (v.span >= e + 0.05) { v.start = 0; return; } } // 전체가 들어가는 동안에는 0초부터 보인다
       if (now !== null && !v.manual) { if (now - v.start > v.span * 0.88) v.start = now - v.span * 0.88; if (now < v.start) v.start = Math.max(0, now - v.span * 0.1); }
       v.start = lim(v.start, 0, maxStart(Math.max(end, now || 0))); };
     v.pan = (d, end) => { v.start = lim(v.start + d, 0, maxStart(end)); v.manual = true; };
@@ -1794,24 +1799,24 @@ const PRACTICE = (() => {
     v.fit = end => { v.start = 0; v.span = Math.max(1, end + 0.3); v.manual = true; };  // 전체 보기
     return v;
   }
-  // 사각형의 어느 곳을 잡았나: 가장자리(m px 안)는 크기 바꾸기, 안쪽은 옮기기, 밖은 null
-  function zone(r, x, y, m = 7) {
-    if (x < r.x - m || x > r.x + r.w + m || y < r.y - m || y > r.y + r.h + m) return null;
-    const z = { l: x < r.x + m, r: x > r.x + r.w - m, t: y < r.y + m, b: y > r.y + r.h - m }; z.edge = z.l || z.r || z.t || z.b; return z;
+  // ---- 화면 나누기: 차트 구역과 플레이 구역. dock = 차트 구역이 붙는 쪽(bottom·top·left·right), size = 그 구역의 높이(위·아래) 또는 너비(왼·오른쪽)
+  // line = 두 구역의 경계선(끌어서 구역 크기를 바꾸는 곳)
+  function dockZones(dock, size, W, H) {
+    if (dock === 'top') return { chart: { x: 0, y: 0, w: W, h: size }, play: { x: 0, y: size, w: W, h: H - size }, line: { x: 0, y: size, w: W, h: 0 }, vertical: false };
+    if (dock === 'left') return { chart: { x: 0, y: 0, w: size, h: H }, play: { x: size, y: 0, w: W - size, h: H }, line: { x: size, y: 0, w: 0, h: H }, vertical: true };
+    if (dock === 'right') return { chart: { x: W - size, y: 0, w: size, h: H }, play: { x: 0, y: 0, w: W - size, h: H }, line: { x: W - size, y: 0, w: 0, h: H }, vertical: true };
+    return { chart: { x: 0, y: H - size, w: W, h: size }, play: { x: 0, y: 0, w: W, h: H - size }, line: { x: 0, y: H - size, w: W, h: 0 }, vertical: false };
   }
-  const cursorOf = z => !z ? null : (z.l && z.t) || (z.r && z.b) ? 'nwse-resize' : (z.r && z.t) || (z.l && z.b) ? 'nesw-resize' : z.l || z.r ? 'ew-resize' : z.t || z.b ? 'ns-resize' : 'move';
-  // 잡은 곳(z)과 움직인 만큼(dx, dy)으로 새 사각형을 만든다. 최소 크기와 화면 안쪽을 지킨다
-  function drag(r0, z, dx, dy, min, box) {
-    let { x, y, w, h } = r0;
-    if (!z.edge) { x = lim(x + dx, box.x, box.x + box.w - w); y = lim(y + dy, box.y, box.y + box.h - h); return { x, y, w, h }; }
-    if (z.l) { const nx = lim(x + dx, box.x, x + w - min.w); w += x - nx; x = nx; }
-    if (z.r) w = lim(w + dx, min.w, box.x + box.w - x);
-    if (z.t) { const ny = lim(y + dy, box.y, y + h - min.h); h += y - ny; y = ny; }
-    if (z.b) h = lim(h + dy, min.h, box.y + box.h - y);
-    return { x, y, w, h };
-  }
-  function fitRect(r, min, box) { const w = lim(r.w, min.w, box.w), h = lim(r.h, min.h, box.h); return { x: lim(r.x, box.x, box.x + box.w - w), y: lim(r.y, box.y, box.y + box.h - h), w, h }; }
-  return { HZ, MAX_S, clone, track, clock, view, zone, cursorOf, drag, fitRect };
+  // 차트 구역을 끌어다 놓을 때: 마우스가 화면의 어느 변에 가장 가까운가(화면 크기에 견준 거리)
+  function dockTarget(x, y, W, H) { const d = { left: x / W, right: 1 - x / W, top: y / H, bottom: 1 - y / H }; return Object.keys(d).sort((a, b) => d[a] - d[b])[0]; }
+  // 경계선을 끌 때: 마우스 자리에 맞는 구역 크기(최소·최대를 지킨다)
+  function splitSize(dock, x, y, W, H, min, max) { return lim(dock === 'bottom' ? H - y : dock === 'top' ? y : dock === 'left' ? x : W - x, min, max); }
+  // 플레이 구역 안에 게임 화면(W×H)을 비율을 지켜 넣는다. s = 배율, (x0, y0) = 화면에서의 왼쪽 위.
+  // ay = 세로로 남는 자리를 위아래로 나누는 비율(0.5 = 가운데, 1 = 게임 화면을 아래에 붙이고 위를 비운다)
+  function fitView(play, W, H, ay = 0.5) { const s = Math.min(play.w / W, play.h / H); return { s, x0: play.x + (play.w - W * s) / 2, y0: play.y + (play.h - H * s) * ay }; }
+  // 차트 구역의 크기는 그대로 두고, 줄이 늘수록 줄 높이를 줄인다(가장 작게는 min, 줄이 적어도 max보다 크게 하지는 않는다)
+  function laneHeight(avail, n, min = 11, max = 50) { return lim(avail / Math.max(1, n), min, max); }
+  return { HZ, MAX_S, clone, track, clock, view, dockZones, dockTarget, splitSize, fitView, laneHeight };
 })();
 if (typeof module !== 'undefined') module.exports = PRACTICE;
 
@@ -1820,7 +1825,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
 // 등반 조작 실험실 · 화면과 입력
 'use strict';
 (() => {
-  const W = G.W, H = G.H, OX = -30, OY0 = 130, C = PH.C, BUILD = 'v0.11.1';
+  const W = G.W, H = G.H, OX = -30, OY0 = 130, C = PH.C, BUILD = 'v0.12.0';
   let OY = OY0; // 화면 세로 기준. 과제가 정하면(view) 그 값을 쓴다: 높은 턱이 화면 밖으로 나가지 않게
   const LIMB = ['왼손', '오른손', '왼발', '오른발'], COL = ['#e86a5a', '#4fb3e8', '#e86a5a', '#4fb3e8'], DARK = ['#8a3b3b', '#2a6f97', '#8a3b3b', '#2a6f97'];
   let world = PH.makeWorld(), layout = null;
@@ -1841,7 +1846,8 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
   setPhys(v05);
   const kn = c => (c || '?').replace('Key', '').replace('Digit', '').replace('Arrow', '');
   let recent = [], spWas = false, lastMiss = null, showLog = false, S, station = 1, tries = 0, fx = [], why = null, endT = 0, slow = false, tick = 0, bot = null, autoI = 0, doneT = 0, air = null, jump = null, trail = [], swing = null, last = BOTS.idle();
-  window.__lab = { keys: () => KEYS.log.slice(), chart: () => ({ mode: chartMode, view: VIEW.start, span: VIEW.span, manual: VIEW.manual, end: CH.end, top: tlTop, rect: CH.rect && { ...CH.rect }, plot: CH.plot && { ...CH.plot }, ax: CH.ax, pad: CH.pad, pps: CH.pps, custom: !!CHR[chartMode], ready: KEYS.ready, panel: !!KEYS.panel }),
+  window.__lab = { keys: () => KEYS.log.slice(), chart: () => ({ mode: LAY.chart ? 'on' : 'off', dock: LAY.dock, size: LAY.size[LAY.dock], view: VIEW.start, span: VIEW.span, manual: VIEW.manual, end: CH.end, rect: CH.rect && { ...CH.rect }, plot: CH.plot && { ...CH.plot }, ax: CH.ax, pad: CH.pad, pps: CH.pps, n: CH.n, laneH: CH.laneH, big: CH.big, heads: CH.heads.map(q => ({ ...q })), off: CH.off && { ...CH.off }, ready: KEYS.ready, panel: !!KEYS.panel }),
+    view: () => ({ s: VW.s, x0: VW.x0, y0: VW.y0, ox: OX, oy: OY, play: { ...PZ }, chart: CZ && { ...CZ }, split: SPL && { ...SPL }, dock: LAY.dock, size: { ...LAY.size }, lim: LAY_LIM, fit: LAY_FIT, guide: LAY.guide, guideRect: GD.rect && { ...GD.rect }, drag: HUD.drag && { kind: HUD.drag.kind, target: HUD.drag.target || null } }), toScreen: (x, y) => toScreen(x, y), toWorld: (x, y) => toWorld(x, y),
     failReason, practice: () => ({ phase, ended: ended && { ...ended }, marks: CH.marks.map(q => ({ ...q })), hover: CH.hover, tools: CH.tools && { ...CH.tools }, bar: CH.bar && { ...CH.bar }, lessonCard: LC.rect && { ...LC.rect }, trackEnd: trk.end(), trackFull: trk.full, okWait: OK_WAIT, frames: trk.frames.length, rp: rp && { t: rp.t, from: rp.from, to: rp.to, playing: rp.playing, speed: rp.speed }, capture: HUD.capture, cursor: HUD.cursor, hits: HUD.hits.map(h => ({ ...h })) }), lesson: () => ({ i: lessonI, demo: !!demo, ok: lessonOkT, demoOk, demoEnd, rec, demoRec, lastRec, kept, note: lessonNote, ghost: ghost ? { t: ghost.S.t, x: ghost.S.p[0].x, y: ghost.S.p[0].y, dead: ghost.S.dead } : null }), hint: () => hint(), jump: () => jump, ctrlState: () => ctrl.st, opt: () => CTRL.OPT, aim, plog, ui: () => ui, bind: BIND, raw: () => { const m = G.input.mouse; return (m.down[0] || G.input.key('KeyQ') ? 'L' : '-') + (m.down[2] || G.input.key('KeyE') ? 'R' : '-'); }, get s() { return S; }, get bot() { return bot; }, finished: false, results: [] };
 
   // ---- 연습 과제·시범·입력 기록
@@ -1892,17 +1898,17 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     const foot = BIND.down('foot', inp);
     for (const id of CTRL.OPT.handMode === 1 ? ['sendL', 'sendR'] : ['sendBest', 'sendOther']) if (BIND.pressed(id, inp)) {
       const code = BIND.get(id).find(c => c && (c.startsWith('Mouse') ? inp.clicks.some(k => 'Mouse' + k.button === c) : inp.pressed(c)));
-      add(`${foot || BIND.pressedWithShift(id, inp) ? BIND.first('foot') + '+' : ''}${BIND.name(code)} (${BIND.BY[id].label.split(' ·')[0]})`); }
+      const asFoot = foot || BIND.pressedWithShift(id, inp), what = BIND.BY[id].label.split(' ·')[0]; add(`${asFoot ? BIND.first('foot') + '+' : ''}${BIND.name(code)} (${asFoot ? what.replace('손', '발') : what})`); } // 발 조종 키와 함께 누른 것은 발 보내기로 적는다
     for (const [id, t] of [['moveUp', '위'], ['moveDown', '아래'], ['moveLeft', '왼쪽'], ['moveRight', '오른쪽']]) if (BIND.pressed(id, inp)) add(`${BIND.first(id)} (몸통 ${t})`);
     const sp = BIND.down('power', inp); if (sp !== spWas) add(`${BIND.first('power')} ${sp ? '누름 (모으기)' : '뗌 (던지기)'}`); spWas = sp;
     if (BIND.pressed('cancel', inp)) add(`${BIND.first('cancel')} (취소)`);
   }
   function updateAim(inp, dt) {
     const m = inp.mouse;
-    if (aim.mx === null || Math.abs(m.x - aim.mx) > 0.5 || Math.abs(m.y - aim.my) > 0.5) { if (aim.mx !== null && !HUD.capture) { aim.x = m.x + OX; aim.y = m.y + OY; } aim.mx = m.x; aim.my = m.y; } // 마우스가 차트·단추 위에 있을 때는 조준점이 따라가지 않는다
+    if (aim.mx === null || Math.abs(m.x - aim.mx) > 0.5 || Math.abs(m.y - aim.my) > 0.5) { if (aim.mx !== null && !HUD.capture) { const q = toWorld(m.x, m.y); aim.x = q[0]; aim.y = q[1]; } aim.mx = m.x; aim.my = m.y; } // 마우스가 차트·단추 위에 있을 때는 조준점이 따라가지 않는다
     const dx = (BIND.down('aimRight', inp) ? 1 : 0) - (BIND.down('aimLeft', inp) ? 1 : 0), dy = (BIND.down('aimDown', inp) ? 1 : 0) - (BIND.down('aimUp', inp) ? 1 : 0);
     if (dx || dy) { aim.held += dt; const sp = BIND.down('aimSlow', inp) ? 90 : Math.min(520, 220 + 600 * aim.held), n = Math.hypot(dx, dy); aim.x += dx / n * sp * dt; aim.y += dy / n * sp * dt; } else aim.held = 0;
-    aim.x = Math.max(OX + 4, Math.min(OX + W - 4, aim.x)); aim.y = Math.max(OY + 4, Math.min(OY + H - 30, aim.y));
+    const v = visible(); aim.x = Math.max(v.x0 + 4, Math.min(v.x1 - 4, aim.x)); aim.y = Math.max(v.y0 + 4, Math.min(v.y1 - 4, aim.y)); // 조준점은 플레이 구역에 보이는 범위 안에 둔다
   }
   function readInput(inp) {
     let io;
@@ -1911,7 +1917,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
       io = { mx: aim.x, my: aim.y, down: id => BIND.down(id, inp), pressed: id => BIND.pressed(id, inp), pressedShift: id => footShift && BIND.pressedWithShift(id, inp), code: id => BIND.active(id, inp) };
       if (demo) { io = demo.pl.step(S.t); aim.x = io.mx; aim.y = io.my; } // 시범: 적어 둔 입력을 같은 시각에 넣는다(조준점도 시범이 옮긴다)
     } else {
-      const m = inp.mouse; io = { mx: m.x + OX, my: m.y + OY, lheld: m.down[0], rheld: m.down[2], lmb: inp.clicks.some(c => c.button === 0), rmb: inp.clicks.some(c => c.button === 2), lshift: inp.clicks.some(c => c.button === 0 && c.shift), rshift: inp.clicks.some(c => c.button === 2 && c.shift), key: c => inp.key(c), pressed: c => inp.pressed(c) };
+      const m = inp.mouse, q = toWorld(m.x, m.y); io = { mx: q[0], my: q[1], lheld: m.down[0], rheld: m.down[2], lmb: inp.clicks.some(c => c.button === 0), rmb: inp.clicks.some(c => c.button === 2), lshift: inp.clicks.some(c => c.button === 0 && c.shift), rshift: inp.clicks.some(c => c.button === 2 && c.shift), key: c => inp.key(c), pressed: c => inp.pressed(c) };
     }
     const out = demo ? withBase(() => ctrl.step(S, io, 1 / 120)) : ctrl.step(S, io, 1 / 120); // 시범은 플레이어 설정과 상관없이 기준 설정으로
     if (mode === 'intent') rec.tick(S.t, io, ctrl.st.sent, demo ? LESSON.BASE.opt : CTRL.OPT);
@@ -1959,15 +1965,17 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
         else if (codes.length) { CTRL.KEYMAP[mode][remap.list[remap.i]] = codes[0]; remap.i++; if (remap.i >= remap.list.length) { try { localStorage.setItem('climbKeys', JSON.stringify(CTRL.KEYMAP)); } catch (e) {} remap = null; reset(); } }
         return;
       }
-      hudUpdate(inp); if (HUD.click && doClick(HUD.click)) return;
+      relayout(); hudUpdate(inp); if (HUD.click && doClick(HUD.click)) return;
       if (!bot) {
         const P_ = id => BIND.pressedIn(id, inp, phase); // 그 단계에서 쓰이는 동작만 반응한다(리플레이에서는 리플레이 도구가 먼저)
         if (P_('settings')) { if (mode === 'intent') openSettings(); else remap = { list: Object.keys(CTRL.KEYMAP[mode]), i: 0 }; return; }
         if (P_('lessonNext')) { setLesson(lessonI + 1 >= LESSON.LIST.length ? -1 : lessonI + 1); return; }
         if (P_('demo')) { if (lessonI < 0) setLesson(0); startDemo(); return; }
-        if (P_('chart')) setChartMode(CHART_NEXT[chartMode]);
+        if (P_('chart')) setChart(!LAY.chart);
+        if (P_('dock')) setDock(DOCKS[(DOCKS.indexOf(LAY.dock) + 1) % DOCKS.length]);
+        if (P_('guide')) { LAY.guide = !LAY.guide; saveLay(); }
         if (P_('replay') && mode === 'intent') { phase === 'replay' ? closeReplay() : openReplay(); return; }
-        if (chartMode !== 'off') { const dir = (BIND.downIn('chartRight', inp, phase) ? 1 : 0) - (BIND.downIn('chartLeft', inp, phase) ? 1 : 0); if (dir) VIEW.pan(dir * dt * VIEW.span * 0.55, CH.end); // 시간축을 손으로 옮기면 다시 시작할 때까지 자동으로 따라가지 않는다
+        if (CZ) { const dir = (BIND.downIn('chartRight', inp, phase) ? 1 : 0) - (BIND.downIn('chartLeft', inp, phase) ? 1 : 0); if (dir) VIEW.pan(dir * dt * VIEW.span * 0.55, CH.end); // 시간축을 손으로 옮기면 다시 시작할 때까지 자동으로 따라가지 않는다
           if (P_('chartZoomIn')) VIEW.zoom(1 / 1.3, VIEW.start + VIEW.span / 2, CH.end); if (P_('chartZoomOut')) VIEW.zoom(1.3, VIEW.start + VIEW.span / 2, CH.end); if (P_('chartFit')) VIEW.fit(CH.end); }
         if (P_('ghost')) { ghostOn = !ghostOn; if (!ghostOn) ghost = null; }
         if (P_('reset')) { reset(); return; }
@@ -2083,9 +2091,10 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
   // ---- 그리기
   const TYPE_COL = { ledge: '#7d828c', incut: '#b9793a', jug: '#d9573a', sloper: '#8b7fa8', block: '#6b6f78', rock: '#9a917f' };
   function drawWorld(c) {
-    c.fillStyle = '#cfcabd'; c.fillRect(OX, OY, W, H);
-    for (let y = 150; y < C.FLOOR; y += 40) for (let x = OX + 20; x < OX + W; x += 40) G.circle(x, y, 1.5, 'rgba(0,0,0,0.13)');
-    c.fillStyle = '#3c5a8a'; c.fillRect(OX, C.FLOOR, W, 60);
+    const v = visible(); // 플레이 구역이 게임 화면보다 넓거나 높으면 벽과 바닥을 그만큼 이어 그린다
+    c.fillStyle = '#cfcabd'; c.fillRect(v.x0, v.y0, v.x1 - v.x0, v.y1 - v.y0);
+    for (let y = 150 - 40 * Math.max(0, Math.ceil((150 - v.y0) / 40)); y < C.FLOOR; y += 40) for (let x = OX + 20 - 40 * Math.max(0, Math.ceil((OX + 20 - v.x0) / 40)); x < v.x1; x += 40) G.circle(x, y, 1.5, 'rgba(0,0,0,0.13)');
+    c.fillStyle = '#3c5a8a'; c.fillRect(v.x0, C.FLOOR, v.x1 - v.x0, Math.max(60, v.y1 - C.FLOOR));
     for (const pl of world) {
       c.beginPath(); pl.pts.forEach((q, i) => i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1])); c.closePath();
       c.fillStyle = pl.goal && !lesson() ? '#d9a521' : TYPE_COL[pl.type]; c.fill(); c.strokeStyle = 'rgba(0,0,0,0.45)'; c.lineWidth = 1.5; c.stroke();
@@ -2255,7 +2264,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
   function diamond(c, x, y, r, fill, stroke) { c.beginPath(); c.moveTo(x, y - r); c.lineTo(x + r, y); c.lineTo(x, y + r); c.lineTo(x - r, y); c.closePath(); if (fill) { c.fillStyle = fill; c.fill(); } if (stroke) { c.strokeStyle = stroke; c.lineWidth = 1.6; c.stroke(); } }
 
   // ---- 화면 UI의 마우스 처리(차트 옮기기·크기 바꾸기·시간축, 결과·리플레이 단추). 그리는 쪽이 누를 수 있는 곳(hits)을 알려 주고, 다음 걸음에서 판정한다
-  const HUD = { hits: [], hot: null, click: null, drag: null, capture: false, pressIn: null, overChart: false, wheel: 0, cursor: 'none' };
+  const HUD = { hits: [], hot: null, click: null, drag: null, capture: false, pressIn: null, overChart: false, onSplit: false, splitHold: null, wheel: 0, cursor: 'none' };
   window.addEventListener('wheel', e => { HUD.wheel += e.deltaY; if (HUD.overChart) e.preventDefault(); }, { passive: false }); // 휠은 차트 안에서 시간축 확대·축소에만 쓴다. 차트 밖에서는 아무 일도 하지 않는다
   function hudBtn(id, x, y, w, h, label, o = {}) { // 누를 수 있는 칸 하나(글자가 있으면 글자도 그린다). primary = 주 단추(밝게 채움)
     const c = G.ctx, hot = HUD.hot === id && !o.off; c.beginPath(); G.roundRect(x, y, w, h, Math.min(7, h / 2));
@@ -2274,31 +2283,41 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     else if (kind === 'grip') { for (const dx of [-0.5, 0.5]) for (const dy of [-0.9, 0, 0.9]) { c.beginPath(); c.arc(cx + dx * z, cy + dy * z, Math.max(0.9, z * 0.2), 0, 7); c.fill(); } }
     c.restore();
   }
-  // ---- 입력 비교 차트: 줄은 "수행한 동작"(결정된 팔다리, 누르고 있던 몸 동작)이고 줄 머리에는 키캡만 둔다. 시범 = 윤곽선, 내 입력 = 채움. 순간 입력 = 마름모, 누르고 있기 = 구간.
+  // ---- 화면 나누기(v0.12.0, 사용자 결정): 화면을 차트 구역과 플레이 구역으로 나눈다. 차트 구역은 아래·왼쪽·위·오른쪽 가운데 한 변에 붙는다.
+  // 경계선을 끌거나 경계선 위에서 휠을 굴려 구역 크기를 바꾸고, 구역을 잡아 화면의 다른 변 쪽으로 끌어다 놓으면 그 변에 붙는다. 붙는 쪽·크기·켬끔은 저장되어 다시 실행해도 남는다.
+  // 플레이 구역에는 게임 화면(960×540)을 비율을 지켜 줄여 넣는다(VW). 화면 좌표 ↔ 게임 좌표는 toWorld·toScreen 한곳에서 바꾼다(조준, 결과 카드 자리 찾기가 쓴다)
+  const DOCKS = ['bottom', 'left', 'top', 'right'], DOCK_NAME = { bottom: '아래', left: '왼쪽', top: '위', right: '오른쪽' }, LAY_STORE = 'climbLayout_v1';
+  // 차트에 나올 수 있는 줄은 열 가지다: 왼손·오른손·왼발·오른발 보내기, 모으기, 취소, 몸 위·아래·왼쪽·오른쪽(조준 키와 설정 키는 차트에 넣지 않는다).
+  // 열 줄이 모두 나와도 줄마다 구분되는 가장 작은 높이(LAY_FIT)를 위·아래 구역의 기본 크기이자 가장 작은 크기로 쓴다
+  const CHM = { head: 18, axis: 13, foot: 4, laneMin: 15, laneMax: 50, lanes: 10 }, LAY_FIT = CHM.head + CHM.axis + CHM.foot + CHM.lanes * CHM.laneMin;
+  const LAY_LIM = { bottom: [LAY_FIT, 320], top: [LAY_FIT, 320], left: [240, 460], right: [240, 460] }, laySize = (d, v) => Math.max(LAY_LIM[d][0], Math.min(LAY_LIM[d][1], v));
+  const LAY = { dock: 'bottom', size: { bottom: LAY_FIT, top: LAY_FIT, left: 300, right: 300 }, chart: true, guide: true };
+  try { const sv = JSON.parse(localStorage.getItem(LAY_STORE) || 'null'); if (sv) { if (DOCKS.includes(sv.dock)) LAY.dock = sv.dock; for (const d of DOCKS) if (sv.size && Number.isFinite(sv.size[d])) LAY.size[d] = laySize(d, sv.size[d]); if (typeof sv.chart === 'boolean') LAY.chart = sv.chart; if (typeof sv.guide === 'boolean') LAY.guide = sv.guide; } } catch (e) {}
+  { const q = G.params; if (q.get('chart') !== null) LAY.chart = q.get('chart') !== 'off'; if (DOCKS.includes(q.get('dock'))) LAY.dock = q.get('dock'); if (q.get('size') !== null && Number.isFinite(+q.get('size'))) LAY.size[LAY.dock] = laySize(LAY.dock, +q.get('size')); if (q.get('guide') !== null) LAY.guide = q.get('guide') !== 'off'; }
+  const saveLay = () => { try { localStorage.setItem(LAY_STORE, JSON.stringify(LAY)); } catch (e) {} };
+  let PZ = { x: 0, y: 0, w: W, h: H }, CZ = null, SPL = null, VW = { s: 1, x0: 0, y0: 0 }; // PZ = 플레이 구역, CZ = 차트 구역(없으면 null), SPL = 경계선, VW = 게임 화면이 놓이는 배율과 자리
+  function relayout() { // 차트 구역은 조작 D안에서만 쓴다(다른 조작·자동 시연은 화면 전체가 플레이 구역)
+    if (LAY.chart && mode === 'intent' && !bot) { const z = PRACTICE.dockZones(LAY.dock, LAY.size[LAY.dock], W, H); PZ = z.play; CZ = z.chart; SPL = { ...z.line, vertical: z.vertical }; }
+    else { PZ = { x: 0, y: 0, w: W, h: H }; CZ = null; SPL = null; }
+    VW = PRACTICE.fitView(PZ, W, H, SPL && SPL.vertical ? 1 : 0.5); // 차트가 옆에 붙으면 게임 화면을 아래로 붙인다 → 위에 남는 띠에 과제 카드와 키 안내를 둔다(게임 화면을 덜 가린다)
+  }
+  const toWorld = (sx, sy) => [(sx - VW.x0) / VW.s + OX, (sy - VW.y0) / VW.s + OY], toScreen = (wx, wy) => [VW.x0 + (wx - OX) * VW.s, VW.y0 + (wy - OY) * VW.s];
+  const visible = () => { const a = toWorld(PZ.x, PZ.y), b = toWorld(PZ.x + PZ.w, PZ.y + PZ.h); return { x0: a[0], y0: a[1], x1: b[0], y1: b[1] }; }; // 플레이 구역에 보이는 게임 좌표 범위(게임 화면보다 넓은 쪽은 벽이 이어져 보인다)
+  function setChart(on) { LAY.chart = !!on; saveLay(); relayout(); }
+  function setDock(d) { LAY.dock = d; saveLay(); relayout(); VIEW.manual = false; VIEW.start = 0; }
+
+  // ---- 입력 비교 차트(차트 구역 안): 줄은 "수행한 동작"(결정된 팔다리, 누르고 있던 몸 동작, 취소)이고 줄 머리에는 키캡만 둔다. 시범 = 윤곽선, 내 입력 = 채움. 순간 입력 = 마름모, 누르고 있기 = 구간.
   // 0초 = 첫 입력(시범도 나도 각자의 첫 입력). 길이와 자리는 기록의 시각으로 계산한다. 색은 동작을 구분할 뿐 성공·실패를 뜻하지 않는다.
   // 기록마다 시작점 왼쪽에 고정 크기의 "시작 표식"(그때 실제로 누른 키)을 둔다. 표식의 크기는 누른 시간과 상관없다. 누른 시간은 막대의 두 끝과, 가리켰을 때 나오는 숫자로만 읽는다.
-  // 창처럼 다룬다: 머리줄을 끌어 옮기고, 가장자리를 끌어 크기를 바꾼다. 시간축은 전체 보기·확대·축소·옮기기를 할 수 있고, 리플레이에서는 누른 곳의 시각으로 간다
+  // 구역의 크기는 그대로다: 줄이 늘면 줄 높이와 키캡이 줄고, 기록이 길어지면 시간축이 줄어 전체가 보인다(확대·축소·옮기기를 하면 다시 시작할 때까지 손으로 정한 대로)
   const INK = '#f3ecd6', DIM = 'rgba(243,236,214,0.6)';
-  const CHART_NEXT = { mini: 'full', full: 'off', off: 'mini' }, CHART_VERB = { mini: '펼치기', full: '끄기', off: '켜기' };
-  // 손대지 않은 차트는 줄 수에 맞춰 아래쪽에 붙여 그린다(작게·펼침). 옮기거나 크기를 바꾸면 그 사각형(CHR)을 기억한다(다시 실행해도 남는다)
-  const CH_DEF = { mini: { x: 378, w: 438, bottom: 498, lane: 24, span: 4 }, full: { x: 14, w: 932, bottom: 498, lane: 50, span: 3 } }, CH_STORE = 'climbChart_v1', CHR = { mini: null, full: null };
-  try { const sv = JSON.parse(localStorage.getItem(CH_STORE) || 'null'); if (sv) for (const k of ['mini', 'full']) if (sv[k] && [sv[k].x, sv[k].y, sv[k].w, sv[k].h].every(Number.isFinite)) CHR[k] = { x: sv[k].x, y: sv[k].y, w: sv[k].w, h: sv[k].h }; } catch (e) {}
-  const saveChart = () => { try { localStorage.setItem(CH_STORE, JSON.stringify(CHR)); } catch (e) {} };
-  let chartMode = ['mini', 'full', 'off'].includes(G.params.get('chart')) ? G.params.get('chart') : 'mini', tlTop = 540;
-  const VIEW = PRACTICE.view(CH_DEF[chartMode === 'full' ? 'full' : 'mini'].span), CH = { rect: null, plot: null, tools: null, bar: null, ax: 0, pad: 0, pps: 1, end: 0, minH: 60, n: 1, marks: [], hover: null };
-  function setChartMode(m) { chartMode = m; if (m !== 'off') { VIEW.span0 = CH_DEF[m].span; if (!VIEW.manual) VIEW.span = VIEW.span0; } }
-  const METR = { big: { head: 38, axis: 16, foot: 24 }, small: { head: 17, axis: 12, foot: 5 } };
-  function chartGeom(n) { // n = 줄 수. 돌려주는 값: 사각형, 치수, 줄 높이. big = 줄마다 두 줄(위 시범, 아래 나)로 그릴 만큼 넉넉한가
-    const d = CH_DEF[chartMode], cu = CHR[chartMode], minH = METR.small.head + METR.small.axis + METR.small.foot + n * 14;
-    if (!cu) { const big = chartMode === 'full', m = METR[big ? 'big' : 'small'], h = m.head + m.axis + m.foot + n * d.lane; return { r: { x: d.x, y: d.bottom - h, w: d.w, h }, m, big, laneH: d.lane, minH }; }
-    const r = PRACTICE.fitRect(cu, { w: 240, h: minH }, { x: 0, y: 0, w: W, h: H }), big = (r.h - 78) / n >= 36 && r.w >= 430, m = METR[big ? 'big' : 'small'];
-    return { r, m, big, laneH: Math.min(72, (r.h - m.head - m.axis - m.foot) / n), minH };
-  }
+  const VIEW = PRACTICE.view(4), CH = { rect: null, plot: null, tools: null, bar: null, ax: 0, pad: 0, pps: 1, end: 0, n: 1, laneH: 0, big: false, marks: [], heads: [], hover: null, tip: null, off: null };
   function tlModel(master, mine) {
     const lanes = new Map(), lane = (key, mk) => { if (!lanes.has(key)) lanes.set(key, { key, ...mk(), m: [], i: [] }); return lanes.get(key); };
     const add = (r, who) => { if (!r) return; const z = r.zero(), evs = [];
       for (const b of r.all()) if (ACT.HOLD[b.id]) evs.push({ t: b.a, key: b.id, mk: () => ({ kind: 'hold', id: b.id, ...ACT.HOLD[b.id] }), e: { who, a: b.a - z, b: b.b - z, live: !!b.live, code: b.code || null } });
       for (const t of r.taps) evs.push({ t: t.t, key: 'limb' + t.limb, mk: () => ({ kind: 'tap', limb: t.limb, ...ACT.LIMB[t.limb] }), e: { who, a: t.t - z, mark: t.phase === 'charge', id: t.id, code: t.code || null, mod: t.mod || null } });
+      for (const p of r.presses || []) if (ACT.PRESS[p.id]) evs.push({ t: p.t, key: p.id, mk: () => ({ kind: 'press', id: p.id, ...ACT.PRESS[p.id] }), e: { who, a: p.t - z, code: p.code || null } });
       evs.sort((p, q) => p.t - q.t); for (const ev of evs) lane(ev.key, ev.mk)[who].push(ev.e); };
     add(master, 'm'); add(mine, 'i'); // 줄 순서: 시범에서 처음 나온 순서, 그다음 내 입력에만 있는 것
     const out = [...lanes.values()]; let end = 0; for (const L of out) for (const e of L.m.concat(L.i)) end = Math.max(end, e.b ?? e.a);
@@ -2307,7 +2326,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
   // 기록의 한 입력에 보일 키: **그때 실제로 누른 키**(기록의 code·mod). 지금 그 동작에 다른 키가 배정돼 있어도 기록대로 보인다.
   // 실제 키가 없는 기록(적어 둔 시범)에만 지금 설정의 키를 쓰고, 그것은 조작 안내라는 표시(guide)를 붙인다. 손 선택 2번에서는 어느 손이 될지 입력만으로는 알 수 없으므로 손 색을 칠하지 않는다
   function eventKeys(L, e) {
-    if (L.kind === 'hold') return e && e.code ? { codes: [e.code], role: L.role, guide: false, action: L.id } : { codes: [firstCode(L.id)], role: L.role, guide: true, action: L.id };
+    if (L.kind !== 'tap') return e && e.code ? { codes: [e.code], role: L.role, guide: false, action: L.id } : { codes: [firstCode(L.id)], role: L.role, guide: true, action: L.id };
     const foot = L.limb >= 2;
     if (e && e.code) return { codes: foot ? [e.mod || firstCode('foot'), e.code] : [e.code], role: L.role, guide: false, action: (foot ? 'foot+' : '') + (e.id || '') };
     const hm = CTRL.OPT.handMode, id = hm === 1 ? (L.limb % 2 ? 'sendR' : 'sendL') : 'sendBest';
@@ -2316,74 +2335,69 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
   // 줄 머리의 키캡: 그 줄에서 가장 최근에 실제로 누른 키(내 기록 먼저, 없으면 견주는 기록). 실제 키가 하나도 없으면 지금 설정 기준 안내
   function laneKeys(L) { const real = [...L.i].reverse().find(e => e.code) || [...L.m].reverse().find(e => e.code); return eventKeys(L, real || null); }
   const laneWasDown = (L, now) => L.kind === 'hold' ? L.i.some(b => b.a <= now && now < b.b) : L.i.some(t => now >= t.a && now - t.a < 0.15); // 리플레이에서 그 시각에 눌려 있었나
-  const evName = (L, e) => L.kind === 'hold' ? L.name : `${L.name} ${e.mark ? '· 놓을 손 지정' : '보내기'}`;
+  const evName = (L, e) => L.kind !== 'tap' ? L.name : `${L.name} ${e.mark ? '· 놓을 손 지정' : '보내기'}`;
   function drawChart(master, mine, now) {
     const c = G.ctx, model = tlModel(master, mine), lanes = model.lanes.length ? model.lanes : [{ key: 'power', kind: 'hold', id: 'power', ...ACT.HOLD.power, m: [], i: [] }], n = lanes.length;
-    const g = chartGeom(n), { r, m, big, laneH } = g, x = r.x, y = r.y, w = r.w, h = r.h, l = lesson(), ref = l ? '시범' : '이전 시도', mineT = l ? '내 입력' : '이번 시도', replaying = phase === 'replay';
-    const mh = big ? Math.min(24, laneH / 2 - 1) : Math.min(22, laneH - 2);                         // 시작 표식의 높이(고정 크기, 누른 시간과 상관없음)
-    const labW = Math.max(big ? 64 : 34, Math.min(big ? 116 : 84, laneH * 2.2)), lab = labW + (big ? 34 : 14), ax = x + lab, aw = Math.max(40, w - lab - (big ? 22 : 8));
+    const x = CZ.x, y = CZ.y, w = CZ.w, h = CZ.h, l = lesson(), ref = l ? '시범' : '이전 시도', mineT = l ? '내 입력' : '이번 시도', replaying = phase === 'replay';
+    const laneH = PRACTICE.laneHeight(h - CHM.head - CHM.axis - CHM.foot, n, 6, CHM.laneMax), big = laneH >= 36; // 줄이 늘수록 줄 높이가 준다. 넉넉하면(big) 줄마다 두 줄(위 시범, 아래 나)로 그린다
+    const mh = big ? Math.min(24, laneH / 2 - 1) : Math.max(7, Math.min(22, laneH - 2));              // 시작 표식의 높이(누른 시간과 상관없음)
+    const kh0 = Math.max(7, Math.min(laneH - (big ? 4 : 1.5), 44)), heads = lanes.map(L => laneKeys(L));
+    const labW = Math.max(24, Math.min(Math.max(...heads.map(K => keysW(K.codes, kh0))), big ? 116 : 96, w * 0.26)), lab = labW + 12, ax = x + lab, aw = Math.max(40, w - lab - 8);
     let mwMax = mh; for (const L of lanes) for (const e of L.m.concat(L.i)) mwMax = Math.max(mwMax, keysW(eventKeys(L, e).codes, mh)); // 0초의 표식이 잘리지 않게 왼쪽을 비운다
-    const pad = Math.min(72, mwMax) + 8, pps = Math.max(1, aw - pad - 10) / VIEW.span, top = y + m.head + m.axis, X = t => ax + pad + (t - VIEW.start) * pps;
-    tlTop = y - (big ? 8 : 2); VIEW.follow(now, model.end);
-    Object.assign(CH, { rect: r, plot: { x: ax, y: top, w: aw, h: n * laneH }, ax, pad, pps, end: Math.max(model.end, now || 0), minH: g.minH, n, marks: [], hover: null });
-    panelSkin(c, x, y, w, h, big ? 0.42 : 0.2);
-    const mo = G.input.mouse, zHot = HUD.drag ? (HUD.drag.kind === 'size' ? HUD.drag.z : null) : HUD.capture ? PRACTICE.zone(r, mo.x, mo.y) : null;
-    if (zHot && zHot.edge) { c.strokeStyle = INK; c.lineWidth = 2; c.beginPath(); if (zHot.l) { c.moveTo(x + 1, y + 14); c.lineTo(x + 1, y + h - 14); } if (zHot.r) { c.moveTo(x + w - 1, y + 14); c.lineTo(x + w - 1, y + h - 14); } if (zHot.t) { c.moveTo(x + 14, y + 1); c.lineTo(x + w - 14, y + 1); } if (zHot.b) { c.moveTo(x + 14, y + h - 1); c.lineTo(x + w - 14, y + h - 1); } c.stroke(); } // 가리킨 변을 밝게
-    c.strokeStyle = DIM; c.lineWidth = 1.2; for (const d of [5, 9, 13]) { c.beginPath(); c.moveTo(x + w - d - 3, y + h - 4); c.lineTo(x + w - 4, y + h - d - 3); c.stroke(); } // 오른쪽 아래의 크기 조절 손잡이
-    // 머리줄: 왼쪽에 옮기기 손잡이·제목·범례, 오른쪽에 펼치기/끄기와 시간축 단추(전체·축소·확대, 옮긴 차트는 제자리로)
-    const bh = big ? 20 : 12, by = y + (big ? 10 : 3), fz = big ? 10.5 : 8.5; let rx = x + w - (big ? 20 : 9);
-    { const verb = CHART_VERB[chartMode], kc = firstCode('chart'), kh = big ? 16 : 0, kw = kh ? keyW(kc, kh) + 4 : 0, vt = big ? verb : `${BIND.first('chart')} ${verb}`, vw = kw + G.textW(vt, fz, 800) + (big ? 14 : 10);
-      rx -= vw; hudBtn('tl_mode', rx, by, vw, bh); if (kh) drawKey(kc, rx + 5, by + (bh - kh) / 2, kh, { where: 'chart', action: 'chart', down: false });
-      G.text(vt, rx + kw + (big ? 7 : 5), by + bh / 2 + fz * 0.36, { size: fz, weight: 800, color: INK }); }
-    for (const [id, t, bw] of [['tl_in', '+', bh + 5], ['tl_out', '−', bh + 5], ['tl_fit', '전체', big ? 36 : 28]].concat(CHR[chartMode] ? [['tl_reset', '제자리', big ? 44 : 34]] : [])) { rx -= bw + 4; hudBtn(id, rx, by, bw, bh, t, { size: fz }); }
-    { let lx = x + (big ? 44 : 12); const ty = y + (big ? 24 : 12.5), fit = t2 => lx + t2 < rx - 8;
-      icon(c, 'grip', lx + 3, ty - (big ? 5 : 3.5), big ? 5 : 3.5, DIM); lx += big ? 14 : 10;
-      if (big && fit(G.textW('입력 비교', 15, 800))) { G.text('입력 비교', lx, ty, { size: 15, weight: 800, color: INK }); lx += G.textW('입력 비교', 15, 800) + 20; }
-      if (fit(26 + G.textW(ref, fz, 700) + 14 + 26 + G.textW(mineT, fz, 700))) { const ph = big ? 8 : 7, pw = big ? 20 : 16, py = ty - (big ? 9 : 7); pill(c, lx, py, pw, ph, null, INK, 1.4); G.text(ref, lx + pw + 5, ty, { size: fz, weight: 700, color: INK }); lx += pw + 5 + G.textW(ref, fz, 700) + 12;
-        pill(c, lx, py, pw, ph, INK, null); G.text(mineT, lx + pw + 5, ty, { size: fz, weight: 700, color: INK }); } }
+    const pad = Math.min(72, mwMax) + 8, plotW = Math.max(1, aw - pad - 10), top = y + CHM.head + CHM.axis;
+    VIEW.follow(now, model.end, Math.max(VIEW.span0, plotW / 14)); const pps = plotW / VIEW.span, X = t => ax + pad + (t - VIEW.start) * pps;
+    Object.assign(CH, { rect: { x, y, w, h }, plot: { x: ax, y: top, w: aw, h: n * laneH }, ax, pad, pps, end: Math.max(model.end, now || 0), n, laneH, big, marks: [], heads: [], hover: null, tip: null });
+    // 머리줄: 왼쪽에 잡는 곳 표시·제목·범례, 오른쪽에 끄기·자리 옮기기와 시간축 단추(전체·축소·확대). 좁으면 범례부터 뺀다
+    const bh = 13, by = y + 3, fz = 9; let rx = x + w - 5;
+    for (const [id, t, bw] of [['tl_mode', `${BIND.first('chart')} 끄기`, 0], ['tl_dock', `${BIND.first('dock')} 자리`, 0], ['tl_in', '+', 17], ['tl_out', '−', 17], ['tl_fit', '전체', 0]]) { const ww = bw || G.textW(t, fz, 800) + 10; rx -= ww; hudBtn(id, rx, by, ww, bh, t, { size: fz }); rx -= 3; }
+    { let lx = x + 8; const ty = y + 13, fit = t2 => lx + t2 < rx - 6;
+      icon(c, 'grip', lx + 2, ty - 3.5, 3.5, DIM); lx += 10;
+      if (fit(G.textW('입력 비교', 10.5, 800))) { G.text('입력 비교', lx, ty, { size: 10.5, weight: 800, color: INK }); lx += G.textW('입력 비교', 10.5, 800) + 12; }
+      if (fit(16 + 5 + G.textW(ref, fz, 700) + 10 + 16 + 5 + G.textW(mineT, fz, 700))) { const ph = 7, pw = 16, py = ty - 7; pill(c, lx, py, pw, ph, null, INK, 1.4); G.text(ref, lx + pw + 5, ty, { size: fz, weight: 700, color: INK }); lx += pw + 5 + G.textW(ref, fz, 700) + 10;
+        pill(c, lx, py, pw, ph, INK, null); G.text(mineT, lx + pw + 5, ty, { size: fz, weight: 700, color: INK }); lx += pw + 5 + G.textW(mineT, fz, 700) + 12; }
+      const tipT = replaying ? '시간축을 누르거나 끌면 그 시각으로' : '0초 = 첫 입력 · 표식 = 그때 누른 키 · 흐린 윤곽 = 지금 설정 기준 안내'; if (fit(G.textW(tipT, 8.5, 600))) G.text(tipT, lx, ty, { size: 8.5, weight: 600, color: DIM }); }
     // 눈금: 보이는 폭에 맞춰 간격을 고른다
-    const major = [0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60].find(sv => sv * pps >= (big ? 70 : 44)) || 120, minor = major / 2;
+    const major = [0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60].find(sv => sv * pps >= 44) || 120, minor = major / 2;
     for (let k = Math.max(0, Math.floor(VIEW.start / minor) - 1); k * minor <= VIEW.start + VIEW.span + minor; k++) { const t = k * minor, gx = X(t), isM = k % 2 === 0; if (gx < ax - 0.5 || gx > ax + aw + 0.5) continue;
       c.fillStyle = isM ? 'rgba(243,236,214,0.16)' : 'rgba(243,236,214,0.07)'; c.fillRect(gx, top - (isM ? 3 : 0), 1, n * laneH + (isM ? 3 : 0));
-      if (isM) G.text((major < 0.5 ? t.toFixed(2) : major < 1 ? t.toFixed(1) : `${t}`) + (big || t === 0 ? '초' : ''), gx + (big ? 0 : 3), top - (big ? 5 : 3), { size: big ? 9.5 : 8, weight: 700, align: big ? 'center' : 'left', color: DIM }); }
-    const footDown = BIND.down('foot', G.input), hoverOk = HUD.overChart && !HUD.drag && mo.x >= ax && mo.x <= ax + aw && mo.y >= top && mo.y <= top + n * laneH;
+      if (isM) G.text((major < 0.5 ? t.toFixed(2) : major < 1 ? t.toFixed(1) : `${t}`) + (t === 0 ? '초' : ''), gx + 3, top - 3, { size: 8, weight: 700, color: DIM }); }
+    const mo = G.input.mouse, footDown = BIND.down('foot', G.input), hoverOk = HUD.overChart && !HUD.drag && mo.x >= ax && mo.x <= ax + aw && mo.y >= top && mo.y <= top + n * laneH;
     const near = e => now !== null && e.a <= now + 1e-6 && now <= (e.b ?? e.a) + 0.15;   // 재생 시각(또는 지금) 근처의 입력
-    let hover = null; const later = [];
+    let hover = null; const later = [], fs = Math.max(7, Math.min(9.5, laneH * 0.62));
     // 한 줄(row)의 기록을 그린다: 정확한 시작 눈금 + 막대(또는 마름모) + 시작 표식. 표식끼리, 또는 표식과 앞 기록이 겹치면 묶음 표식(개수)으로 보인다 — 기록 자체는 하나도 빼지 않는다
-    const drawRow = (L, list, who, ry, rh, withMarks) => { const col = ROLE[L.role], outline = who === 'm', bhh = Math.max(4, Math.min(9, rh * 0.36)), bY = ry + (rh - bhh) / 2, groups = []; let right = -1e9;
+    const drawRow = (L, list, who, ry, rh, withMarks) => { const col = ROLE[L.role] || ROLE.neutral, outline = who === 'm', bhh = Math.max(3, Math.min(9, rh * 0.36)), bY = ry + (rh - bhh) / 2, groups = []; let right = -1e9;
       for (const e of list) { const xs = X(e.a), xe = L.kind === 'hold' ? X(e.b) : xs, K = eventKeys(L, e), mw = keysW(K.codes, mh);
         if (L.kind === 'hold') { const bw = xe - xs; c.beginPath(); G.roundRect(xs, bY, bw, bhh, Math.min(bhh / 2, bw / 2)); if (outline) { c.fillStyle = rgba(col, 0.1); c.fill(); c.strokeStyle = col; c.lineWidth = 1.3; c.stroke(); } else { c.fillStyle = col; c.fill(); } }
-        else diamond(c, xs, ry + rh / 2, big ? 4 : 3.2, outline ? rgba(col, 0.12) : col, outline ? col : null);
+        else diamond(c, xs, ry + rh / 2, Math.max(2.4, Math.min(4, rh * 0.3)), outline ? rgba(col, 0.12) : col, outline ? col : null);
         c.fillStyle = col; c.fillRect(xs - 0.75, ry + 1, 1.5, rh - 2);                                                                  // 시작 눈금: 정확한 시작 시각
         if (withMarks) { if (groups.length && xs - 4 - mw < right) groups[groups.length - 1].items.push(e); else groups.push({ x: xs, K, mw, items: [e] }); right = Math.max(right, xe + 2, xs + 5); }
         if (hoverOk && mo.y >= ry && mo.y <= ry + rh && mo.x >= xs - 3 && mo.x <= Math.max(xe, xs) + 4) hover = { L, e, who, group: null };
         later.push(() => { if (!(near(e) || (hover && (hover.e === e || (hover.group && hover.group.includes(e)))))) return; // 숫자는 가리킨 기록과 재생 시각 근처의 기록에만 붙인다
-          if (L.kind === 'hold') G.text(`${(e.b - e.a).toFixed(2)}초`, xe + 5, bY + bhh - 0.5 + (big ? 0 : 1), { size: big ? 9.5 : 8, weight: 800, color: INK }); else if (e.mark && big) G.text('놓을 손', xs + 8, ry + rh / 2 + 3.5, { size: 8.5, weight: 800, color: INK }); }); }
+          if (L.kind === 'hold') G.text(`${(e.b - e.a).toFixed(2)}초`, xe + 5, ry + rh / 2 + fs * 0.36, { size: fs, weight: 800, color: INK }); else if (e.mark && big) G.text('놓을 손', xs + 8, ry + rh / 2 + 3.5, { size: 8.5, weight: 800, color: INK }); }); }
       for (const gp of groups) { const mx = gp.x - 4 - gp.mw, my = ry + (rh - mh) / 2, hi = gp.items.some(near);
         if (hoverOk && mo.y >= ry && mo.y <= ry + rh && mo.x >= mx - 1 && mo.x <= gp.x - 3) hover = { L, e: gp.items[0], who, group: gp.items.length > 1 ? gp.items : null };
         later.push(() => { c.strokeStyle = col; c.lineWidth = 1; c.beginPath(); c.moveTo(gp.x - 4, ry + rh / 2); c.lineTo(gp.x, ry + rh / 2); c.stroke();                       // 표식과 시작 눈금을 잇는 짧은 선
-          if (hi || (hover && gp.items.includes(hover.e))) { c.beginPath(); G.roundRect(mx - 2, my - 2, gp.mw + 4, mh + 4, 5); c.strokeStyle = INK; c.lineWidth = 1.5; c.stroke(); }
+          if (hi || (hover && gp.items.includes(hover.e))) { c.beginPath(); G.roundRect(mx - 1.5, my - 1.5, gp.mw + 3, mh + 3, 4); c.strokeStyle = INK; c.lineWidth = 1.5; c.stroke(); }
           drawKeys(gp.K.codes, mx, my, mh, { role: gp.K.role, outline, ghost: gp.K.guide, where: 'mark', action: gp.K.action, who, t: gp.items[0].a, n: gp.items.length, forceDown: hi && !outline });
           if (gp.items.length > 1) { const bt = `×${gp.items.length}`, bw2 = G.textW(bt, 8, 900) + 7; pill(c, mx - 2, my - 5, bw2, 10, INK, null); G.text(bt, mx - 2 + bw2 / 2, my + 2.7, { size: 8, weight: 900, align: 'center', color: '#1c231d' }); } });
         CH.marks.push({ who, lane: L.key, t: gp.items[0].a, n: gp.items.length, codes: gp.K.codes, guide: gp.K.guide, x: mx, w: gp.mw }); } };
-    lanes.forEach((L, k) => { const ly = top + k * laneH, K = laneKeys(L);
-      if (k % 2 === 0) { c.fillStyle = 'rgba(243,236,214,0.035)'; c.fillRect(ax, ly, aw, laneH); }
+    lanes.forEach((L, k) => { const ly = top + k * laneH, K = heads[k];
+      if (k % 2 === 0) { c.fillStyle = 'rgba(243,236,214,0.045)'; c.fillRect(x + 4, ly, w - 8, laneH); }
       // 줄 머리: 키캡만(그 줄에서 실제로 누른 키. 없으면 지금 설정 기준 안내를 흐리게)
-      const area = lab - (big ? 34 : 14), kh0 = Math.max(8, Math.min(laneH - (big ? 4 : 2), 44)), kh = Math.min(kh0, kh0 * area / keysW(K.codes, kh0)), kw = keysW(K.codes, kh);
-      drawKeys(K.codes, x + (big ? 24 : 8) + (area - kw) / 2, ly + (laneH - kh) / 2, kh, { role: K.role, ghost: K.guide, where: 'chart', action: K.action, forceDown: replaying ? laneWasDown(L, now) : undefined, down: L.kind === 'tap' && L.limb < 2 ? BIND.codeDown(K.codes[0], G.input) && !footDown : undefined });
+      const kh = Math.min(kh0, kh0 * labW / keysW(K.codes, kh0)), kw = keysW(K.codes, kh), hx = x + 6 + (labW - kw) / 2, hy = ly + (laneH - kh) / 2;
+      drawKeys(K.codes, hx, hy, kh, { role: K.role, ghost: K.guide, where: 'chart', action: K.action, forceDown: replaying ? laneWasDown(L, now) : undefined, down: L.kind === 'tap' && L.limb < 2 ? BIND.codeDown(K.codes[0], G.input) && !footDown : undefined });
+      CH.heads.push({ lane: L.key, x: hx, y: hy, w: kw, h: kh, codes: K.codes });
       c.save(); c.beginPath(); c.rect(ax, ly, aw, laneH); c.clip();
       if (big) { drawRow(L, L.m, 'm', ly + 1, laneH / 2 - 1, true); drawRow(L, L.i, 'i', ly + laneH / 2, laneH / 2 - 1, true); }
-      else { drawRow(L, L.m, 'm', ly + 1, laneH - 2, !L.i.length); drawRow(L, L.i, 'i', ly + 1, laneH - 2, true); } // 좁을 때는 한 줄에 겹쳐 그리고, 표식은 내 기록에(없으면 견주는 기록에) 붙인다
+      else { drawRow(L, L.m, 'm', ly + 0.5, laneH - 1, !L.i.length); drawRow(L, L.i, 'i', ly + 0.5, laneH - 1, true); } // 좁을 때는 한 줄에 겹쳐 그리고, 표식은 내 기록에(없으면 견주는 기록에) 붙인다
       c.restore(); });
     c.save(); c.beginPath(); c.rect(ax, top - 6, aw, n * laneH + 12); c.clip(); for (const f of later) f(); c.restore();
     // 리플레이할 수 있는 끝: 연속으로 적힌 데까지만 재생한다(그 뒤는 적지 않았다)
     if (trk.full && mine && phase !== 'live') { const xe = X(trk.end() - mine.zero()); if (xe < ax + aw) { c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(Math.max(ax, xe), top, ax + aw - Math.max(ax, xe), n * laneH); if (xe >= ax) { c.fillStyle = '#ff9c8a'; c.fillRect(xe - 0.75, top - 3, 1.5, n * laneH + 3); G.text('리플레이 기록 끝', xe - 4, top + 9, { size: 8.5, weight: 800, align: 'right', color: '#ff9c8a' }); } } }
     // 지금 시각(리플레이에서는 재생 시각)
-    if (now !== null && X(now) >= ax && X(now) <= ax + aw) { const px = X(now); c.fillStyle = replaying ? '#ffd166' : INK; c.fillRect(px - 0.5, top - 2, replaying ? 2 : 1.5, n * laneH + 4); const t = `${now.toFixed(2)}초`, pw = G.textW(t, big ? 9.5 : 8, 900) + 10; pill(c, px - pw / 2, top - (big ? 16 : 12), pw, big ? 13 : 10, replaying ? '#ffd166' : INK, null); G.text(t, px, top - (big ? 6 : 4.5), { size: big ? 9.5 : 8, weight: 900, align: 'center', color: '#1c231d' }); }
-    if (big && w >= 430) { G.text(replaying ? '리플레이: 시간축을 누르거나 끌면 그 시각으로 갑니다.' : '막대나 표식에 마우스를 올리면 시각과 누른 시간이 나옵니다.', x + 46, y + h - 9, { size: 10, weight: 600, color: DIM });
-      if (w >= 780) G.text('0초 = 첫 입력 · 표식 = 그때 실제로 누른 키 · 흐린 윤곽 = 지금 설정 기준 안내(시범)', x + w - 26, y + h - 9, { size: 9.5, weight: 600, align: 'right', color: DIM }); }
+    if (now !== null && X(now) >= ax && X(now) <= ax + aw) { const px = X(now); c.fillStyle = replaying ? '#ffd166' : INK; c.fillRect(px - 0.5, top - 2, replaying ? 2 : 1.5, n * laneH + 4); const t = `${now.toFixed(2)}초`, pw = G.textW(t, 8, 900) + 10; pill(c, px - pw / 2, top - 12, pw, 10, replaying ? '#ffd166' : INK, null); G.text(t, px, top - 4.5, { size: 8, weight: 900, align: 'center', color: '#1c231d' }); }
     CH.hover = hover ? { lane: hover.L.key, who: hover.who, t: hover.e.a, n: hover.group ? hover.group.length : 1 } : null;
-    if (hover) drawTip(hover, mo, ref, mineT);
+    if (hover) CH.tip = { hover, ref, mineT };
   }
   // 가리킨 기록의 설명: 그때 누른 키(크게), 동작 이름, 시작 시각, 누른 시간. 묶음이면 안에 든 기록을 모두 적는다
   function drawTip(hv, mo, ref, mineT) {
@@ -2398,11 +2412,11 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     lines.forEach((q, k) => { const yy = y + 10 + kh + k * 15 + 10; if (typeof q === 'string') G.text(q, x + 10, yy, { size: 10, weight: 700, color: k === 0 ? INK : DIM });
       else { const Kq = eventKeys(L, q.e); drawKeys(Kq.codes, x + 10, yy - 11, 14, { role: Kq.role, ghost: Kq.guide, where: 'tip', action: Kq.action, down: false }); G.text(q.t, x + 54, yy, { size: 10, weight: 700, color: INK }); } });
   }
-  // 리플레이 도구: 차트 바로 위(자리가 없으면 아래)에 붙어 함께 움직인다. 재생 그림이 주 표시이고 키캡은 단축키를 알려 주는 작은 보조 표시다.
+  // 리플레이 도구: 플레이 구역 안, 차트 구역 쪽 가장자리에 둔다(차트가 위에 붙어 있으면 위, 그 밖에는 아래). 재생 그림이 주 표시이고 키캡은 단축키를 알려 주는 작은 보조 표시다.
   // 시각을 옮기는 축은 차트의 시간축 하나다. 차트를 껐을 때만 도구 줄 안에 같은 재생 시계의 얇은 진행 축을 보인다
   function drawReplayTools() {
-    CH.tools = null; CH.bar = null; if (phase !== 'replay') return; const c = G.ctx, R = CH.rect, h = 32, KH = 22, d = CH_DEF.mini, w = R ? Math.max(R.w, 500) : 660, x = Math.max(4, Math.min(W - w - 4, R ? R.x : d.x + d.w - w)), y = R ? (R.y - h - 4 >= 4 ? R.y - h - 4 : Math.min(H - h - 40, R.y + R.h + 4)) : d.bottom - h;
-    CH.tools = { x, y, w, h }; if (R) tlTop = Math.min(tlTop, y - 2);
+    CH.tools = null; CH.bar = null; if (phase !== 'replay') return; const c = G.ctx, h = 32, KH = 22, w = Math.min(PZ.w - 8, 660), x = PZ.x + (PZ.w - w) / 2, y = CZ && LAY.dock === 'top' ? PZ.y + 4 : PZ.y + PZ.h - h - 4;
+    CH.tools = { x, y, w, h };
     c.beginPath(); G.roundRect(x, y, w, h, 8); c.fillStyle = 'rgba(28,35,29,0.95)'; c.fill(); c.strokeStyle = '#636a4b'; c.lineWidth = 1.5; c.stroke();
     let bx = x + 6; const tool = (id, act, ic, o = {}) => { const kc = firstCode(act), kw = keyW(kc, KH), bw = (o.text ? G.textW(o.text, 10.5, 900) + 4 : 16) + kw + 14; hudBtn(id, bx, y + 3, bw, h - 6, null, { primary: o.primary });
       if (o.text) G.text(o.text, bx + 7, y + h / 2 + 3.8, { size: 10.5, weight: 900, color: INK }); else icon(c, ic, bx + 13, y + h / 2, 5, o.primary ? '#1c231d' : INK);
@@ -2412,47 +2426,67 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     let ex = x + w - 6; const tail = (id, act, ic) => { const kc = firstCode(act), kw = keyW(kc, KH), bw = 16 + kw + 14; ex -= bw; hudBtn(id, ex, y + 3, bw, h - 6); icon(c, ic, ex + 13, y + h / 2, 5, INK); drawKey(kc, ex + bw - kw - 4, y + (h - KH) / 2, KH, { where: 'replay', action: act, down: false }); ex -= 4; };
     tail('retry', 'reset', 'retry'); tail('replay', 'replay', 'close');
     if (trk.full) { const t = `처음 ${Math.round(trk.maxS)}초까지 적혔습니다`; if (bx + G.textW(t, 9, 700) < ex) G.text(t, bx, y + h / 2 + 3.5, { size: 9, weight: 700, color: '#ff9c8a' }); }
-    else if (!R && ex - bx > 60) { const px = bx + 4, pw = ex - bx - 8, py = y + h / 2 - 2, f = (rp.t - rp.from) / Math.max(1e-6, rp.to - rp.from); CH.bar = { x: px, y: y + 3, w: pw, h: h - 6 }; // 차트가 꺼져 있을 때의 얇은 진행 축(같은 재생 시계)
+    else if (!CZ && ex - bx > 60) { const px = bx + 4, pw = ex - bx - 8, py = y + h / 2 - 2, f = (rp.t - rp.from) / Math.max(1e-6, rp.to - rp.from); CH.bar = { x: px, y: y + 3, w: pw, h: h - 6 }; // 차트가 꺼져 있을 때의 얇은 진행 축(같은 재생 시계)
       c.fillStyle = 'rgba(243,236,214,0.2)'; c.fillRect(px, py, pw, 4); c.fillStyle = '#ffd166'; c.fillRect(px, py, pw * f, 4); c.fillRect(px + pw * f - 1, py - 4, 2, 12); }
   }
   function drawChartPanel() { // 과제 중에는 시범과 나, 자유 연습에서는 이전 시도와 이번 시도. 리플레이에서는 내 기록 전체 위로 재생 시각이 지나간다
-    tlTop = 540; const l = lesson(), master = l ? demoRec : lastRec, mine = demo ? null : rec.t0 !== null ? rec : null;
-    if (chartMode === 'off') { const t = `${BIND.first('chart')} ${ACT.name.chart}`, w = G.textW(t, 9, 800) + 16, d = CH_DEF.mini; if (phase !== 'replay') { G.panel(d.x + d.w - w, d.bottom - 17, w, 17, 'rgba(28,35,29,0.88)', '#636a4b'); G.text(t, d.x + d.w - w / 2, d.bottom - 5, { size: 9, weight: 800, align: 'center', color: INK }); HUD.hits.push({ id: 'tl_mode', x: d.x + d.w - w, y: d.bottom - 17, w, h: 17 }); } drawReplayTools(); return; }
+    const l = lesson(), master = l ? demoRec : lastRec, mine = demo ? null : rec.t0 !== null ? rec : null, c = G.ctx; CH.tip = null; CH.off = null;
+    if (!CZ) { const t = `${BIND.first('chart')} ${ACT.name.chart}`, w = G.textW(t, 9, 800) + 16, x = W - 112 - w, y = H - 24; if (phase !== 'replay') { G.panel(x, y, w, 17, 'rgba(28,35,29,0.88)', '#636a4b'); G.text(t, x + w / 2, y + 12, { size: 9, weight: 800, align: 'center', color: INK }); HUD.hits.push({ id: 'tl_mode', x, y, w, h: 17 }); CH.off = { x, y, w, h: 17 }; } drawReplayTools(); return; }
     const now = phase === 'replay' ? rp.t - (rec.t0 ?? 0) : demo ? (rec.t0 !== null ? S.t - rec.t0 : null) : phase === 'live' && mine ? S.t - mine.zero() : null;
-    drawChart(master, mine, now); drawReplayTools();
+    c.fillStyle = '#1b221c'; c.fillRect(CZ.x, CZ.y, CZ.w, CZ.h);
+    c.save(); c.beginPath(); c.rect(CZ.x, CZ.y, CZ.w, CZ.h); c.clip(); drawChart(master, mine, now); c.restore();
+    // 경계선: 가리키거나 끄는 동안 밝게. 가운데의 점 셋은 "여기를 잡는다"는 표시
+    { const hot = HUD.drag ? HUD.drag.kind === 'split' : HUD.onSplit, t = hot ? 3 : 2; c.fillStyle = hot ? INK : '#636a4b'; if (SPL.vertical) c.fillRect(SPL.x - t / 2, 0, t, H); else c.fillRect(0, SPL.y - t / 2, W, t);
+      c.fillStyle = hot ? '#1c231d' : INK; for (const k of [-1, 0, 1]) { c.beginPath(); c.arc(SPL.vertical ? SPL.x : W / 2 + k * 7, SPL.vertical ? H / 2 + k * 7 : SPL.y, hot ? 1.1 : 1.4, 0, 7); c.fill(); } }
+    drawReplayTools();
+    if (CH.tip) drawTip(CH.tip.hover, G.input.mouse, CH.tip.ref, CH.tip.mineT);
+  }
+  function drawDockPreview() { // 차트 구역을 끌고 있을 때: 놓으면 붙을 자리를 미리 보인다
+    const d = HUD.drag; if (!d || d.kind !== 'dock' || !d.target || d.target === LAY.dock) return; const c = G.ctx, z = PRACTICE.dockZones(d.target, LAY.size[d.target], W, H).chart;
+    c.fillStyle = 'rgba(243,236,214,0.22)'; c.fillRect(z.x, z.y, z.w, z.h); c.strokeStyle = INK; c.lineWidth = 2; c.setLineDash([8, 6]); c.strokeRect(z.x + 2, z.y + 2, z.w - 4, z.h - 4); c.setLineDash([]);
+    const t = `놓으면 ${DOCK_NAME[d.target]}에 붙습니다`, tw = G.textW(t, 12, 800) + 20; G.panel(z.x + z.w / 2 - tw / 2, z.y + z.h / 2 - 13, tw, 26, 'rgba(28,35,29,0.95)', INK); G.text(t, z.x + z.w / 2, z.y + z.h / 2 + 4.5, { size: 12, weight: 800, align: 'center', color: INK });
   }
   const inRect = (q, px, py) => !!q && px >= q.x && px <= q.x + q.w && py >= q.y && py <= q.y + q.h;
   const inPlot = m => inRect(CH.plot, m.x, m.y);
   const timeAt = x => VIEW.start + (x - CH.ax - CH.pad) / CH.pps, pannable = () => CH.end + 0.3 > VIEW.span || VIEW.start > 0;
+  const nearSplit = (px, py) => !!SPL && (SPL.vertical ? Math.abs(px - SPL.x) <= 4 : Math.abs(py - SPL.y) <= 4);
   function hudUpdate(inp) {
-    const m = inp.mouse, anyDown = m.down.some(Boolean), R = chartMode !== 'off' ? CH.rect : null, z = R ? PRACTICE.zone(R, m.x, m.y) : null, hit = HUD.hits.find(q => inRect(q, m.x, m.y)) || null, onTools = inRect(CH.tools, m.x, m.y);
+    const m = inp.mouse, anyDown = m.down.some(Boolean), z = inRect(CZ, m.x, m.y);
+    if (HUD.splitHold && (!SPL || Math.hypot(m.x - HUD.splitHold.x, m.y - HUD.splitHold.y) > 3)) HUD.splitHold = null; // 휠로 크기를 바꾸면 경계선이 마우스에서 멀어진다. 마우스를 움직이기 전까지는 계속 경계선을 잡고 있는 것으로 본다
+    const onSplit = nearSplit(m.x, m.y) || !!HUD.splitHold, hit = HUD.hits.find(q => inRect(q, m.x, m.y)) || null, onTools = inRect(CH.tools, m.x, m.y);
     // 누른 자리가 UI 안인가로 정한다(pressIn): 밖에서 누른 채 차트 위로 들어온 마우스는 뗄 때까지 게임 입력이고, 차트에서 누른 채 밖으로 나가도 뗄 때까지 UI의 것이다.
     // 판정은 누른 순간의 자리로 한다(화면이 잠깐 느려지면 판정할 때 마우스는 이미 다른 곳에 가 있을 수 있다)
-    const inside = (px, py) => !!(R && PRACTICE.zone(R, px, py)) || inRect(CH.tools, px, py) || HUD.hits.some(q => inRect(q, px, py));
+    const inside = (px, py) => inRect(CZ, px, py) || nearSplit(px, py) || inRect(CH.tools, px, py) || HUD.hits.some(q => inRect(q, px, py));
     if (inp.clicks.length) HUD.pressIn = inp.clicks.some(k => inside(k.x, k.y)); else if (!anyDown) HUD.pressIn = null;
-    HUD.overChart = !!z; HUD.hot = hit ? hit.id : null; HUD.click = null;
-    HUD.capture = !!HUD.drag || (HUD.pressIn !== null ? HUD.pressIn : !!z || !!hit || onTools); BIND.setMouseBlocked(HUD.capture);
+    HUD.overChart = z || onSplit; HUD.onSplit = onSplit && !HUD.drag; HUD.hot = hit ? hit.id : null; HUD.click = null;
+    HUD.capture = !!HUD.drag || (HUD.pressIn !== null ? HUD.pressIn : z || onSplit || !!hit || onTools); BIND.setMouseBlocked(HUD.capture);
     const seekBar = px => { if (rp && CH.bar) rp.seek(rp.from + (rp.to - rp.from) * Math.max(0, Math.min(1, (px - CH.bar.x) / CH.bar.w))); };
     if (HUD.drag) { const d = HUD.drag;
-      if (!m.down[0]) { if (d.kind === 'move' || d.kind === 'size') saveChart(); HUD.drag = null; }
-      else if (d.kind === 'move' || d.kind === 'size') CHR[chartMode] = PRACTICE.drag(d.r0, d.z, m.x - d.mx, m.y - d.my, { w: 240, h: CH.minH }, { x: 0, y: 0, w: W, h: H });
+      if (!m.down[0]) { if (d.kind === 'split') saveLay(); if (d.kind === 'dock' && d.target && d.target !== LAY.dock) setDock(d.target); HUD.drag = null; }
+      else if (d.kind === 'split' && SPL) { LAY.size[LAY.dock] = PRACTICE.splitSize(LAY.dock, m.x, m.y, W, H, LAY_LIM[LAY.dock][0], LAY_LIM[LAY.dock][1]); relayout(); }
+      else if (d.kind === 'dock') d.target = Math.hypot(m.x - d.mx, m.y - d.my) > 16 ? PRACTICE.dockTarget(m.x, m.y, W, H) : null; // 조금 움직인 것은 옮기기로 보지 않는다
       else if (d.kind === 'pan') { VIEW.start = d.start; VIEW.pan(-(m.x - d.mx) / CH.pps, CH.end); }
       else if (d.kind === 'seek' && rp) rp.seek((rec.t0 ?? 0) + timeAt(m.x));
       else if (d.kind === 'bar') seekBar(m.x);
     } else if (inp.clicks.some(k => k.button === 0)) {
-      // 잡는 곳을 나눈다: 가장자리 = 크기, 시간축(plot) = 시각 옮기기(리플레이)·시간축 옮기기(확대했을 때), 그 밖(머리줄·줄 머리·아래 줄·도구 줄의 빈 곳) = 차트 옮기기
-      const ck = inp.clicks.find(k => k.button === 0), p0 = { x: ck.x, y: ck.y }, z0 = R ? PRACTICE.zone(R, p0.x, p0.y) : null, hit0 = HUD.hits.find(q => inRect(q, p0.x, p0.y)) || null, base = R && { z: { edge: false }, r0: { ...R }, mx: p0.x, my: p0.y };
+      // 잡는 곳을 나눈다: 단추 → 경계선(구역 크기) → 시간축(리플레이: 시각 옮기기, 확대했을 때: 시간축 옮기기) → 차트 구역의 그 밖(다른 변으로 끌어다 놓기)
+      const ck = inp.clicks.find(k => k.button === 0), p0 = { x: ck.x, y: ck.y }, hit0 = HUD.hits.find(q => inRect(q, p0.x, p0.y)) || null;
       if (hit0) HUD.click = hit0.id;
       else if (inRect(CH.bar, p0.x, p0.y)) { HUD.drag = { kind: 'bar', cursor: 'pointer' }; seekBar(p0.x); }
-      else if (z0 && z0.edge) HUD.drag = { kind: 'size', cursor: PRACTICE.cursorOf(z0), ...base, z: z0 };
-      else if (z0 && inPlot(p0)) { if (phase === 'replay') { HUD.drag = { kind: 'seek', cursor: 'pointer' }; rp.seek((rec.t0 ?? 0) + timeAt(p0.x)); } else if (pannable()) HUD.drag = { kind: 'pan', cursor: 'grabbing', mx: p0.x, start: VIEW.start }; }
-      else if (R && (z0 || inRect(CH.tools, p0.x, p0.y))) HUD.drag = { kind: 'move', cursor: 'move', ...base };
+      else if (nearSplit(p0.x, p0.y)) HUD.drag = { kind: 'split', cursor: SPL.vertical ? 'ew-resize' : 'ns-resize' };
+      else if (inRect(CZ, p0.x, p0.y) && inPlot(p0) && phase === 'replay') { HUD.drag = { kind: 'seek', cursor: 'pointer' }; rp.seek((rec.t0 ?? 0) + timeAt(p0.x)); }
+      else if (inRect(CZ, p0.x, p0.y) && inPlot(p0) && pannable()) HUD.drag = { kind: 'pan', cursor: 'grabbing', mx: p0.x, start: VIEW.start };
+      else if (inRect(CZ, p0.x, p0.y)) HUD.drag = { kind: 'dock', cursor: 'move', mx: p0.x, my: p0.y, target: null };
     }
-    if (HUD.wheel) { if (z && CH.plot) VIEW.zoom(HUD.wheel > 0 ? 1.2 : 1 / 1.2, inPlot(m) ? timeAt(m.x) : VIEW.start + VIEW.span / 2, CH.end); HUD.wheel = 0; }
+    if (HUD.wheel) { // 휠: 경계선 위에서는 구역 크기(경계선이 휠을 굴린 쪽으로 간다: 위로 굴리면 위·왼쪽으로), 차트 안에서는 시간축 확대·축소. 그 밖에서는 아무 일도 하지 않는다
+      if (onSplit && !HUD.drag) { const grow = (LAY.dock === 'bottom' || LAY.dock === 'right') === (HUD.wheel < 0); LAY.size[LAY.dock] = laySize(LAY.dock, LAY.size[LAY.dock] + (grow ? 12 : -12)); saveLay(); relayout(); HUD.splitHold = { x: m.x, y: m.y }; }
+      else if (z && CH.plot) VIEW.zoom(HUD.wheel > 0 ? 1.2 : 1 / 1.2, inPlot(m) ? timeAt(m.x) : VIEW.start + VIEW.span / 2, CH.end);
+      HUD.wheel = 0; }
     // 마우스 모양: 플레이 중에는 조준점만 보이고(none), UI 위에서는 무엇을 할 수 있는지 보인다. 끝난 뒤와 리플레이에서는 보통 화살표
     let cur = phase === 'live' ? 'none' : 'default';
     if (HUD.drag) cur = HUD.drag.cursor; else if (HUD.capture && hit) cur = 'pointer'; else if (HUD.capture && inRect(CH.bar, m.x, m.y)) cur = 'pointer';
-    else if (HUD.capture && z) cur = z.edge ? PRACTICE.cursorOf(z) : inPlot(m) ? (phase === 'replay' ? 'pointer' : pannable() ? 'grab' : 'default') : 'move'; else if (HUD.capture && onTools) cur = R ? 'move' : 'default';
+    else if (HUD.capture && onSplit) cur = SPL.vertical ? 'ew-resize' : 'ns-resize';
+    else if (HUD.capture && z) cur = inPlot(m) && phase === 'replay' ? 'pointer' : inPlot(m) && pannable() ? 'grab' : 'move'; else if (HUD.capture && onTools) cur = 'default';
     HUD.cursor = cur; const cv = G.ctx.canvas; if (cv.style.cursor !== cur) cv.style.cursor = cur;
   }
   // ---- 시도가 끝난 뒤: 바로 처음으로 돌아가지 않고 결과와 "다시하기 / 리플레이"를 보인다. 연습 과제든 자유 연습이든 같다
@@ -2497,42 +2531,46 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     if (id === 'next') { setLesson(lessonI + 1 >= LESSON.LIST.length ? -1 : lessonI + 1); return true; }
     if (id === 'more' && ended) { ended.more = !ended.more; ended.pos = null; }
     if (id === 'rp_play' && rp) rp.toggle(); if (id === 'rp_back' && rp) rp.nudge(-RP_STEP); if (id === 'rp_fwd' && rp) rp.nudge(RP_STEP); if (id === 'rp_speed' && rp) rp.cycleSpeed();
-    if (id === 'tl_mode') setChartMode(CHART_NEXT[chartMode]);
+    if (id === 'tl_mode') setChart(!LAY.chart); if (id === 'tl_dock') setDock(DOCKS[(DOCKS.indexOf(LAY.dock) + 1) % DOCKS.length]);
     if (id === 'tl_fit') VIEW.fit(CH.end); if (id === 'tl_in') VIEW.zoom(1 / 1.3, VIEW.start + VIEW.span / 2, CH.end); if (id === 'tl_out') VIEW.zoom(1.3, VIEW.start + VIEW.span / 2, CH.end);
-    if (id === 'tl_reset') { CHR[chartMode] = null; saveChart(); VIEW.reset(); }
     return false;
   }
   // 결과 카드: 큰 창으로 장면을 덮지 않는다. 마지막 자세·과제 목표·과제 카드·차트를 가리지 않는 빈 자리를 찾아 작게 놓고, 그런 자리가 없으면 차트 바로 위에 둔다
   const LC = { rect: null };
   function placeCard(w, h) {
-    const box = (x0, y0, x1, y1) => ({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }), avoid = [], xs = S.p.map(q => q.x - OX), ys = S.p.map(q => q.y - OY);
-    avoid.push(box(Math.min(...xs) - 26, Math.min(...ys) - 30, Math.max(...xs) + 26, Math.max(...ys) + 22));
-    const mk = lesson() && lesson().mark, mp = mk && world.find(p => p.id === mk[0]); if (mp) { const px = mp.pts.map(q => q[0] - OX), py = mp.pts.map(q => q[1] - OY); avoid.push(box(Math.min(...px) - 60, Math.min(...py) - 34, Math.max(...px) + 60, Math.max(...py) + 12)); }
-    if (ghost && ghost.S) { const gx = ghost.S.p.map(q => q.x - OX), gy = ghost.S.p.map(q => q.y - OY); avoid.push(box(Math.min(...gx) - 16, Math.min(...gy) - 24, Math.max(...gx) + 16, Math.max(...gy) + 14)); } // 시범 유령의 마지막 자세도 가리지 않는다
-    if (LC.rect) avoid.push(LC.rect); if (CH.rect && chartMode !== 'off') avoid.push(CH.rect); if (CH.tools) avoid.push(CH.tools);
+    const box = (x0, y0, x1, y1) => ({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }), avoid = [], k = VW.s, around = (pts, l, t, r, b) => { const q = pts.map(p => toScreen(p[0], p[1])), xs = q.map(p => p[0]), ys = q.map(p => p[1]); return box(Math.min(...xs) - l * k, Math.min(...ys) - t * k, Math.max(...xs) + r * k, Math.max(...ys) + b * k); };
+    avoid.push(around(S.p.map(q => [q.x, q.y]), 26, 30, 26, 22));
+    const mk = lesson() && lesson().mark, mp = mk && world.find(p => p.id === mk[0]); if (mp) avoid.push(around(mp.pts, 60, 34, 60, 12));
+    if (ghost && ghost.S) avoid.push(around(ghost.S.p.map(q => [q.x, q.y]), 16, 24, 16, 14)); // 시범 유령의 마지막 자세도 가리지 않는다
+    if (LC.rect) avoid.push(LC.rect); if (GD.rect) avoid.push(GD.rect); if (CH.tools) avoid.push(CH.tools);
+    avoid.push(box(VW.x0 + (HELP.rtx - 230) * k, VW.y0 + 8 * k, VW.x0 + HELP.rtx * k, VW.y0 + 60 * k)); // 오른쪽 위의 글(시작 자세·시도 수)
     const over = (x, y) => avoid.reduce((a, q) => a + Math.max(0, Math.min(x + w, q.x + q.w) - Math.max(x, q.x)) * Math.max(0, Math.min(y + h, q.y + q.h) - Math.max(y, q.y)), 0);
     const bx = avoid[0].x + avoid[0].w / 2, by = avoid[0].y + avoid[0].h / 2; let best = null;
-    for (let y = 8; y <= H - 44 - h; y += 14) for (let x = 8; x <= W - w - 8; x += 14) { const o = over(x, y), d = Math.hypot(x + w / 2 - bx, y + h / 2 - by), sc = o * 1000 + d; if (!best || sc < best.sc) best = { x, y, o, sc }; }
-    if (best && best.o === 0) return { x: best.x, y: best.y, free: true };
-    const R = CH.rect && chartMode !== 'off' ? CH.rect : { x: 8, y: H - 44, w: 0, h: 0 }; return { x: Math.max(8, Math.min(W - w - 8, R.x)), y: Math.max(8, (CH.tools ? Math.min(CH.tools.y, R.y) : R.y) - h - 6), free: false };
+    for (let y = PZ.y + 8; y <= PZ.y + PZ.h - 8 - h; y += 14) for (let x = PZ.x + 8; x <= PZ.x + PZ.w - w - 8; x += 14) { const o = over(x, y), d = Math.hypot(x + w / 2 - bx, y + h / 2 - by), sc = o * 1000 + d; if (!best || sc < best.sc) best = { x, y, o, sc }; }
+    if (best) return { x: best.x, y: best.y, free: best.o === 0 }; // 빈 자리가 없으면 가장 덜 가리는 자리
+    return { x: PZ.x + 8, y: Math.max(PZ.y + 4, PZ.y + PZ.h - h - 8), free: false };
   }
   function drawResult() {
     if (phase !== 'ended' || !ended) return; const c = G.ctx, col = ended.kind === 'ok' ? '#7dff9a' : ended.kind === 'fail' ? '#ff9c8a' : INK;
     const btns = [['retry', 'reset', '다시하기', true], ['replay', 'replay', '리플레이', false]].concat(lesson() ? [['next', 'lessonNext', lessonI === LESSON.LIST.length - 1 ? '자유 연습' : '다음 과제', false]] : []);
     const w = Math.max(250, btns.reduce((a, q) => a + G.textW(q[2], 11.5, 800) + keyW(firstCode(q[1]), 20) + 18 + 6, 18)), tw = w - 24; // 너비는 단추 줄에 맞춘다
     const lines = [{ t: ended.sub, c: INK }].concat(ended.reason ? wrap(ended.reason, tw, 10.5, 700).map(t => ({ t, c: '#ffd9a0' })) : []).concat(ended.more && ended.hint ? wrap(ended.hint, tw, 10, 600).map(t => ({ t, c: DIM })) : []);
-    const h = 30 + lines.length * 15 + (ended.hint ? 18 : 4) + 36; if (!ended.pos || ended.pos.h !== h) ended.pos = { ...placeCard(w, h), h }; const x = ended.pos.x, y = ended.pos.y;
+    const h = 30 + lines.length * 15 + (ended.hint ? 18 : 4) + 36; const sig = `${h}|${PZ.x}|${PZ.y}|${PZ.w}|${PZ.h}|${GD.rect ? GD.rect.x : ''}`; if (!ended.pos || ended.pos.sig !== sig) ended.pos = { ...placeCard(w, h), h, sig }; const x = ended.pos.x, y = ended.pos.y; // 구역을 옮기거나 크기를 바꾸면 자리를 다시 찾는다
     ended.rect = { x, y, w, h }; c.beginPath(); G.roundRect(x, y, w, h, 10); c.fillStyle = 'rgba(28,35,29,0.96)'; c.fill(); c.strokeStyle = '#636a4b'; c.lineWidth = 1.5; c.stroke(); c.fillStyle = col; c.beginPath(); G.roundRect(x, y + 10, 3, 18, 2); c.fill();
     G.text(ended.title, x + 12, y + 24, { size: 15, weight: 900, color: col }); let yy = y + 30; for (const q of lines) { G.text(q.t, x + 12, yy + 11, { size: 10.5, weight: 700, color: q.c }); yy += 15; }
     if (ended.hint) { const t = ended.more ? '접기' : '자세히', bw = G.textW(t, 9.5, 800) + 14; hudBtn('more', x + 12, yy + 2, bw, 14, t, { size: 9.5 }); yy += 18; } else yy += 4;
     let bx = x + 12; for (const [id, act, text, primary] of btns) { const kc = firstCode(act), kw = keyW(kc, 20), off = id === 'replay' && trk.frames.length < 2, bw = G.textW(text, 11.5, 800) + kw + 18; hudBtn(id, bx, yy + 4, bw, 26, null, { primary, off });
       G.text(text, bx + 7, yy + 21, { size: 11.5, weight: 800, color: primary ? '#1c231d' : off ? DIM : INK }); drawKey(kc, bx + bw - kw - 5, yy + 7, 20, { where: 'result', action: act, disabled: off, down: false }); bx += bw + 6; }
   }
-  // ---- 아래 키 안내(조작 D안): 키캡 = 지금 설정된 입력(실제로 누르고 있는 칸 우선), 옆 = 동작 이름과 그 손발의 상태. 손 선택 2번에서는 지금 추천된 손의 색을 쓴다
-  function drawKeyBar() {
-    const c = G.ctx, st = ctrl.st, hm = CTRL.OPT.handMode, h = 34, y = H - 37; let x = 8;
+  // ---- 키 안내(조작 D안): 플레이 구역의 왼쪽에 반투명하게 세로로 둔다("보고 싶으면 보는" 안내). 차트 구역이 왼쪽에 붙어 있으면 오른쪽으로 간다. 키 안내 동작(BIND guide)으로 가린다.
+  // 키캡 = 지금 설정된 입력(실제로 누르고 있는 칸 우선), 옆 = 동작 이름과 그 손발의 상태. 손 선택 2번에서는 지금 추천된 손의 색을 쓴다
+  const GD = { rect: null }, HELP = { body: [], h: 112, rtx: W - 12 };
+  function drawGuide(helpShown) {
+    GD.rect = null; const c = G.ctx;
+    if (!LAY.guide) { const right = !!CZ && LAY.dock === 'left' && !LC.rect; c.globalAlpha = 0.5; G.text(`${BIND.first('guide')} ${ACT.name.guide}`, right ? PZ.x + PZ.w - 8 : PZ.x + 8, PZ.y + 14, { size: 8.5, weight: 700, align: right ? 'right' : 'left', color: '#1d1d1d', stroke: 'rgba(255,255,255,0.7)', strokeW: 2.5 }); c.globalAlpha = 1; return; } // 가렸을 때는 다시 켜는 키만 작게
+    const st = ctrl.st, hm = CTRL.OPT.handMode, h = 26, gap = 3;
     const stateOf = i => { const m = S.limb[i].mode; return m === 'reach' ? (i >= 2 && !st.manual[i] ? '자동' : '움직이는 중') : m === 'free' ? '힘 빠짐' : '붙음'; };
-    const chips = [], footDown = BIND.down('foot', G.input), past = phase === 'replay'; if (past) c.globalAlpha = 0.5;
+    const chips = [], footDown = BIND.down('foot', G.input), past = phase === 'replay';
     for (let k = 0; k < 4; k++) {
       const foot = k >= 2, flip = k % 2; let i, id, name;
       if (hm === 1) { i = k; id = flip ? 'sendR' : 'sendL'; name = ACT.LIMB[i].name; }
@@ -2540,20 +2578,21 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
       chips.push({ codes: foot ? [usedCode('foot'), usedCode(id, 'foot+' + id)] : [usedCode(id)], role: ACT.LIMB[i].role, name, sub: stateOf(i), on: S.limb[i].mode === 'reach', action: foot ? 'foot+' + id : id, down: foot ? undefined : BIND.down(id, G.input) && !footDown, forceDown: past ? false : undefined });
     }
     chips.push({ codes: [usedCode('power')], role: 'power', name: ACT.HOLD.power.name, sub: st.phase === 'charge' ? '모으는 중' : st.phase === 'throw' ? '던지는 중' : '떼면 던지기', on: !!last.power, action: 'power', down: BIND.down('power', G.input), forceDown: past ? false : undefined });
-    for (const ch of chips) {
-      const kw = keysW(ch.codes, h), tw = Math.max(G.textW(ch.name, 11.5, 800), G.textW(ch.sub, 9, 600)), w = 5 + kw + 4 + tw + 9, col = ROLE[ch.role];
-      c.beginPath(); G.roundRect(x, y + 3, w, h - 3, 8); c.fillStyle = 'rgba(28,35,29,0.9)'; c.fill(); c.strokeStyle = ch.on ? col : 'rgba(99,106,75,0.9)'; c.lineWidth = ch.on ? 2 : 1; c.stroke();
-      drawKeys(ch.codes, x + 5, y + 1, h, { role: ch.role, where: 'bar', action: ch.action, down: ch.down, forceDown: ch.forceDown });
-      G.text(ch.name, x + 5 + kw + 4, y + 17, { size: 11.5, weight: 800, color: INK }); G.text(ch.sub, x + 5 + kw + 4, y + 29, { size: 9, weight: 600, color: ch.on ? col : DIM });
-      x += w + 6;
-    }
-    c.globalAlpha = 1;
+    const kwMax = Math.max(...chips.map(ch => keysW(ch.codes, h))), w = 5 + kwMax + 5 + Math.max(...chips.map(ch => Math.max(G.textW(ch.name, 10.5, 800), G.textW(ch.sub, 8.5, 600)))) + 8, total = chips.length * (h + gap) - gap + 13;
+    // 자리: 게임 화면 위에 남는 띠가 넉넉하면 그 띠에(게임 화면을 가리지 않는다), 아니면 조작 설명 칸 아래에. 오른쪽으로 갈 때는 과제 카드를 피한다
+    const right = !!CZ && LAY.dock === 'left', band = VW.y0 - PZ.y >= total + 10, x = right ? (band && LC.rect ? LC.rect.x - w - 8 : PZ.x + PZ.w - w - 8) : PZ.x + 8;
+    const y0 = band ? PZ.y + 6 : right ? (LC.rect ? LC.rect.y + LC.rect.h + 6 : VW.y0 + 64 * VW.s) : helpShown ? VW.y0 + HELP.h * VW.s + 4 : PZ.y + 8, y = Math.max(PZ.y + 4, Math.min(PZ.y + PZ.h - total - 8, y0));
+    const alpha = past ? 0.35 : 0.62; GD.rect = { x, y, w, h: total, right, alpha }; c.save(); c.globalAlpha = alpha;
+    G.text(`${BIND.first('guide')} ${ACT.name.guide} 가리기`, right ? x + w : x, y + 8, { size: 8.5, weight: 700, align: right ? 'right' : 'left', color: '#1d1d1d', stroke: 'rgba(255,255,255,0.7)', strokeW: 2.5 });
+    chips.forEach((ch, k) => { const yy = y + 13 + k * (h + gap), col = ROLE[ch.role];
+      c.beginPath(); G.roundRect(x, yy, w, h, 7); c.fillStyle = 'rgba(28,35,29,0.9)'; c.fill(); c.strokeStyle = ch.on ? col : 'rgba(99,106,75,0.9)'; c.lineWidth = ch.on ? 2 : 1; c.stroke();
+      drawKeys(ch.codes, x + 5 + (kwMax - keysW(ch.codes, h)), yy, h, { role: ch.role, where: 'bar', action: ch.action, down: ch.down, forceDown: ch.forceDown });
+      G.text(ch.name, x + 5 + kwMax + 5, yy + 11.5, { size: 10.5, weight: 800, color: INK }); G.text(ch.sub, x + 5 + kwMax + 5, yy + 22, { size: 8.5, weight: 600, color: ch.on ? col : DIM }); });
+    c.restore();
   }
+  const cardY = () => VW.y0 - PZ.y >= 100 ? PZ.y + 8 : VW.y0 + 64 * VW.s; // 과제 카드의 위쪽 자리: 게임 화면 위에 띠가 남으면 그 띠부터, 아니면 오른쪽 위 글 아래
   function drawLessonCard() {
-    const l = lesson(); if (!l) return; const x = 726, w = 226, y = 64, c = G.ctx, last = lessonI === LESSON.LIST.length - 1, rows = [{ t: `연습 ${lessonI + 1}/${LESSON.LIST.length}`, s: 9, wt: 800, c: 'rgba(255,214,102,0.9)' }];
-    for (const ln of wrap(l.name, w - 24, 13, 800)) rows.push({ t: ln, s: 13, wt: 800, c: '#fff' });
-    for (const ln of wrap(l.goal, w - 24, 10)) rows.push({ t: ln, s: 10, wt: 600, c: 'rgba(255,255,255,0.88)' });
-    if (chartMode !== 'full') for (const tip of l.tips) wrap(tip, w - 34, 9.5, 500).forEach((ln, k) => rows.push({ t: ln, s: 9.5, wt: 500, c: 'rgba(255,255,255,0.62)', dot: k === 0, in: 10 }));
+    const l = lesson(); if (!l) return; const w = 226, x = PZ.x + PZ.w - w - 8, y = cardY(), c = G.ctx, last = lessonI === LESSON.LIST.length - 1;
     const st = demo ? { t: '시범 재생 중 · 적어 둔 입력을 그대로 넣는 것(사람 손 아님)', c: '#7fd4ff' }
       : lessonOkT !== null ? { t: `성공! · ${BIND.first('reset')} 다시 · ${BIND.first('lessonNext')} ${last ? '자유 연습으로' : '다음 과제'}`, c: '#7dff9a' }
       : { t: `${demoMsgT > 0 ? '직접 해 보세요 · ' : ''}${BIND.first('demo')} 시범 · ${BIND.first('reset')} 다시 · ${BIND.first('lessonNext')} ${last ? '자유 연습(조작 설명)' : '다음'} · ${BIND.first('ghost')} 유령 ${ghostOn ? '켬' : '끔'} · ${BIND.first('settings')} 키 설정`, c: 'rgba(255,255,255,0.8)' };
@@ -2563,8 +2602,14 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     if (diff.length) info.push(`내 설정이 시범 기준과 다름: ${diff.join(', ')} → 같은 입력이라도 결과가 다를 수 있다. 시범·유령은 기준 설정으로 움직인다`);
     if (O.handMode === 2) info.push('손 선택 2번: 요령의 좌클릭·우클릭은 왼손·오른손 보내기를 뜻한다(추천 손 입력으로 그 손을 보낸다)');
     if (lockT > 0) info.push(`과제 중에는 몸·물리·벽·조작 방식·도약 연결을 바꿀 수 없다. ${BIND.first('lessonNext')}로 자유 연습에 나가서 바꾼다`);
-    if (chartMode !== 'full') for (const t of info) wrap(t, w - 24, 9, 600).forEach(ln => rows.push({ t: ln, s: 9, wt: 600, c: '#ffd9a0' }));
-    const foot = wrap(st.t, w - 24, 9.5, 700), h = 10 + rows.reduce((a, r) => a + r.s + 4, 0) + 10 + foot.length * 13 + 6;
+    const foot = wrap(st.t, w - 24, 9.5, 700), build = (tips, notes) => { const rows = [{ t: `연습 ${lessonI + 1}/${LESSON.LIST.length}`, s: 9, wt: 800, c: 'rgba(255,214,102,0.9)' }];
+      for (const ln of wrap(l.name, w - 24, 13, 800)) rows.push({ t: ln, s: 13, wt: 800, c: '#fff' });
+      for (const ln of wrap(l.goal, w - 24, 10)) rows.push({ t: ln, s: 10, wt: 600, c: 'rgba(255,255,255,0.88)' });
+      if (tips) for (const tip of l.tips) wrap(tip, w - 34, 9.5, 500).forEach((ln, k) => rows.push({ t: ln, s: 9.5, wt: 500, c: 'rgba(255,255,255,0.62)', dot: k === 0, in: 10 }));
+      if (notes) for (const t of info) wrap(t, w - 24, 9, 600).forEach(ln => rows.push({ t: ln, s: 9, wt: 600, c: '#ffd9a0' }));
+      return { rows, h: 10 + rows.reduce((a, r) => a + r.s + 4, 0) + 10 + foot.length * 13 + 6 }; };
+    // 플레이 구역에 다 들어가지 않으면 요령부터, 그다음 설정 안내를 접는다(차트 구역이 클 때)
+    const room = PZ.y + PZ.h - 8 - y, pick = [build(true, true), build(false, true), build(false, false)], { rows, h } = pick.find(q => q.h <= room) || pick[2];
     LC.rect = { x, y, w, h }; glass(c, x, y, w, h); c.fillStyle = '#ffd166'; c.beginPath(); G.roundRect(x, y + 12, 3, 30, 2); c.fill();
     let yy = y + 10; for (const r of rows) { if (r.dot) G.circle(x + 15, yy + r.s - 3.5, 1.6, 'rgba(255,214,102,0.8)'); G.text(r.t, x + 12 + (r.in || 0), yy + r.s, { size: r.s, weight: r.wt, color: r.c }); yy += r.s + 4; }
     c.fillStyle = 'rgba(255,255,255,0.08)'; c.fillRect(x + 12, yy + 4, w - 24, 1); yy += 10;
@@ -2612,7 +2657,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     const warns = fx.filter(f => f.kind === 'text').slice(-3);
     for (const f of warns) rows.push({ t: f.text, c: '#ff8a8a', a: Math.min(1, f.t * 2) });
     if (!rows.length && !meter) return;
-    const lh = 18, w = Math.max(250, ...rows.map(r => G.textW(r.t, 12, 700) + 16)), h = rows.length * lh + (meter ? 30 : 0) + 8, x = 10, y = Math.min(H - 44, chartMode === 'full' ? tlTop - 4 : H) - h;
+    const lh = 18, w = Math.max(250, ...rows.map(r => G.textW(r.t, 12, 700) + 16)), h = rows.length * lh + (meter ? 30 : 0) + 8, x = PZ.x + 10, y = PZ.y + PZ.h - 8 - h;
     G.panel(x, y, w, h, 'rgba(10,12,16,0.82)');
     let yy = y + 6;
     if (meter) { const c = G.ctx; G.text(meter.text, x + 8, yy + 11, { size: 12, weight: 800, color: '#ffd166' }); c.fillStyle = '#ffd166'; c.fillRect(x + 8, yy + 16, 150 * meter.pw, 6); c.fillStyle = '#7dffb0'; c.fillRect(x + 8, yy + 24, 150 * meter.act, 3);
@@ -2623,8 +2668,9 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     const l = plog, avg = l.lag.length ? l.lag.reduce((a, b) => a + b, 0) / l.lag.length : 0, mx = l.lag.length ? Math.max(...l.lag) : 0, slowN = l.lag.filter(x => x > 0.15).length;
     const rows = ['플레이 기록 (새로고침하면 지워짐)', `손발 입력 ${l.sends}회`, `손 선택 헷갈림 추정 ${l.confuse}회 (0.8초 안에 다른 손으로 바꾸거나 취소)`, `미끄러져 놓침 ${l.slips}회`, `손을 보낸 뒤 1.5초 안에 떨어짐 ${l.fallAfterSend}회`,
       `입력 → 손이 떨어지기까지 평균 ${(avg * 1000).toFixed(0)}ms · 최대 ${(mx * 1000).toFixed(0)}ms · 0.15초 넘음 ${slowN}회`];
-    G.panel(W - 470, 120, 460, 20 + rows.length * 18, 'rgba(10,12,16,0.85)');
-    rows.forEach((t, k) => G.text(t, W - 460, 138 + k * 18, { size: 12, weight: k ? 600 : 800, color: k ? '#e8e8e4' : '#ffd166' }));
+    const lx = Math.max(PZ.x + 4, PZ.x + PZ.w - 470), ly = PZ.y + Math.min(120, Math.max(4, PZ.h - 40 - rows.length * 18));
+    G.panel(lx, ly, 460, 20 + rows.length * 18, 'rgba(10,12,16,0.85)');
+    rows.forEach((t, k) => G.text(t, lx + 10, ly + 18 + k * 18, { size: 12, weight: k ? 600 : 800, color: k ? '#e8e8e4' : '#ffd166' }));
   }
   // ---- 키 설정 화면(배틀그라운드식): 동작마다 두 칸, 칸을 고르고 새 키나 마우스 버튼을 누른다
   // 동작이 많아 두 쪽으로 나눈다: 1쪽 = 조작, 2쪽 = 연습·리플레이·실험실
@@ -2700,9 +2746,9 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     G.text(ui.msg || (anyCf ? `겹친 입력이 있다(빨간 칸). 같은 입력을 두 동작에 쓰면 둘 다 함께 실행된다` : '겹친 입력 없음'), W / 2, L.by + 48, { size: 12, weight: 700, align: 'center', color: ui.msg.startsWith('주의') || (!ui.msg && anyCf) ? '#ff8a8a' : '#a8e6b8' });
   }
   function draw(c) {
-    HUD.hits = []; CH.rect = null; CH.plot = null; CH.tools = null; CH.bar = null; LC.rect = null; const liveView = phase !== 'replay'; // 리플레이에서는 그때의 몸만 보인다(효과·이륙 표시·도움 표시는 지금 것이라 감춘다)
+    relayout(); HUD.hits = []; CH.rect = null; CH.plot = null; CH.tools = null; CH.bar = null; LC.rect = null; const liveView = phase !== 'replay'; // 리플레이에서는 그때의 몸만 보인다(효과·이륙 표시·도움 표시는 지금 것이라 감춘다)
     KEYS.log = []; // 이번 프레임에 그린 키캡 목록(시험에서 "화면의 키캡이 지금 설정과 같은지" 확인하는 데 쓴다)
-    c.save(); c.translate(-OX, -OY);
+    c.save(); c.beginPath(); c.rect(PZ.x, PZ.y, PZ.w, PZ.h); c.clip(); c.translate(VW.x0, VW.y0); c.scale(VW.s, VW.s); c.translate(-OX, -OY); // 게임 화면은 플레이 구역 안에만 그린다
     drawWorld(c); drawGhost(c); drawBody(c);
     for (const f of liveView ? fx : []) {
       if (f.kind === 'ring') G.circle(f.x, f.y, 12 + (0.4 - f.t) * 40, null, `rgba(255,255,255,${Math.min(1, f.t * 3)})`, 3);
@@ -2745,33 +2791,39 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
       `좌클릭(${kn(K.lh)}) 왼손 · 우클릭(${kn(K.rh)}) 오른손 · ${kn(K.lf)} 왼발 · ${kn(K.rf)} 오른발 : 누르고 있는 동안 커서를 따라오고, 떼는 순간 붙는다`,
       `${sp} : 붙은 팔다리로 밀기·당기기 (커서 쪽)`, '',
     ];
-    if ((lesson() || phase !== 'live') && !bot) { /* 과제 중과 결과·리플레이 화면에서는 조작 설명 칸을 그리지 않는다(벽과 목표 턱을 가리지 않게). 설명은 자유 연습 화면에 있다 */ }
-    else {
-      G.panel(8, 6, 716, 84, 'rgba(255,255,255,0.82)');
-      G.text(`조작 ${CTRL.MODES[mode]}`, 18, 25, { size: 14, weight: 800, color: '#222' });
-      lines.forEach((t, k) => G.text(t, 18, 43 + k * 15, { size: 11.5, color: '#222', weight: 600 }));
-      G.text(`${BIND.first('demo')} 시범 · ${BIND.first('lessonNext')} 연습 과제 · ${BIND.first('chart')} 입력 비교 · ${BIND.first('scheme')} 조작 방식 · ${BIND.first('reset')} 다시 · ${BIND.first('st1')}~${BIND.first('st5')} 시작 자세 · ${BIND.first('slow')} 느리게 · ${BIND.first('couple')} 도약 연결 · ${BIND.first('layout')} 연습 배치 · ${BIND.first('phys')} 물리 ${v05 ? 'v0.6' : 'v0.4'} · ${BIND.first('body')} 몸 비율 · ${BIND.label('settings')} 키 설정`, 18, 104, { size: 11, color: '#333', weight: 600, stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
+    // 게임 화면에 붙은 안내(조작 설명 칸, 오른쪽 위 글, 띠)는 게임 화면과 같은 배율로 그린다 → 벽·목표를 가리는 정도가 화면을 나누기 전과 같다
+    const helpShown = !((lesson() || phase !== 'live') && !bot), body = []; // 조작 D안의 설명은 칸 너비를 넘지 않게 항목(·) 단위로 줄을 나눈다. HELP.h = 설명 칸과 그 아래 한 줄까지의 높이
+    if (mode === 'intent') { let cur = ''; for (const sg of lines.flatMap(t => t.split('   ')).flatMap(t => t.split(' · '))) { const nx = cur ? cur + ' · ' + sg : sg; if (G.textW(nx, 11, 600) > 698 && cur) { body.push(cur); cur = sg; } else cur = nx; } if (cur) body.push(cur); } else body.push(...lines.filter(Boolean));
+    HELP.body = body; HELP.h = Math.max(110, 6 + 22 + body.length * 13 + 6 + 22); // 과제 중과 결과·리플레이 화면에서는 조작 설명 칸을 그리지 않는다(벽과 목표 턱을 가리지 않게). 설명은 자유 연습 화면에 있다
+    c.save(); c.beginPath(); c.rect(PZ.x, PZ.y, PZ.w, PZ.h); c.clip(); c.translate(VW.x0, VW.y0); c.scale(VW.s, VW.s);
+    if (helpShown) {
+      G.panel(8, 6, 716, HELP.h - 26, 'rgba(255,255,255,0.82)');
+      G.text(`조작 ${CTRL.MODES[mode]}`, 18, 24, { size: 14, weight: 800, color: '#222' });
+      HELP.body.forEach((t, k) => G.text(t, 18, 39 + k * 13, { size: mode === 'intent' ? 11 : 11.5, color: '#222', weight: 600 }));
+      G.text(`${BIND.first('demo')} 시범 · ${BIND.first('lessonNext')} 연습 과제 · ${BIND.first('chart')} 입력 비교 · ${BIND.first('scheme')} 조작 방식 · ${BIND.first('reset')} 다시 · ${BIND.first('st1')}~${BIND.first('st5')} 시작 자세 · ${BIND.first('slow')} 느리게 · ${BIND.first('couple')} 도약 연결 · ${BIND.first('layout')} 연습 배치 · ${BIND.first('phys')} 물리 ${v05 ? 'v0.6' : 'v0.4'} · ${BIND.first('body')} 몸 비율 · ${BIND.label('settings')} 키 설정`, 18, HELP.h - 6, { size: 11, color: '#333', weight: 600, stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
     }
-    G.text(bot ? bot.def.title : `${station}. ${PH.STATIONS[station].name}   시도 ${tries}${slow ? '   느리게 ×0.5' : ''}`, W - 12, 24, { size: 13, align: 'right', color: '#222', weight: 800, stroke: 'rgba(255,255,255,0.8)' });
-    G.text(`${bot ? '자동 시연(사람과 같은 입력만 사용) · ' : ''}도약 연결 ${C.COUPLE ? '켬' : '끔'} · ${layout ? '연습 배치' : '기존 벽'}`, W - 12, 42, { size: 11, align: 'right', color: '#333', stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
-    G.text(`몸: ${PH.BODIES[PH.getBody()].short} (${BIND.first('body')}로 바꿈)`, W - 12, 56, { size: 11, align: 'right', color: '#333', stroke: 'rgba(255,255,255,0.8)', strokeW: 3 }); // 지금 몸(도움말 칸과 겹치지 않게 다음 줄)
-    if (mode === 'intent' && !bot) drawKeyBar(); // 조작 D안: 키캡으로 된 키 안내
-    else {
+    const rtx = HELP.rtx = lesson() && mode === 'intent' && !bot && cardY() < VW.y0 + 60 * VW.s ? Math.min(W - 12, (PZ.x + PZ.w - 226 - 16 - VW.x0) / VW.s) : W - 12; // 과제 카드가 이 글의 높이까지 올라와 있으면 카드 왼쪽으로 비킨다
+    G.text(bot ? bot.def.title : `${station}. ${PH.STATIONS[station].name}   시도 ${tries}${slow ? '   느리게 ×0.5' : ''}`, rtx, 24, { size: 13, align: 'right', color: '#222', weight: 800, stroke: 'rgba(255,255,255,0.8)' });
+    G.text(`${bot ? '자동 시연(사람과 같은 입력만 사용) · ' : ''}도약 연결 ${C.COUPLE ? '켬' : '끔'} · ${layout ? '연습 배치' : '기존 벽'}`, rtx, 42, { size: 11, align: 'right', color: '#333', stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
+    G.text(`몸: ${PH.BODIES[PH.getBody()].short} (${BIND.first('body')}로 바꿈)`, rtx, 56, { size: 11, align: 'right', color: '#333', stroke: 'rgba(255,255,255,0.8)', strokeW: 3 }); // 지금 몸(도움말 칸과 겹치지 않게 다음 줄)
+    if (endT > 0) G.banner('매트에 떨어짐 — 바로 다시', failText(), 'fail', 380);
+    if (endT > 0 && hint()) { const t = hint(), w = G.textW(t, 14, 800) + 28, hy = 458; G.panel(W / 2 - w / 2, hy, w, 28, 'rgba(255,214,102,0.96)'); G.text(t, W / 2, hy + 19, { size: 14, weight: 800, align: 'center', color: '#111' }); }
+    else if (S.won && !lesson() && !(mode === 'intent' && !bot)) G.banner('목표 도달!', `${S.t.toFixed(1)}초 · 시도 ${tries} — R 또는 스페이스로 다시`, 'win', 400);
+    else if (bot && bot.m.done) G.banner('건너가서 안정됨', '두 손 + 한 발로 버티는 중', 'win', 440);
+    c.restore();
+    if (!(mode === 'intent' && !bot)) { // 옛 조작(A·B·C안)과 자동 시연: 아래 띠 그대로
       const sh = t => t.replace(/^(왼|오른)/, '').replace('클릭', ''), kname = mode === 'intent' ? (O.handMode === 1 ? [B1('sendL'), B1('sendR'), sh(B1('foot')) + '+' + sh(B1('sendL')), sh(B1('foot')) + '+' + sh(B1('sendR'))] : ['추천/다른', '추천/다른', sh(B1('foot')) + '+손', sh(B1('foot')) + '+손']) : mode === 'hold' ? ['좌클릭', '우클릭', kn(K.lf), kn(K.rf)] : [kn(K.lh), kn(K.rh), kn(K.lf), kn(K.rf)];
       for (let i = 0; i < 4; i++) { const m = S.limb[i].mode, on = m === 'reach'; key(c, 10 + i * 126, LIMB[i], on ? (mode === 'intent' && i >= 2 && !ctrl.st.manual[i] ? '자동' : '움직이는 중') : m === 'free' ? '힘 빠짐' : '붙음', on, COL[i], kname[i]); }
       key(c, 514, mode === 'intent' ? '모으기·던지기' : '힘주기', '', last.power, '#ffd166', mode === 'intent' ? B1('power') : sp);
     }
-    if (mode === 'intent' && recent.length && !ui) recent.forEach((r, k) => { const y = Math.min(H - 50, chartMode === 'full' ? tlTop - 8 : H) - (recent.length - 1 - k) * 20, w = G.textW(r.text, 12, 800) + 14; G.ctx.globalAlpha = Math.min(1, r.t * 2); G.panel(W - 12 - w, y - 15, w, 19, 'rgba(10,12,16,0.8)'); G.text(r.text, W - 12 - w + 7, y, { size: 12, weight: 800, color: '#ffd166' }); G.ctx.globalAlpha = 1; });
-    tlTop = 540; if (mode === 'intent' && !bot && !ui) { drawLessonCard(); drawChartPanel(); drawResult(); }
+    if (mode === 'intent' && recent.length && !ui) recent.forEach((r, k) => { const y = PZ.y + PZ.h - 26 - (recent.length - 1 - k) * 20, w = G.textW(r.text, 12, 800) + 14, rx = PZ.x + PZ.w - 12; G.ctx.globalAlpha = Math.min(1, r.t * 2); G.panel(rx - w, y - 15, w, 19, 'rgba(10,12,16,0.8)'); G.text(r.text, rx - w + 7, y, { size: 12, weight: 800, color: '#ffd166' }); G.ctx.globalAlpha = 1; });
+    GD.rect = null; if (mode === 'intent' && !bot && !ui) { drawLessonCard(); drawGuide(helpShown); drawChartPanel(); drawResult(); }
     if (mode === 'intent' && !bot && !ui && !(endT > 0) && phase === 'live') drawStatus(); // 떨어진 뒤에는 안내 띠와 겹치지 않게 상태 칸을 숨긴다
     if (showLog && mode === 'intent') drawLog();
+    G.text(`실험 빌드 ${BUILD}`, PZ.x + PZ.w - 10, CH.tools && CH.tools.y > PZ.y + PZ.h / 2 ? CH.tools.y - 6 : PZ.y + PZ.h - 8, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
+    drawDockPreview();
     if (ui) drawSettings();
     if (remap) { G.panel(W / 2 - 220, 200, 440, 70, 'rgba(20,30,60,0.95)', '#fff'); G.text(`키 다시 지정 (${remap.i + 1}/${remap.list.length}) — Esc 그만`, W / 2, 226, { size: 13, align: 'center', weight: 600 }); G.text(`「${CTRL.LABEL[remap.list[remap.i]]}」에 쓸 키를 누르세요`, W / 2, 252, { size: 18, align: 'center', weight: 800 }); }
-    G.text(`실험 빌드 ${BUILD}`, W - 10, H - 10, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
-    if (endT > 0) G.banner('매트에 떨어짐 — 바로 다시', failText(), 'fail', 380);
-    if (endT > 0 && hint()) { const t = hint(), w = G.textW(t, 14, 800) + 28; const hy = Math.min(458, tlTop - 34); G.panel(W / 2 - w / 2, hy, w, 28, 'rgba(255,214,102,0.96)'); G.text(t, W / 2, hy + 19, { size: 14, weight: 800, align: 'center', color: '#111' }); }
-    else if (S.won && !lesson() && !(mode === 'intent' && !bot)) G.banner('목표 도달!', `${S.t.toFixed(1)}초 · 시도 ${tries} — R 또는 스페이스로 다시`, 'win', 400);
-    else if (bot && bot.m.done) G.banner('건너가서 안정됨', '두 손 + 한 발로 버티는 중', 'win', 440);
   }
   G.run(game, { title: '등반 조작 실험실' });
 })();

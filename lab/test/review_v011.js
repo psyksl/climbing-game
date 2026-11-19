@@ -22,7 +22,10 @@ const LAB = process.env.LAB || path.join(__dirname, '..'), url = 'file://' + pat
   const open = async q => { const pg = await b.newPage({ viewport: { width: 1280, height: 720 } }); pg.on('pageerror', e => errs.push(e.message)); await pg.goto(url + (q || '')); await pg.waitForTimeout(600); return pg; };
   const st = pg => pg.evaluate(() => ({ p: window.__lab.practice(), taps: window.__lab.lesson().rec.taps.length, ev: window.__lab.lesson().rec.ev.length, li: window.__lab.lesson().i, ui: !!window.__lab.ui(), ok: window.__lab.lesson().ok, t0: window.__lab.lesson().rec.t0, mode: window.__lab.chart().mode }));
   const keys = pg => pg.evaluate(() => window.__lab.keys());
-  const tryL4 = async (pg, hold) => { await pg.mouse.move(575 * K, 218 * K, { steps: 6 }); await pg.waitForTimeout(200); await pg.mouse.click(575 * K, 218 * K, { button: 'right' }); await pg.waitForTimeout(900); await pg.keyboard.down('Space'); await pg.waitForTimeout(140); await pg.mouse.click(575 * K, 218 * K); await pg.waitForTimeout(hold - 140); await pg.keyboard.up('Space'); };
+  // 게임 화면 좌표(960×540 기준) → 지금 화면의 자리(v0.12.0부터 차트 구역이 켜져 있으면 게임 화면이 줄어 있다. 옛 빌드에는 view가 없다)
+  const g2s = async (pg, x, y) => { const v = await pg.evaluate(() => window.__lab.view ? window.__lab.view() : { x0: 0, y0: 0, s: 1 }); return [(v.x0 + x * v.s) * K, (v.y0 + y * v.s) * K]; };
+  const gmove = async (pg, x, y, o) => { const q = await g2s(pg, x, y); return pg.mouse.move(q[0], q[1], o); }, gclick = async (pg, x, y, o) => { const q = await g2s(pg, x, y); return pg.mouse.click(q[0], q[1], o); };
+  const tryL4 = async (pg, hold) => { await gmove(pg, 575, 218, { steps: 6 }); await pg.waitForTimeout(200); await gclick(pg, 575, 218, { button: 'right' }); await pg.waitForTimeout(900); await pg.keyboard.down('Space'); await pg.waitForTimeout(140); await gclick(pg, 575, 218); await pg.waitForTimeout(hold - 140); await pg.keyboard.up('Space'); };
   const lesson4 = async pg => { for (let i = 0; i < 4; i++) { await pg.keyboard.press('KeyO'); await pg.waitForTimeout(140); } };
 
   // ── R1: 리플레이 키를 다른 동작의 키로 다시 지정해도 그 동작이 함께 실행되지 않고, 겹침으로 알린다
@@ -43,9 +46,9 @@ const LAB = process.env.LAB || path.join(__dirname, '..'), url = 'file://' + pat
       await pg.keyboard.press('KeyR'); await pg.waitForTimeout(250); check('R1 기본값에서는 R이 다시하기', (await st(pg)).p.phase === 'live'); await pg.close(); } }
 
   // ── R2: 지난 기록은 그때 실제로 누른 키로 보인다(지금 배정이 바뀌어도)
-  { const pg = await open('?chart=full'); await pg.mouse.move(250 * K, 170 * K); await pg.waitForTimeout(150);
+  { const pg = await open('?chart=full'); await gmove(pg, 250, 170); await pg.waitForTimeout(150);
     await pg.keyboard.down('Space'); await pg.waitForTimeout(300); await pg.keyboard.up('Space'); await pg.waitForTimeout(300);
-    await pg.keyboard.down('KeyQ'); await pg.waitForTimeout(60); await pg.keyboard.up('KeyQ'); await pg.waitForTimeout(500); await pg.mouse.click(250 * K, 170 * K); await pg.waitForTimeout(400);
+    await pg.keyboard.down('KeyQ'); await pg.waitForTimeout(60); await pg.keyboard.up('KeyQ'); await pg.waitForTimeout(500); await gclick(pg, 250, 170); await pg.waitForTimeout(400);
     await pg.evaluate(() => { BIND.set('power', 0, 'KeyJ'); }); await pg.waitForTimeout(150);
     let ks = await keys(pg), lane = ks.filter(k => k.where === 'chart' && k.action === 'power'), bar = ks.filter(k => k.where === 'bar' && k.action === 'power');
     check('R2 Space로 모은 기록: 모으기를 J로 바꿔도 차트는 Space를 보인다', lane.length === 1 && lane[0].code === 'Space', lane.map(k => k.code).join(' '));

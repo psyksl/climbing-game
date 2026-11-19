@@ -5,11 +5,17 @@ const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), shot = pro
 (async () => {
   const b = await chromium.launch(); let fail = 0; const check = (n, c, x = '') => { console.log(`${c ? 'PASS' : 'FAIL'}  ${n} ${x}`); if (!c) fail++; };
   const pg = await b.newPage({ viewport: { width: 960, height: 540 } }); const errs = []; pg.on('pageerror', e => errs.push(e.message));
-  await pg.goto(url); await pg.waitForTimeout(400);
+  await pg.goto(url); await pg.waitForTimeout(400); const LIST_N = await pg.evaluate(() => LESSON.LIST.length);
+  // 게임 화면 좌표(960×540 기준) → 지금 화면의 자리(차트 구역이 켜져 있으면 게임 화면이 줄어 있다)
+  const g2s = async (x, y) => { const v = await pg.evaluate(() => window.__lab.view()); return [v.x0 + x * v.s, v.y0 + y * v.s]; }, gmove = async (x, y, o) => { const q = await g2s(x, y); return pg.mouse.move(q[0], q[1], o); }, gclick = async (x, y, o) => { const q = await g2s(x, y); return pg.mouse.click(q[0], q[1], o); };
   const names = await pg.evaluate(() => LESSON.LIST.map(l => [l.name, l.T]));
-  // 시범이 겨누는 곳은 모두 화면 안, 그리고 과제 카드(오른쪽)와 타임라인 띠(아래)에 가려지지 않는 곳이어야 한다(v0.9.0에서는 5·6번 과제의 높은 턱이 화면 밖에 있었다)
-  const off = await pg.evaluate(() => LESSON.LIST.flatMap(l => l.steps.filter(st => st[1] === 'aim').map(st => ({ id: l.id, x: st[2] + 30, y: st[3] - (l.view !== undefined ? l.view : 130) })).filter(q => q.x < 8 || q.x > 720 || q.y < 30 || q.y > 400)));
-  check('시범이 겨누는 곳이 모두 화면 안이고 가려지지 않는다', off.length === 0, off.map(q => `${q.id}(${q.x},${q.y})`).join(' '));
+  // 시범이 겨누는 곳은 모두 플레이 구역 안, 그리고 과제 카드에 가려지지 않는 곳이어야 한다(v0.9.0에서는 5·6번 과제의 높은 턱이 화면 밖에 있었다).
+  // 과제마다 실제로 들어가서 그 과제의 화면 기준·배치로 잰다(차트 구역은 기본값인 아래 붙임. 네 방향 모두는 layout_browser.js가 본다)
+  const off = []; for (let i = 0; i < LIST_N; i++) { await pg.keyboard.press('KeyO'); await pg.waitForTimeout(160);
+    off.push(...await pg.evaluate(() => { const L = window.__lab, l = LESSON.LIST[L.lesson().i], v = L.view(), card = L.practice().lessonCard, inR = (r, p) => !!r && p[0] >= r.x && p[0] <= r.x + r.w && p[1] >= r.y && p[1] <= r.y + r.h;
+      return l.steps.filter(st => st[1] === 'aim').map(st => ({ id: l.id, p: L.toScreen(st[2], st[3]) })).filter(q => q.p[0] < v.play.x + 4 || q.p[0] > v.play.x + v.play.w - 4 || q.p[1] < v.play.y + 4 || q.p[1] > v.play.y + v.play.h - 4 || inR(card, q.p)).map(q => ({ id: q.id, x: Math.round(q.p[0]), y: Math.round(q.p[1]) })); })); }
+  await pg.keyboard.press('KeyO'); await pg.waitForTimeout(160); // 자유 연습으로
+  check('시범이 겨누는 곳이 모두 플레이 구역 안이고 과제 카드에 가려지지 않는다', off.length === 0, off.map(q => `${q.id}(${q.x},${q.y})`).join(' '));
   for (let i = 0; i < names.length; i++) {
     await pg.keyboard.press('KeyO'); await pg.waitForTimeout(150);
     const li = await pg.evaluate(() => window.__lab.lesson().i); if (li !== i) { check(`과제 ${i + 1} 열기`, false, `지금 ${li}`); continue; }
@@ -45,8 +51,8 @@ const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), shot = pro
   check('마지막 과제 다음은 자유 연습', (await pg.evaluate(() => window.__lab.lesson().i)) === -1);
   // 실제 마우스·키 입력으로 한 시도의 기록(조준점 이동 포함)을 다시 계산하면 화면의 몸과 같은 자리에 온다 → 저장·재생에 쓸 수 있는 기록이다
   for (let i = 0; i < 4; i++) { await pg.keyboard.press('KeyO'); await pg.waitForTimeout(140); }
-  await pg.mouse.move(300, 300); await pg.mouse.move(575, 218, { steps: 12 }); await pg.waitForTimeout(200); await pg.mouse.click(575, 218, { button: 'right' }); await pg.waitForTimeout(900);
-  await pg.keyboard.down('Space'); await pg.waitForTimeout(140); await pg.mouse.click(577, 220); await pg.waitForTimeout(330); await pg.keyboard.up('Space'); await pg.waitForTimeout(700);
+  await gmove(300, 300); await gmove(575, 218, { steps: 12 }); await pg.waitForTimeout(200); await gclick(575, 218, { button: 'right' }); await pg.waitForTimeout(900);
+  await pg.keyboard.down('Space'); await pg.waitForTimeout(140); await gclick(577, 220); await pg.waitForTimeout(330); await pg.keyboard.up('Space'); await pg.waitForTimeout(700);
   const rp = await pg.evaluate(() => { const lab = window.__lab, S = lab.s, rec = lab.lesson().rec, s2 = PH.create(S.world, S.station), ctl = CTRL.make('intent'), pl = LESSON.player({ steps: LESSON.toSteps(rec) });
     const d0 = Math.max(...s2.p.map((q, i) => Math.hypot(q.x - rec.meta.start[i][0], q.y - rec.meta.start[i][1])));
     while (s2.t < S.t - 1e-9) PH.step(s2, ctl.step(s2, pl.step(s2.t), 1 / 120), 1 / 120);

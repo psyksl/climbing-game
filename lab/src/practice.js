@@ -3,7 +3,7 @@
 //            정해 둔 시간(기본 2분)까지만 연속으로 적고, 리플레이는 그 연속 구간만 재생한다
 //   clock  : 리플레이의 재생 시계(재생·멈춤, 시각 옮기기, 조금씩 넘기기, 속도)
 //   view   : 입력 비교 차트의 시야(보이는 시작 시각과 폭, 따라가기, 확대·축소, 옮기기, 전체 보기)
-//   zone·drag·fitRect : 창처럼 옮기고 가장자리로 크기를 바꾸는 사각형
+//   dockZones·dockTarget·splitSize·fitView·laneHeight : 화면을 차트 구역과 플레이 구역으로 나누는 계산(붙는 쪽, 경계선으로 크기 조절, 플레이 화면 맞춰 넣기, 줄 높이)
 // 연습 하나가 정해 주는 것은 벽·시작 자세·(있다면) 성공 조건뿐이다. 기록·끝난 뒤 화면(다시하기/리플레이)·차트는 모두 여기 부품으로 돌아간다
 'use strict';
 const PRACTICE = (() => {
@@ -42,7 +42,8 @@ const PRACTICE = (() => {
     const v = { start: 0, span: span0, span0, manual: false };
     const maxStart = end => Math.max(0, end - v.span * 0.25);
     v.reset = () => { v.start = 0; v.span = v.span0; v.manual = false; };
-    v.follow = (now, end) => { // 손으로 옮기지 않았다면 지금 시각을 따라간다
+    v.follow = (now, end, maxSpan) => { // 손으로 옮기지 않았다면: 기록이 길어질수록 시간축을 줄여 전체를 보이고(maxSpan까지), 그보다 길면 지금 시각을 따라간다
+      if (!v.manual && maxSpan) { const e = Math.max(end, now || 0); v.span = lim(e * 1.08 + 0.3, v.span0, Math.max(v.span0, maxSpan)); if (v.span >= e + 0.05) { v.start = 0; return; } } // 전체가 들어가는 동안에는 0초부터 보인다
       if (now !== null && !v.manual) { if (now - v.start > v.span * 0.88) v.start = now - v.span * 0.88; if (now < v.start) v.start = Math.max(0, now - v.span * 0.1); }
       v.start = lim(v.start, 0, maxStart(Math.max(end, now || 0))); };
     v.pan = (d, end) => { v.start = lim(v.start + d, 0, maxStart(end)); v.manual = true; };
@@ -50,23 +51,23 @@ const PRACTICE = (() => {
     v.fit = end => { v.start = 0; v.span = Math.max(1, end + 0.3); v.manual = true; };  // 전체 보기
     return v;
   }
-  // 사각형의 어느 곳을 잡았나: 가장자리(m px 안)는 크기 바꾸기, 안쪽은 옮기기, 밖은 null
-  function zone(r, x, y, m = 7) {
-    if (x < r.x - m || x > r.x + r.w + m || y < r.y - m || y > r.y + r.h + m) return null;
-    const z = { l: x < r.x + m, r: x > r.x + r.w - m, t: y < r.y + m, b: y > r.y + r.h - m }; z.edge = z.l || z.r || z.t || z.b; return z;
+  // ---- 화면 나누기: 차트 구역과 플레이 구역. dock = 차트 구역이 붙는 쪽(bottom·top·left·right), size = 그 구역의 높이(위·아래) 또는 너비(왼·오른쪽)
+  // line = 두 구역의 경계선(끌어서 구역 크기를 바꾸는 곳)
+  function dockZones(dock, size, W, H) {
+    if (dock === 'top') return { chart: { x: 0, y: 0, w: W, h: size }, play: { x: 0, y: size, w: W, h: H - size }, line: { x: 0, y: size, w: W, h: 0 }, vertical: false };
+    if (dock === 'left') return { chart: { x: 0, y: 0, w: size, h: H }, play: { x: size, y: 0, w: W - size, h: H }, line: { x: size, y: 0, w: 0, h: H }, vertical: true };
+    if (dock === 'right') return { chart: { x: W - size, y: 0, w: size, h: H }, play: { x: 0, y: 0, w: W - size, h: H }, line: { x: W - size, y: 0, w: 0, h: H }, vertical: true };
+    return { chart: { x: 0, y: H - size, w: W, h: size }, play: { x: 0, y: 0, w: W, h: H - size }, line: { x: 0, y: H - size, w: W, h: 0 }, vertical: false };
   }
-  const cursorOf = z => !z ? null : (z.l && z.t) || (z.r && z.b) ? 'nwse-resize' : (z.r && z.t) || (z.l && z.b) ? 'nesw-resize' : z.l || z.r ? 'ew-resize' : z.t || z.b ? 'ns-resize' : 'move';
-  // 잡은 곳(z)과 움직인 만큼(dx, dy)으로 새 사각형을 만든다. 최소 크기와 화면 안쪽을 지킨다
-  function drag(r0, z, dx, dy, min, box) {
-    let { x, y, w, h } = r0;
-    if (!z.edge) { x = lim(x + dx, box.x, box.x + box.w - w); y = lim(y + dy, box.y, box.y + box.h - h); return { x, y, w, h }; }
-    if (z.l) { const nx = lim(x + dx, box.x, x + w - min.w); w += x - nx; x = nx; }
-    if (z.r) w = lim(w + dx, min.w, box.x + box.w - x);
-    if (z.t) { const ny = lim(y + dy, box.y, y + h - min.h); h += y - ny; y = ny; }
-    if (z.b) h = lim(h + dy, min.h, box.y + box.h - y);
-    return { x, y, w, h };
-  }
-  function fitRect(r, min, box) { const w = lim(r.w, min.w, box.w), h = lim(r.h, min.h, box.h); return { x: lim(r.x, box.x, box.x + box.w - w), y: lim(r.y, box.y, box.y + box.h - h), w, h }; }
-  return { HZ, MAX_S, clone, track, clock, view, zone, cursorOf, drag, fitRect };
+  // 차트 구역을 끌어다 놓을 때: 마우스가 화면의 어느 변에 가장 가까운가(화면 크기에 견준 거리)
+  function dockTarget(x, y, W, H) { const d = { left: x / W, right: 1 - x / W, top: y / H, bottom: 1 - y / H }; return Object.keys(d).sort((a, b) => d[a] - d[b])[0]; }
+  // 경계선을 끌 때: 마우스 자리에 맞는 구역 크기(최소·최대를 지킨다)
+  function splitSize(dock, x, y, W, H, min, max) { return lim(dock === 'bottom' ? H - y : dock === 'top' ? y : dock === 'left' ? x : W - x, min, max); }
+  // 플레이 구역 안에 게임 화면(W×H)을 비율을 지켜 넣는다. s = 배율, (x0, y0) = 화면에서의 왼쪽 위.
+  // ay = 세로로 남는 자리를 위아래로 나누는 비율(0.5 = 가운데, 1 = 게임 화면을 아래에 붙이고 위를 비운다)
+  function fitView(play, W, H, ay = 0.5) { const s = Math.min(play.w / W, play.h / H); return { s, x0: play.x + (play.w - W * s) / 2, y0: play.y + (play.h - H * s) * ay }; }
+  // 차트 구역의 크기는 그대로 두고, 줄이 늘수록 줄 높이를 줄인다(가장 작게는 min, 줄이 적어도 max보다 크게 하지는 않는다)
+  function laneHeight(avail, n, min = 11, max = 50) { return lim(avail / Math.max(1, n), min, max); }
+  return { HZ, MAX_S, clone, track, clock, view, dockZones, dockTarget, splitSize, fitView, laneHeight };
 })();
 if (typeof module !== 'undefined') module.exports = PRACTICE;

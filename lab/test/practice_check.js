@@ -38,12 +38,18 @@ v.pan(-1, 5); const s1 = v.start; v.follow(6, 6); check('손으로 옮기면 더
 v.reset(); v.start = 2; v.zoom(0.5, 3, 10); check('확대: 기준 시각이 화면의 같은 자리에 머문다', Math.abs(v.span - 1.5) < 1e-9 && Math.abs((3 - v.start) / v.span - 1 / 3) < 1e-9, `시작 ${v.start.toFixed(2)} 폭 ${v.span}`);
 v.zoom(1e-9, 3, 10); check('확대 한계 0.5초', v.span === 0.5); v.fit(7.2); check('전체 보기: 0초부터 끝까지', v.start === 0 && Math.abs(v.span - 7.5) < 1e-9);
 v.pan(999, 7.2); check('끝 너머로는 옮기지 못한다', v.start <= 7.2);
-// 창 조작
-const r = { x: 100, y: 100, w: 300, h: 120 }, box = { x: 0, y: 0, w: 960, h: 540 }, min = { w: 200, h: 80 };
-check('잡는 곳: 모서리·변·안쪽·밖', P.cursorOf(P.zone(r, 101, 101)) === 'nwse-resize' && P.cursorOf(P.zone(r, 399, 160)) === 'ew-resize' && P.cursorOf(P.zone(r, 250, 219)) === 'ns-resize' && P.cursorOf(P.zone(r, 250, 160)) === 'move' && P.zone(r, 50, 50) === null && P.cursorOf(P.zone(r, 399, 101)) === 'nesw-resize');
-const mv = P.drag(r, P.zone(r, 250, 160), 2000, -2000, min, box); check('옮기기: 화면 밖으로 나가지 않는다', mv.x === 660 && mv.y === 0 && mv.w === 300 && mv.h === 120, JSON.stringify(mv));
-const rs = P.drag(r, P.zone(r, 399, 219), 100, 50, min, box); check('오른쪽 아래 모서리: 왼쪽 위는 그대로, 크기만 커진다', rs.x === 100 && rs.y === 100 && rs.w === 400 && rs.h === 170, JSON.stringify(rs));
-const rl = P.drag(r, P.zone(r, 101, 160), 500, 0, min, box); check('왼쪽 변: 최소 너비에서 멈추고 오른쪽 끝은 그대로', rl.w === 200 && rl.x + rl.w === 400, JSON.stringify(rl));
-const rt = P.drag(r, P.zone(r, 250, 101), 0, -500, min, box); check('위쪽 변: 화면 위에서 멈춘다', rt.y === 0 && rt.y + rt.h === 220, JSON.stringify(rt));
-check('저장된 자리가 화면 밖이면 안으로 들인다', JSON.stringify(P.fitRect({ x: 900, y: 500, w: 50, h: 9999 }, min, box)) === JSON.stringify({ x: 760, y: 0, w: 200, h: 540 }));
+// 화면 나누기: 차트 구역과 플레이 구역
+const W = 960, H = 540;
+{ const z = P.dockZones('bottom', 160, W, H); check('아래에 붙이면 위는 플레이, 아래는 차트, 둘이 화면을 빈틈없이 나눈다', z.chart.y === 380 && z.chart.h === 160 && z.play.h === 380 && z.play.y === 0 && z.line.y === 380 && !z.vertical);
+  const l = P.dockZones('left', 300, W, H), r = P.dockZones('right', 300, W, H), t = P.dockZones('top', 160, W, H);
+  check('왼쪽·오른쪽·위에 붙이기', l.chart.w === 300 && l.play.x === 300 && l.play.w === 660 && l.vertical && r.chart.x === 660 && r.play.x === 0 && r.line.x === 660 && t.play.y === 160 && t.chart.y === 0);
+  for (const d of ['bottom', 'top', 'left', 'right']) { const q = P.dockZones(d, 200, W, H); if (q.chart.w * q.chart.h + q.play.w * q.play.h !== W * H) check(`${d}: 두 구역의 넓이 합이 화면과 같다`, false); } }
+check('끌어다 놓을 곳: 마우스가 가장 가까운 변', P.dockTarget(40, 270, W, H) === 'left' && P.dockTarget(930, 200, W, H) === 'right' && P.dockTarget(480, 20, W, H) === 'top' && P.dockTarget(480, 500, W, H) === 'bottom' && P.dockTarget(480, 300, W, H) === 'bottom');
+check('경계선을 끌면 구역 크기가 마우스를 따라가고 최소·최대에서 멈춘다', P.splitSize('bottom', 0, 340, W, H, 142, 320) === 200 && P.splitSize('bottom', 0, 530, W, H, 142, 320) === 142 && P.splitSize('bottom', 0, 10, W, H, 142, 320) === 320 && P.splitSize('left', 350, 0, W, H, 220, 520) === 350 && P.splitSize('right', 700, 0, W, H, 220, 520) === 260 && P.splitSize('top', 0, 180, W, H, 142, 320) === 180);
+{ const v = P.fitView({ x: 0, y: 0, w: 960, h: 380 }, W, H), v2 = P.fitView({ x: 300, y: 0, w: 660, h: 540 }, W, H), v3 = P.fitView({ x: 0, y: 0, w: W, h: H }, W, H);
+  check('플레이 화면은 비율을 지켜 구역 안에 들어간다(가운데 맞춤)', Math.abs(v.s - 380 / 540) < 1e-9 && Math.abs(v.x0 - (960 - 960 * v.s) / 2) < 1e-9 && v.y0 === 0 && Math.abs(v2.s - 660 / 960) < 1e-9 && v2.x0 === 300 && Math.abs(v2.y0 - (540 - 540 * v2.s) / 2) < 1e-9 && v3.s === 1 && v3.x0 === 0, `아래 160: ${(v.s * 100).toFixed(0)}% · 옆 300: ${(v2.s * 100).toFixed(0)}%`); }
+{ const vw = P.view(4); vw.follow(1, 1, 60); const a = [vw.start, vw.span]; vw.follow(5.4, 5.4, 60); const b2 = [vw.start, vw.span]; vw.follow(20, 20, 60); const c2 = [vw.start, vw.span]; vw.follow(100, 100, 60); const d2 = [vw.start, vw.span];
+  check('기록이 길어지면 시간축이 줄어 전체가 보이고(0초부터), 가장 긴 폭을 넘으면 지금 시각을 따라간다', a[0] === 0 && a[1] === 4 && b2[0] === 0 && b2[1] > 5.4 && c2[0] === 0 && c2[1] > 20 && d2[1] === 60 && d2[0] > 40, `${a[1]} → ${b2[1].toFixed(2)} → ${c2[1].toFixed(1)} → ${d2[1]}초(시작 ${d2[0].toFixed(1)}초)`);
+  const vm = P.view(4); vm.zoom(0.5, 1, 10); const sp = vm.span; vm.follow(9, 10, 60); check('손으로 확대한 시간축은 저절로 바뀌지 않는다', vm.manual && vm.span === sp); }
+check('줄이 늘수록 줄 높이가 줄고, 가장 작게는 11, 가장 크게는 50', P.laneHeight(126, 3) === 42 && P.laneHeight(126, 4) === 31.5 && P.laneHeight(126, 10) === 12.6 && P.laneHeight(60, 10) === 11 && P.laneHeight(500, 2) === 50);
 PH.setBody('base'); process.exit(fail ? 1 : 0);

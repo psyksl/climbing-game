@@ -57,7 +57,7 @@ const LESSON = (() => {
   // 다시 재생할 수 있게 날것의 입력도 계산 걸음 번호(초당 120걸음)와 함께 남긴다: ev = 누름·뗌, aim = 조준점이 바뀐 걸음, optLog = 보조 설정이 바뀐 걸음. meta = 출발 상태·설정·판 번호(게임이 채운다)
   const HOLD = ['power', 'moveUp', 'moveDown', 'moveLeft', 'moveRight', 'foot'], TAP = ['sendL', 'sendR', 'sendBest', 'sendOther', 'cancel', 'foot'];
   function recorder(meta) {
-    const rec = { bars: [], taps: [], open: {}, t0: null, end: 0, meta: meta || null, ev: [], aim: [], optLog: [] }; let ax = null, ay = null, ok = '';
+    const rec = { bars: [], taps: [], presses: [], open: {}, t0: null, end: 0, meta: meta || null, ev: [], aim: [], optLog: [] }; let ax = null, ay = null, ok = '';
     // codeOf: 그 동작에 지금 실제로 쓰인 입력(주·보조 가운데 누른 쪽). 시범처럼 적어 둔 입력에는 없다(null)
     const codeOf = (io, id) => io.code ? io.code(id) : null, openCode = {};
     rec.tick = (t, io, sent, opt) => { rec.end = t; const f = Math.round(t * 120);
@@ -66,6 +66,7 @@ const LESSON = (() => {
       for (const id of HOLD) { const on = io.down(id);
         if (on && rec.open[id] === undefined) { rec.open[id] = t; openCode[id] = codeOf(io, id); rec.ev.push([f, 'down', id]); if (rec.t0 === null) rec.t0 = t; }
         if (!on && rec.open[id] !== undefined) { rec.bars.push({ id, a: rec.open[id], b: t, code: openCode[id] }); rec.ev.push([f, 'up', id]); delete rec.open[id]; } }
+      if (io.pressed('cancel')) { rec.presses.push({ id: 'cancel', t, code: codeOf(io, 'cancel') }); if (rec.t0 === null) rec.t0 = t; } // 취소: 차트의 한 줄로 나온다(그때 누른 키와 함께)
       for (const id of TAP) { if (io.pressed(id)) rec.ev.push([f, 'press', id]); if (id.startsWith('send') && io.pressedShift(id)) rec.ev.push([f, 'pressShift', id]); }
       // 손발 보내기: 결정된 팔다리(limb), 쓴 동작(id: 손 선택 2번이면 sendBest·sendOther), 실제 누른 입력(code), 발이면 함께 누른 수정 키(mod)
       for (const sd of sent || []) { rec.taps.push({ limb: sd.i, t, phase: sd.phase, id: sd.id, code: codeOf(io, sd.id), mod: sd.i >= 2 ? codeOf(io, 'foot') : null }); if (rec.t0 === null) rec.t0 = t; } };
