@@ -24,8 +24,14 @@ const url = 'file://' + path.join(__dirname, '..', process.env.BUILD || 'climb3d
   };
   const mm = v => (v * 1000).toFixed(2);
   const LANE = { pos: [-10, 0, 8], yaw: Math.PI / 2 }; // 막힌 데 없는 길(+x 쪽으로 약 20m)
-  // 1. 대기
-  { const r = await seq('대기', [[240, {}]]); check('대기 2초: 발이 미끄러지지 않고 다리를 다 펴지 않는다', r.st.maxSlide < 0.0005 && r.st.maxRatio < 0.985, `미끄러짐 최대 ${mm(r.st.maxSlide)}mm/걸음 · 다리 뻗음 ${(r.st.maxRatio * 100).toFixed(1)}%`); out.idle = r; }
+  // 1. 대기. 목적을 나눠서 본다(GPT의 p3d-0.4.0 검토): 발이 안 미끄러지는가 / 다리가 닿는가 / 무릎이 뒤집히지 않는가 / 자세가 이어지는가.
+  //    전에는 "다리 뻗음 98.5% 미만"을 함께 봤다. 그 값은 자작 모션이 IK를 안정시키려고 엉덩이를 2.5cm 낮춰 서는 데서 나온 것이고, 사람이 서 있을 때 그만큼 굽혀야 한다는 근거가 아니다.
+  //    그래서 닿는지(100% 이하 = 목표가 다리 길이 안)만 판정하고, 뻗음 값은 적어 둔다.
+  { const r = await seq('대기', [[240, {}]]);
+    check('대기 2초: 디딘 발이 미끄러지지 않는다(한 걸음 0.5mm 아래, 지지 구간 이탈 1mm 아래)', r.st.maxSlide < 0.0005 && r.st.stanceMaxDev < 0.001, `미끄러짐 최대 ${mm(r.st.maxSlide)}mm/걸음 · 지지 구간 이탈 ${mm(r.st.stanceMaxDev)}mm`);
+    check('대기: 발목 목표가 다리 길이 안에 있다(뻗음 100% 이하)', r.st.maxRatio <= 1.0, `다리 뻗음 ${(r.st.maxRatio * 100).toFixed(2)}%(참고: 전 기준 98.5% 미만)`);
+    check('대기: 무릎이 뒤로 꺾이지 않고 발이 땅 아래로 들어가지 않는다', r.st.kneeFlip === 0 && r.st.below === 0 && !r.bad, `무릎 뒤로 ${r.st.kneeFlip}번 · 땅 아래 ${r.st.below}번`);
+    check('대기: 자세가 갑자기 바뀌지 않는다(한 걸음 회전 12° 아래, 회전량 변화 10° 아래)', r.maxRot < 12 && r.maxJerk < 10, `빠르기 최대 ${r.maxRot.toFixed(2)}° · 회전량 변화 최대 ${r.maxJerk.toFixed(2)}°`); out.idle = r; }
   // 2. 걷기·달리기: 디딘 발 미끄러짐
   for (const [nm, inp] of [['걷기', { f: 1 }], ['달리기', { f: 1, run: true }], ['웅크려 걷기', { f: 1, crouch: true }]]) {
     const r = await seq(nm, [[120, inp], [360, inp]]); const sp = Math.hypot(r.end.vel[0], r.end.vel[2]);

@@ -26,11 +26,12 @@ export const CLIP = {
   LAND_WAIT: 0.35,          // 착지 뒤 이 시간은 자작 모션(무릎으로 받기)에 맡긴다
   LOC_V: 0.8,               // 이 속도에서 걷기 동작이 다 섞인다(그 아래는 서 있기와 섞여 보폭이 줄어든다)
   CROUCH_V: 1.6,            // 웅크린 채 이 속도에서 낮은 걸음(sneak)이 다 섞인다(조작의 웅크려 걷기 0.8m/s에서는 절반쯤 섞여 보폭이 절반)
+  PLANT_V: 0.35,            // 모으기·밀기·착지에서 이 속도(m/s) 아래일 때만 두 발을 땅에 붙든다
   LAND_V: 3.2,              // 이 빠르기(m/s)로 내려앉으면 착지 동작을 다 쓴다(더 느리면 그만큼 얕게, 0.3까지)
   RUNJUMP_V0: 1.5, RUNJUMP_V1: 3.5, // 뜨는 순간의 수평 속도가 이 사이면 달리며 뛰는 공중 자세를 그만큼 섞는다
   RESTEP_D: 0.18, RESTEP_D_STILL: 0.30, RESTEP_T: 0.24, RESTEP_LIFT: 0.05, // 고정한 발이 캡처 자리에서 이만큼(m) 벗어나면 들어서 고쳐 디딘다
   YAW_MAX: 0.6,             // 고정한 발의 방향이 몸과 이만큼(rad) 넘게 벌어지면 디딘 점을 축으로 발을 돌린다(제자리 돌기 = 발볼로 돈다. 디딘 점은 그대로)
-  REACH: 0.99, REACH_PUSH: 0.99, DROP_MAX: 0.06, // 다리가 닿지 않으면 엉덩이를 이만큼까지 낮추고, 그래도 닿지 않으면 그 발을 고쳐 디딘다
+  REACH: 0.995, DROP_MAX: 0.06, DROP_MAX_PUSH: 0.12, // 다리 길이의 이 몫이 한계(부드러운 당김이 다가가는 값 = SOFT_A + SOFT_S). 엉덩이를 낮추는 몫의 한도(미는 동안은 넉넉히)
   SETTLE: 60, SETTLED: 3e-4,    // 닿는 순간 발이 땅에 내려앉는 빠르기(1/초)와 다 내려앉았다고 보는 거리(m)
 };
 
@@ -48,9 +49,15 @@ export function makeClipSet(data) {
 const newSnap = rig => ({ hip: V(), q: rig.list.map(() => new THREE.Quaternion()), ank: [V(), V()], footQ: [new THREE.Quaternion(), new THREE.Quaternion()], pole: [V(), V()], legQ: [[new THREE.Quaternion(), new THREE.Quaternion()], [new THREE.Quaternion(), new THREE.Quaternion()]] });
 const copySnap = (a, b) => { b.hip.copy(a.hip); a.q.forEach((q, i) => b.q[i].copy(q)); for (let i = 0; i < 2; i++) { b.ank[i].copy(a.ank[i]); b.footQ[i].copy(a.footQ[i]); b.pole[i].copy(a.pole[i]); b.legQ[i][0].copy(a.legQ[i][0]); b.legQ[i][1].copy(a.legQ[i][1]); } };
 let _upper = null; const UPPER = names => _upper || (_upper = names.map((n, i) => (/^(hips|upLeg|leg|foot|toe)/.test(n) ? -1 : i)).filter(i => i >= 0)); // 윗몸 뼈(엉덩이·다리 빼고)
-// 떠 있는 발의 목표를 다리 길이 안으로 부드럽게 당기기(soft)와 그 거꾸로(softInv): 고관절에서의 거리 d가 0.95L을 넘으면 0.95L + span·(1 - e^(-(d - 0.95L)/span))
-const SOFT_A = DIM.leg * 0.95, SOFT_S = DIM.leg * (0.99 - 0.95);
-function soft(p, hipJ) { const v = p.clone().sub(hipJ), d = v.length(); return d > SOFT_A ? hipJ.clone().addScaledVector(v, (SOFT_A + SOFT_S * (1 - Math.exp(-(d - SOFT_A) / SOFT_S))) / d) : p.clone(); }
+// 떠 있는 발의 목표를 다리 길이 안으로 부드럽게 당기기(soft)와 그 거꾸로(softInv): 고관절에서의 거리 d가 SOFT_A를 넘으면 SOFT_A + SOFT_S·(1 - e^(-(d - SOFT_A)/SOFT_S))
+// 다리가 거의 펴진 곳에서는 발목이 조금만 멀어져도 무릎 각도가 크게 바뀐다(무릎 굽힘 = 2·acos(거리/다리 길이)). 그래서 거리가 0.955L을 넘으면 0.995L에 다가가도록 눌러 준다.
+// 시작점을 더 낮추면(0.93L) 걷기·달리기·점프의 무릎 빠르기가 더 고르지만 서 있을 때 엉덩이가 1.6cm 낮아진다. 0.955L에서는 0.7cm(견준 값: README p3d-0.4.1).
+// 떠 있는 발은 발목 목표를 당기고, 디딘 발은 발을 그대로 둔 채 엉덩이를 그만큼 낮춘다(둘이 같은 곡선을 쓴다 → 발을 떼는 순간에도 이어진다).
+const SOFT_A = DIM.leg * 0.955, SOFT_S = DIM.leg * (0.995 - 0.955), softD = d => (d > SOFT_A ? SOFT_A + SOFT_S * (1 - Math.exp(-(d - SOFT_A) / SOFT_S)) : d);
+function soft(p, hipJ) { const v = p.clone().sub(hipJ), d = v.length(); return d > SOFT_A ? hipJ.clone().addScaledVector(v, softD(d) / d) : p.clone(); }
+// 발을 떼는 순간의 출발 자리: 바로 앞 걸음의 발목 자리 쪽으로, 그러나 고관절에서의 거리는 바로 앞 걸음과 같게(다리 길이가 이어진다).
+// 발목을 세계 좌표에 그대로 두면, 엉덩이가 빨리 멀어지는 순간(뜨는 걸음에 2.6cm 위로, 달릴 때 3.5cm 앞으로) 다리가 한 걸음에 다 펴진다.
+function keepLen(f, hipJ) { const v = f.last.clone().sub(hipJ), d = v.length(); return f.lastD !== undefined && d > f.lastD ? hipJ.clone().addScaledVector(v, f.lastD / d) : f.last.clone(); }
 function softInv(p, hipJ) { const v = p.clone().sub(hipJ), d = v.length(); if (d <= SOFT_A) return p.clone(); const x = Math.min((d - SOFT_A) / SOFT_S, 0.993); return hipJ.clone().addScaledVector(v, (SOFT_A - SOFT_S * Math.log(1 - x)) / d); }
 const newPose = n => ({ hip: V(), q: Array.from({ length: n }, () => new THREE.Quaternion()) });
 function sample(c, u, out) {
@@ -119,12 +126,13 @@ export function stepClip(C, M, body, input, dt, enabled) {
     else if (body.push) { a.kind = 'push'; const pu = clamp((body.push.t + dt) / body.push.dur, 0, 1), h0 = J.hipAt(a.tt0); a.tt = J.timeFor(h0 + (J.hipAt(m.G) - h0) * pu * pu, m.A, m.G); a.xf = smooth(clamp(pu / 0.35, 0, 1)); a.pu = pu; }
     // ↑ 엉덩이가 고르게 빨라지며 올라가 뜨는 순간 뛰는 속도가 된다. 동작의 "올라가는 쪽"(가장 낮은 장면 뒤)에서 같은 높이를 찾아 쓰고, 모으던 자세(내려가는 쪽, tt0)에서 그쪽으로 미는 시간의 첫 35% 동안 넘어간다
     else if (body.charging) { a.kind = 'charge'; const k = clamp(body.charge / 0.6, 0, 1); a.tt = J.timeFor(J.hipAt(m.G) - pushD(k), 0, m.A); } // 모은 만큼만 웅크린다: 그 깊이에서 밀면 뜨는 순간의 빠르기가 물리의 뛰는 속도와 맞는다(동작의 가장 낮은 장면까지 가지 않는다)
-    else if (a.kind === 'land') { a.tt += dt * (1 + gs * 0.8) * a.rate; if (a.tt >= W.jump.dur - 0.05 || (gs > 1.0 && a.tt > m.B)) a.kind = 'none'; } // 움직이고 있으면 착지를 일찍 마친다
+    else if (a.kind === 'land') { a.tt += dt * a.rate; if (a.tt >= W.jump.dur - 0.05 || (gs > 1.0 && a.tt > m.LD + 0.15)) a.kind = 'none'; } // 움직이고 있으면 착지를 일찍 마친다(동작을 빨리 감지 않는다. 빨리 감으면 엉덩이가 내려앉는 빠르기가 물리보다 커진다)
     else a.kind = 'none';
     a.runW += ((a.kind === 'air' && W.runJump ? clamp((a.hs - CLIP.RUNJUMP_V0) / (CLIP.RUNJUMP_V1 - CLIP.RUNJUMP_V0), 0, 1) : 0) - a.runW) * (1 - Math.exp(-12 * dt));
     const moveK = 1 - 0.85 * clamp((gs - 0.5) / 2.5, 0, 1); // 달리는 중에 모으거나 밀 때는 걷기·달리기 자세를 그만큼 남긴다(발은 계속 걷는다). 속도가 줄수록 웅크린 자세가 들어온다
     const wT = a.kind === 'none' ? 0 : a.kind === 'land' ? a.landK * moveK * (1 - smooth(clamp((a.tt - m.B) / Math.max(0.05, W.jump.dur - 0.05 - m.B), 0, 1))) : a.kind === 'air' ? 1 : moveK; // 착지: 가장 낮은 장면을 지나면 걷기·서 있기 쪽으로 풀린다
-    a.w += (wT - a.w) * (1 - Math.exp(-(wT > a.w ? lerp(18, 3, C.cw) : 9) * dt)); if (a.w < 1e-3) a.w = 0; // 깊이 웅크린 채 모으기 시작하면 천천히 올라온다(엉덩이가 한 번에 솟지 않게)
+    a.w += (wT - a.w) * (1 - Math.exp(-(wT > a.w ? (a.kind === 'air' ? 10 : lerp(18, 3, C.cw)) : 9) * dt)); // 공중 자세로는 조금 천천히(달리다 뜨면 달리는 자세에서 넘어가야 해서 한 걸음에 많이 바뀐다)
+    if (a.w < 1e-3) a.w = 0; // 깊이 웅크린 채 모으기 시작하면 천천히 올라온다(엉덩이가 한 번에 솟지 않게)
   }
   if (body.onGround && gs > 0.02) { const p = C.phase + gs * dt / C.stride; if (p >= 1) C.turns = (C.turns + 1) % 2; C.phase = p % 1; } // turns = 지금이 짝수 번째 주기인지 홀수 번째인지(두 주기짜리 동작용)
   C.idleT += dt; C.lastSpeed = gs;
@@ -165,6 +173,7 @@ export function poseClip(C, M, body, world, groundAt, dt) {
   const hl = A.hip.clone().applyQuaternion(qYaw), hipClip = V(hl.x, C.gy + A.hip.y, hl.z); // 뿌리(rig.root)는 몸 자리의 땅에 있다
   B.hips.position.copy(hipClip); names.forEach((n, i) => B[n].quaternion.copy(A.q[i])); B.hips.quaternion.premultiply(qYaw); rig.root.updateMatrixWorld(true);
   // 발: 닿음 판정 → 고정 → 발목 목표
+  const actPlant = act.w > 0.5 && act.kind !== 'air' && act.kind !== 'none' && C.lastSpeed < CLIP.PLANT_V; // 점프 층이 두 발을 붙드는 때
   const tg = C.feet.map((f, i) => {
     const L = M.legs[i], F = B[`foot.${f.s}`], ankC = worldPos(F), fq = F.getWorldQuaternion(new THREE.Quaternion()), hipJ = worldPos(B[`upLeg.${f.s}`]), kneeC = worldPos(B[`leg.${f.s}`]);
     const hipJd = hipJ.clone(); hipJd.y -= C.drop; // 바로 앞 걸음에 낮춘 엉덩이 기준의 고관절(떠 있는 발을 당길 때는 실제로 그려진 엉덩이 높이로 잰다)
@@ -174,14 +183,15 @@ export function poseClip(C, M, body, world, groundAt, dt) {
     // (한쪽 값만 쓰면 섞은 자세에서는 이미 뗀 발을 계속 고정해 다리가 끌려간다)
     const conStand = C.wLoc < CLIP.CON_LOC ? true : C.r < 0.15 ? conAt(W.walk, C.phase, i) : C.r > 0.85 ? conAt(W.run, C.phase, i) : conAt(W.walk, C.phase, i) && conAt(W.run, C.phase, i);
     const conCrouch = C.cw > 0 ? (C.wLocC < CLIP.CON_LOC ? true : conAt(W.sneak, cyc(W.sneak, C.phase, C.turns), i)) : true, conLoco = C.cw < 0.15 ? conStand : C.cw > 0.85 ? conCrouch : conStand && conCrouch;
-    // 점프 층이 맡는 동안: 모으기·밀기·착지 = 두 발 디딤, 공중 = 두 발 뜸. 달리며 내려앉으면 두 발을 붙들지 않고 바로 걸음을 잇는다
+    // 점프 층이 맡는 동안: 공중 = 두 발 뜸. 모으기·밀기·착지는 거의 서 있을 때만 두 발을 붙든다(actPlant). 움직이는 중에는 걸음의 닿음 구간을 그대로 쓴다
+    // (걷거나 달리며 모을 때 두 발을 붙들면 몸이 가는 동안 다리가 끌려간다. 전에는 섞는 몫이 절반을 넘는 순간 떠 있던 발까지 땅에 붙였다)
     const oStep = !!C.feet[1 - i].step; // 다른 발을 고쳐 디디는 중이면 이 발은 떼지 않는다(두 발이 함께 뜨지 않게)
-    const con = act.kind === 'air' ? false : act.w > 0.5 && !(act.kind === 'land' && C.lastSpeed > 1.0) ? true : conLoco || (oStep && !!f.lock), gAt = (x, z) => groundY(world, groundAt, x, z, body.pos.y);
+    const con = act.kind === 'air' ? false : actPlant ? true : conLoco || (oStep && !!f.lock), gAt = (x, z) => groundY(world, groundAt, x, z, body.pos.y);
     let changed = false;
     // 일찍 떼기: 변환할 때 정한 닿음 구간은 장면(1/30초) 단위라, 달릴 때는 한 장면 늦게 떼면 몸이 14cm 더 가서 다리가 끌려간다.
     // 캡처 자세에서 축이 되는 점이 이미 땅에서 들렸거나(LIFT) 고정 자리에서 멀어졌으면(AWAY) 그 걸음에 바로 뗀다(다음에 다시 닿을 때까지 고정하지 않는다)
     // 점프 층이 맡는 동안과 다른 발을 고쳐 디디는 동안에는 일찍 떼지 않는다(점프에서는 뜨는 순간에 뗀다)
-    if (f.lock && !f.step && !C.init && !oStep && act.w <= 0.5 && act.kind !== 'air' && (C.wLoc >= CLIP.CON_LOC || (C.cw > 0.5 && C.wLocC >= CLIP.CON_LOC))) { const pc = pt(f.kind); if (pc.y - SOLE - C.gy > CLIP.LIFT || Math.hypot(pc.x - f.lock.p.x, pc.z - f.lock.p.z) > CLIP.AWAY) { f.yawOff = wrap(f.lock.yaw0 - body.yaw); f.lock = null; f.skip = true; changed = true; } }
+    if (f.lock && !f.step && !C.init && !oStep && !actPlant && act.kind !== 'air' && (C.wLoc >= CLIP.CON_LOC || (C.cw > 0.5 && C.wLocC >= CLIP.CON_LOC))) { const pc = pt(f.kind); if (pc.y - SOLE - C.gy > CLIP.LIFT || Math.hypot(pc.x - f.lock.p.x, pc.z - f.lock.p.z) > CLIP.AWAY) { f.yawOff = wrap(f.lock.yaw0 - body.yaw); f.lock = null; f.skip = true; changed = true; } }
     if (C.init) { // 자작 모션에게서 넘겨받음: 그 발이 지금 딛고 있는 발끝 자리에 고정
       const p = LOCAL.toe.clone().applyQuaternion(P0.footQ[i]).add(P0.ank[i]); p.y = gAt(p.x, p.z);
       f.kind = 'toe'; f.lock = { p, yaw0: L.plantYaw ?? body.yaw }; f.con = true; f.step = null; f.yawOff = 0; f.last = P0.ank[i].clone(); f.lastQ.copy(P0.footQ[i]); changed = true;
@@ -195,20 +205,20 @@ export function poseClip(C, M, body, world, groundAt, dt) {
       const other = f.kind === 'heel' ? 'toe' : 'heel', hk = f.kind === 'heel' ? hH : hT, ho = f.kind === 'heel' ? hT : hH;
       if (ho < hk - CLIP.KIND && f.last) { const p = LOCAL[other].clone().applyQuaternion(f.lastQ).add(f.last); p.y = gAt(p.x, p.z); f.lock.p.copy(p); f.kind = other; changed = true; }
     }
-    if (!f.step) f.con = con || C.init; if (!con || (C.wLoc < CLIP.CON_LOC && C.cw < 0.5) || (C.cw >= 0.5 && C.wLocC < CLIP.CON_LOC) || act.kind === 'land' || act.kind === 'charge') f.skip = false; // 서 있을 때는 일찍 뗀 발도 다시 고정한다
+    if (!f.step) f.con = con || C.init; if (!con || (C.wLoc < CLIP.CON_LOC && C.cw < 0.5) || (C.cw >= 0.5 && C.wLocC < CLIP.CON_LOC) || actPlant) f.skip = false; // 서 있을 때는 일찍 뗀 발도 다시 고정한다
     if (f.lock) { const d = wrap(f.lock.yaw0 - body.yaw); if (Math.abs(d) > CLIP.YAW_MAX) f.lock.yaw0 = body.yaw + Math.sign(d) * CLIP.YAW_MAX; }
     let dy = f.lock ? wrap(f.lock.yaw0 - body.yaw) : f.yawOff;
     // 고쳐 디디기: 고정 자리가 캡처 자리에서 너무 멀거나 발 방향이 몸과 많이 다르면(다른 발이 디딘 동안) 한 발을 들어 옮긴다
     const fqOf = d => { const q = qA.setFromAxisAngle(UP, d).clone().multiply(fq); return w < 1 ? qB.slerpQuaternions(S0.footQ[i], q, w).clone() : q; }; // 발 회전(세계): 섞는 동안에는 상대 자세의 발 회전과 섞은 값. 발목 목표를 이 회전으로 구하므로 디딘 점은 섞는 동안에도 그대로다
     const fqF = fqOf(dy);
     let T = f.lock ? f.lock.p.clone().add(V(0, SOLE, 0)).sub(LOCAL[f.kind].clone().applyQuaternion(fqF)) : null;
-    const o = C.feet[1 - i], noStep = act.kind === 'air' || (act.kind !== 'none' && act.w > 0.5); // 점프 층이 맡는 동안에는 발을 고쳐 디디지 않는다(디딘 자리 그대로 웅크리고 밀고 받는다)
+    const o = C.feet[1 - i], noStep = act.kind === 'air' || actPlant; // 점프 층이 맡는 동안에는 발을 고쳐 디디지 않는다(디딘 자리 그대로 웅크리고 밀고 받는다)
     const still = C.cw < 0.5 ? C.wLoc < CLIP.CON_LOC : C.wLocC < CLIP.CON_LOC, sideV = V(Math.cos(body.yaw), 0, -Math.sin(body.yaw)); // 몸의 왼쪽(+x가 왼쪽인 약속)
     const far = f.lock && !noStep && !oStep && T.distanceTo(hipJ) > DIM.leg * CLIP.REACH + CLIP.DROP_MAX * 0.6; // 엉덩이를 낮춰도 닿지 않는 자리(다른 발을 고쳐 디디는 동안에는 버틴다)
     // 고쳐 디딜 까닭: 닿지 않음 / 캡처 자리에서 멀다(서 있을 때는 넉넉히 둔다: 착지한 자리 그대로 선다) / 발이 몸의 반대편에 있다(제자리에서 돌아 다리가 꼬임)
     const wrongSide = f.lock && still && (T.x - body.pos.x) * sideV.x * L.sx + (T.z - body.pos.z) * sideV.z * L.sx < 0.02;
     if (f.lock && !f.step && (far || (!noStep && (wrongSide || Math.hypot(T.x - ankC.x, T.z - ankC.z) > (still ? CLIP.RESTEP_D_STILL : CLIP.RESTEP_D))))) {
-      if (o.lock && !o.step) { f.step = { t: 0, off0: softInv(f.last || T, hipJd).sub(ankC), yaw0: dy }; f.lock = null; f.off.set(0, 0, 0); T = null; changed = false; } // 다른 발이 디딘 동안: 들어서 옮긴다
+      if (o.lock && !o.step) { f.step = { t: 0, off0: softInv(f.last ? keepLen(f, hipJd) : T, hipJd).sub(ankC), yaw0: dy }; f.lock = null; f.off.set(0, 0, 0); T = null; changed = false; } // 다른 발이 디딘 동안: 들어서 옮긴다
       else if (far && !still) { f.yawOff = dy; f.lock = null; f.skip = true; T = null; changed = true; } // 걷는 중에 다른 발이 떠 있는데 닿지 않음: 고정을 풀고 캡처 자리로 돌아간다(다시 닿을 때까지 고정하지 않는다). 서 있을 때는 다른 발이 디딜 때까지 기다렸다가 고쳐 디딘다
     }
     if (!f.lock) {
@@ -217,7 +227,7 @@ export function poseClip(C, M, body, world, groundAt, dt) {
       if (!f.step) f.yawOff *= Math.exp(-12 * dt);
     }
     if (f.step) { const u = clamp(f.step.t / CLIP.RESTEP_T, 0, 1), e = 1 - smooth(u); T.addScaledVector(f.step.off0, e); T.y += CLIP.RESTEP_LIFT * Math.sin(Math.PI * u); f.yawOff = f.step.yaw0 * e; dy = f.yawOff; }
-    else if (changed && f.last) f.off.copy(f.lock ? f.last : softInv(f.last, hipJd)).sub(T); // 고정·뗌·축 바꿈의 순간: 바로 앞 자리에서 이어서(떼는 발은 당기기 전의 자리로 되돌려 넣는다 → 당긴 뒤가 바로 앞 자리와 같다)
+    else if (changed && f.last) f.off.copy(f.lock ? f.last : softInv(keepLen(f, hipJd), hipJd)).sub(T); // 고정·뗌·축 바꿈의 순간: 바로 앞 자리에서 이어서(떼는 발은 당기기 전의 자리로 되돌려 넣는다 → 당긴 뒤가 바로 앞 자리와 같다)
     const fin = T.clone().add(f.off);
     if (!f.lock) fin.copy(soft(fin, hipJd)); // 떠 있는 발: 다리가 다 펴지는 거리에 가까워지면 목표를 부드럽게 당긴다(다 편 다리는 발목이 조금만 움직여도 무릎 각도가 크게 바뀐다). 디딘 발은 당기지 않는다(엉덩이를 낮춰 맞춘다)
     f.off.multiplyScalar(Math.exp(-(f.lock ? CLIP.SETTLE : 16) * dt)); if (f.off.lengthSq() < 1e-10) f.off.set(0, 0, 0);
@@ -228,10 +238,11 @@ export function poseClip(C, M, body, world, groundAt, dt) {
   C.init = false;
   M.phase = C.phase; M.visPhase = C.phase; // 걸음 위상의 약속이 같다(0 = 왼발이 닿는 순간) → 자작 모션이 넘겨받을 때 같은 걸음에서 이어진다
   // 다리가 닿지 않으면 엉덩이를 낮춘다
-  // 엉덩이를 딱 필요한 만큼 낮춘다(발목 목표가 다리 길이의 REACH 안에 들어오게). 한 번에 낮추지 않고, 되돌릴 때는 더 천천히(발을 뗀 직후 엉덩이가 튀지 않게)
-  const pushing = act.kind === 'push' && act.w > 0.5; // 미는 동안: 엉덩이가 빨리 올라가므로 낮추는 몫이 바로 따라가고 한도도 넉넉히 둔다. REACH_PUSH를 낮추면(예: 0.965) 무릎이 튀는 순간이 뜨는 걸음으로 옮겨 갈 뿐이라 같은 값으로 둔다
-  let need = 0; C.feet.forEach((f, i) => { const v = tg[i].fin.clone().sub(worldPos(B[`upLeg.${f.s}`])), R = DIM.leg * (act.kind === 'push' && act.w > 0.5 ? CLIP.REACH_PUSH : CLIP.REACH), h2 = v.x * v.x + v.z * v.z; if (v.lengthSq() > R * R) need = Math.max(need, h2 >= R * R ? 0.12 : -v.y - Math.sqrt(R * R - h2)); });
-  need = clamp(need, 0, pushing ? 0.12 : CLIP.DROP_MAX); C.drop = need > C.drop ? (pushing ? need : Math.min(need, C.drop + 0.6 * dt)) : C.drop + (need - C.drop) * (1 - Math.exp(-20 * dt)); hipClip.y -= C.drop; // 낮추는 빠르기는 0.6m/s까지(한 걸음 5mm)
+  // 디딘 발: 고관절에서 발목까지의 거리가 부드럽게 눌린 값(softD)이 되도록 엉덩이를 낮춘다. 전에는 0.99L에서 딱 멈춰서, 미는 끝에 무릎이 빠르게 펴지다가 한 걸음에 멈췄다(정강이 13.5°/걸음 → 다음 걸음 6°).
+  // 낮출 때는 바로(이어지는 값이므로), 되돌릴 때는 천천히(발을 뗀 직후 엉덩이가 튀지 않게. 뜬 직후에는 더 천천히: 몸이 솟는 빠르기에 되돌리는 몫이 얹힌다)
+  const pushing = act.kind === 'push' && act.w > 0.5;
+  let need = 0; C.feet.forEach((f, i) => { if (!f.lock) return; const v = tg[i].fin.clone().sub(worldPos(B[`upLeg.${f.s}`])), d = v.length(), R = softD(d), h2 = v.x * v.x + v.z * v.z; if (d > R) need = Math.max(need, h2 >= R * R ? CLIP.DROP_MAX_PUSH : -v.y - Math.sqrt(R * R - h2)); });
+  need = clamp(need, 0, pushing ? CLIP.DROP_MAX_PUSH : CLIP.DROP_MAX); C.drop = need > C.drop ? need : C.drop + (need - C.drop) * (1 - Math.exp(-(act.kind === 'air' ? 8 : 20) * dt)); hipClip.y -= C.drop;
   // 마무리: 자작 자세와 섞고(넘겨받는 동안), 다리는 섞은 발목 목표로 IK
   if (w < 1) { B.hips.position.lerpVectors(S0.hip, hipClip, w); rig.list.forEach((b, i) => { if (!LEGS.includes(b.name)) { qT.copy(b.quaternion); b.quaternion.slerpQuaternions(S0.q[i], qT, w); } }); } // slerpQuaternions는 결과를 쓰기 전에 첫 값을 복사하므로 자기 자신을 둘째 값으로 주면 안 된다
   else B.hips.position.copy(hipClip);
@@ -247,7 +258,7 @@ export function poseClip(C, M, body, world, groundAt, dt) {
     [`upLeg.${f.s}`, `leg.${f.s}`].forEach((bn, j) => { const base = yawFix.clone().multiply(t.legQ[j]); if (w < 1) base.copy(qT.slerpQuaternions(S0.legQ[i][j], base, w));
       const cur = DOWN.clone().applyQuaternion(base); setWorldQuat(B[bn], qT.setFromUnitVectors(cur, dirs[j]).clone().multiply(base)); });
     setWorldQuat(B[`foot.${f.s}`], fq);
-    L.ik = ik;
+    L.ik = ik; f.lastD = ank.distanceTo(hipJ);
     { // 캡처가 맡는 동안: 측정용 설명과, 자작 모션이 넘겨받을 때 쓸 디딘 자리를 맞춰 둔다
       // 발이 실제로 향한 쪽(발끝이 벌어진 만큼 포함)과 디딘 점에서 자작 모션의 디딘 자리를 거꾸로 구한다 → 넘겨받아도 디딘 점이 그대로다
       const ff = V(1, 0, 0).applyQuaternion(fq).cross(UP), yaw = Math.atan2(ff.x, ff.z), // 발의 옆 축 × 위 = 발이 향한 쪽(달릴 때 발을 뒤로 차 올려 90° 넘게 숙여져도 뒤집히지 않는다)
