@@ -1,7 +1,7 @@
 // 등반 조작 실험실 · 화면과 입력
 'use strict';
 (() => {
-  const W = G.W, H = G.H, OX = -30, OY0 = 130, C = PH.C, BUILD = 'v0.16.1';
+  const W = G.W, H = G.H, OX = -30, OY0 = 130, C = PH.C, BUILD = 'v0.16.2';
   let OY = OY0; // 화면 세로 기준. 과제가 정하면(view) 그 값을 쓴다: 높은 턱이 화면 밖으로 나가지 않게
   const LIMB = ['왼손', '오른손', '왼발', '오른발'], COL = ['#e86a5a', '#4fb3e8', '#e86a5a', '#4fb3e8'], DARK = ['#8a3b3b', '#2a6f97', '#8a3b3b', '#2a6f97'];
   let world = PH.makeWorld(), layout = null;
@@ -23,7 +23,9 @@
   const kn = c => (c || '?').replace('Key', '').replace('Digit', '').replace('Arrow', '');
   let recent = [], spWas = false, lastMiss = null, showLog = false, S, station = 1, tries = 0, fx = [], why = null, endT = 0, slow = false, tick = 0, bot = null, autoI = 0, doneT = 0, air = null, jump = null, trail = [], swing = null, last = BOTS.idle();
   window.__lab = { keys: () => KEYS.log.slice(), chart: () => ({ mode: LAY.chart ? 'on' : 'off', dock: LAY.dock, size: LAY.size[LAY.dock], view: VIEW.start, span: VIEW.span, manual: VIEW.manual, end: CH.end, rect: CH.rect && { ...CH.rect }, plot: CH.plot && { ...CH.plot }, ax: CH.ax, pad: CH.pad, pps: CH.pps, n: CH.n, laneH: CH.laneH, big: CH.big, heads: CH.heads.map(q => ({ ...q })), off: CH.off && { ...CH.off }, scroll: CH.scroll, scrollMax: CH.scrollMax, head: CH.head, lanesTop: CH.lanesTop, ready: KEYS.ready, panel: !!KEYS.panel }),
-    log: () => ({ on: LAY.log, rect: LOG.rect && { ...LOG.rect }, items: LOG.items.map(q => ({ att: q.att, kind: q.kind, text: q.text, t: q.t })), att: LOG.att, scroll: LOG.scroll, max: LOG.max, size: { ...LAY.logSize }, stats: showLog }),
+    footPreview: () => FP.list.map(q => ({ ...q })),
+    trackTimes: () => trk.frames.map(f => f.t), // 시험용: 자취에 적힌 장면의 시각
+    log: () => ({ playable: (LOG.playable || []).slice(), on: LAY.log, rect: LOG.rect && { ...LOG.rect }, items: LOG.items.map(q => ({ att: q.att, kind: q.kind, text: q.text, t: q.t, st: q.st })), att: LOG.att, scroll: LOG.scroll, max: LOG.max, size: { ...LAY.logSize }, stats: showLog }),
     shape: () => ({ turn: SHAPE.turn.slice(), twist: SHAPE.twist, joints: [0, 1, 2, 3].map(i => { const j = limbJoint(S, i, SHAPE.turn[i]); return { x: j.x, y: j.y, depth: j.depth }; }) }), bendTurn: i => bendTurn(S, i), pelvisTwist: () => pelvisTwist(S),
     view: () => ({ s: VW.s, x0: VW.x0, y0: VW.y0, ox: OX, oy: OY, show: { ...LAY.show, ghost: ghostOn, stats: showLog }, pos: JSON.parse(JSON.stringify(LAY.pos)), menu: VM.open, menuRect: VM.rect && { ...VM.rect }, helpShown: !!HELP.rect, helpRect: HELP.rect && { ...HELP.rect }, hints: (CH.hints || []).map(q => ({ ...q })), zoom: LAY.zoom, fitS: VW.fit, cam: { ...CAM }, hud: { ...HV }, markOff: !!HELP.markOff, play: { ...PZ }, chart: CZ && { ...CZ }, chartPart: KZ && { ...KZ }, logPart: LZ && { ...LZ }, logSplit: LSP && { ...LSP }, split: SPL && { ...SPL }, dock: LAY.dock, size: { ...LAY.size }, lim: LAY_LIM, fit: LAY_FIT, guide: LAY.guide, guideRect: GD.rect && { ...GD.rect }, drag: HUD.drag && { kind: HUD.drag.kind, target: HUD.drag.target || null } }), toScreen: (x, y) => toScreen(x, y), toWorld: (x, y) => toWorld(x, y),
     failReason, practice: () => ({ phase, ended: ended && { ...ended }, marks: CH.marks.map(q => ({ ...q })), hover: CH.hover, tools: CH.tools && { ...CH.tools }, bar: CH.bar && { ...CH.bar }, lessonCard: LC.rect && { ...LC.rect }, trackEnd: trk.end(), trackFull: trk.full, okWait: OK_WAIT, frames: trk.frames.length, rp: rp && { t: rp.t, from: rp.from, to: rp.to, playing: rp.playing, speed: rp.speed }, capture: HUD.capture, cursor: HUD.cursor, hits: HUD.hits.map(h => ({ ...h })) }), lesson: () => ({ i: lessonI, demo: !!demo, ok: lessonOkT, demoOk, demoEnd, rec, demoRec, lastRec, kept, note: lessonNote, ghost: ghost ? { t: ghost.S.t, x: ghost.S.p[0].x, y: ghost.S.p[0].y, dead: ghost.S.dead } : null }), hint: () => hint(), jump: () => jump, ctrlState: () => ctrl.st, opt: () => CTRL.OPT, aim, plog, ui: () => ui, bind: BIND, raw: () => { const m = G.input.mouse; return (m.down[0] || G.input.key('KeyQ') ? 'L' : '-') + (m.down[2] || G.input.key('KeyE') ? 'R' : '-'); }, get s() { return S; }, get bot() { return bot; }, finished: false, results: [] };
@@ -68,7 +70,7 @@
     LOG.att++; aim.resync = true; rec = LESSON.recorder(); demo = null; ghost = null; lmem = {}; lessonOkT = null; phase = 'live'; ended = null; trk = PRACTICE.track(TRK_MAX); rp = null; rpLive = null; wonT = null; VIEW.reset();
     if (st) station = st;
     if (autoList.length) { bot = BOTS.make(autoList[autoI % autoList.length]); station = bot.def.station; }
-    S = PH.create(world, station); tries++; fx = []; why = null; endT = 0; doneT = 0; air = null; jump = null; trail = []; swing = null; lastMiss = null; ctrl = CTRL.make(mode); rec.meta = recMeta();
+    S = PH.create(world, station); tries++; fx = []; why = null; endT = 0; doneT = 0; air = null; jump = null; trail = []; swing = null; lastMiss = null; ctrl = CTRL.make(mode); rec.meta = recMeta(); resetShape(S);
   }
   // 최근 입력 표시(영상에서 어떤 입력을 썼는지 보이게)
   function noteInputs(inp) {
@@ -197,7 +199,7 @@
       if (S.won && !bot && lessonI < 0 && !practice()) { if (BIND.pressed('power', inp) || inp.pressed('Enter')) reset(); }
       tick++; if (slow && tick % 2) return;
       last = bot ? bot.step(S) : readInput(inp);
-      PH.step(S, last, dt);
+      PH.step(S, last, dt); if (C.JOINT) updateShape(S, dt); // 표시 자세도 물리 걸음마다 따라간다
       stepGhost();
       if (lesson() && lessonOkT === null && !S.dead && lesson().done(S, lmem)) lessonOkT = S.t;
       if (demo && S.t >= lesson().T) { demoOk = lessonOkT !== null; demoEnd = S.p.map(q => [q.x, q.y]); demoMsgT = 3; reset(); tries--; return; } // 시범이 끝나면 같은 자세로 돌아가 직접 해 볼 차례
@@ -207,7 +209,7 @@
       track(dt);
       if (mode === 'intent' && !bot && ctrl.st.footFar && ctrl.st.footFar.t === S.t) logAdd(footFarText(ctrl.st.footFar), 'warn'); // 직접 보낸 발이 닿지 못하고 멈춘 까닭
       if (jump && jump.off && !jump.logged && (jump.tR !== null || S.t - jump.off.t > 0.3)) { jump.logged = true; const o = jump.off; // 이륙한 순간의 빠르기·방향·손 놓은 때를 로그에 남긴다
-        logAdd(`점프 속도 ${Math.round(Math.hypot(o.vx, o.vy))} · 각도 ${Math.round(Math.atan2(-o.vy, o.vx) * 180 / Math.PI)}°${jump.tR !== null && jump.tP !== null ? ` · 손 놓기 ${jump.tR - jump.tP >= 0 ? '+' : ''}${(jump.tR - jump.tP).toFixed(2)}초` : ''}`, 'info'); }
+        logAdd(`점프 속도 ${Math.round(Math.hypot(o.vx, o.vy))} · 각도 ${Math.round(Math.atan2(-o.vy, o.vx) * 180 / Math.PI)}°${jump.tR !== null && jump.tP !== null ? ` · 손 놓기 ${jump.tR - jump.tP >= 0 ? '+' : ''}${(jump.tR - jump.tP).toFixed(2)}초` : ''}`, 'info', o.t); } // 시각은 발이 떨어진 순간
       for (const e of S.events) note(e);
       if (practice()) { // 리플레이용 자취를 적고, 시도가 끝났는지 본다(떨어짐 = 바로, 성공 = 0.8초 더 버틴 뒤)
         if (rec.t0 === null) trk.hold(S, frameExtra()); else trk.push(S, frameExtra());
@@ -338,7 +340,11 @@
       if (inward > 12) t += -os * clamp01((inward - 12) / 30); }
     return Math.max(-1, Math.min(1, t));
   }
+  // 표시 자세(v0.16.2, GPT 검토 N1): 물리 한 걸음(1/120초)마다 update에서 따라간다(그리기 횟수·화면 빠르기와 상관없다). 그리기는 읽기만 한다.
+  // 자취의 각 장에 함께 적고(frameExtra), 리플레이에서는 그 장의 값을 그대로 쓴다. 머리 방향은 조준점에서 계산하므로 장에 적힌 조준점으로 복원된다
   function updateShape(s, dt) { for (let i = 0; i < 4; i++) SHAPE.turn[i] += (bendTurn(s, i) - SHAPE.turn[i]) * Math.min(1, dt * 8); SHAPE.twist += (pelvisTwist(s) - SHAPE.twist) * Math.min(1, dt * 6); }
+  function resetShape(s) { if (!C.JOINT || !s) return; for (let i = 0; i < 4; i++) SHAPE.turn[i] = bendTurn(s, i); SHAPE.twist = pelvisTwist(s); } // 새 시도: 지금 자세의 값에서 바로 출발(지난 시도의 값을 끌고 오지 않는다)
+  const shapeCopy = () => ({ turn: SHAPE.turn.slice(), twist: SHAPE.twist }), shapeSet = q => { if (!q) return; SHAPE.turn = q.turn.slice(); SHAPE.twist = q.twist; };
   const shade = (hex, k) => { const n = parseInt(hex.slice(1), 16), f = v => Math.round(v * (1 - k)); return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`; };
   // 몸통: 어깨·가슴(윗옷)과 골반(바지)을 나눠 그리고 허리로 잇는다. 골반은 돌림만큼 한쪽이 좁아 보인다. 머리는 목 위에서 겨누는 쪽을 조금 바라본다
   function drawTorso(c, s, R, twist, look, col = { top: '#3b3f46', bot: '#2c3a52', head: '#3b3f46' }) {
@@ -355,8 +361,8 @@
   function drawBody(c) {
     const p = S.p, ch = p[0], hp = p[1], ux = (ch.x - hp.x) / C.T, uy = (ch.y - hp.y) / C.T;
     if (C.JOINT) { // 관절 몸: 팔은 어깨에서, 다리는 골반 양옆에서 나온다. 팔꿈치·무릎은 굽는 방향의 옆 몫만 화면에 보이고(벽 쪽 몫은 그늘), 위팔·허벅지는 굵고 아래는 가늘다
-      const R = [0, 1, 2, 3].map(i => PH.rootPos(S, i)), live = phase !== 'replay'; if (live) updateShape(S, 1 / 60);
-      const tgt = last && last.cx !== undefined ? [last.cx - ch.x, last.cy - ch.y] : null, tl = tgt ? Math.hypot(tgt[0], tgt[1]) || 1 : 1, look = tgt ? [tgt[0] / tl * 3, tgt[1] / tl * 3] : null;
+      const R = [0, 1, 2, 3].map(i => PH.rootPos(S, i)); // 그리기는 표시 자세를 바꾸지 않는다(읽기만)
+      const tgt = [aim.x - ch.x, aim.y - ch.y], tl = tgt ? Math.hypot(tgt[0], tgt[1]) || 1 : 1, look = tgt ? [tgt[0] / tl * 3, tgt[1] / tl * 3] : null;
       for (const i of [2, 3, 0, 1]) { // 다리 먼저, 그 위에 몸통, 팔은 맨 위
         const lb = S.limb[i], e = p[lb.end], j = limbJoint(S, i, SHAPE.turn[i]), r = { x: j.rx, y: j.ry }, w0 = lb.arm ? 7.5 : 10.5, w1 = lb.arm ? 6 : 8;
         c.globalAlpha = lb.mode === 'free' ? 0.65 : 1; c.lineCap = 'round';
@@ -404,6 +410,7 @@
     if (G.textW(`${k} ${label}`, 12, 800) + G.textW(sub, 10, 600) < 108) G.text(sub, x + 117, H - 11, { size: 10, weight: 600, align: 'right', color: on ? '#222' : 'rgba(255,255,255,0.55)' });
   }
   // ---- D안 도움 표시: 입력별로 움직일 손(1번 방식) 또는 추천 손(2번 방식)을 누르기 전에 보여 준다. 잡기 보조가 허용하는 구간도 표시
+  const FP = { list: [] }; // 발 미리보기에 그린 것(시험이 읽는다)
   function drawIntentHelp(c) {
     const st = ctrl.st, O = CTRL.OPT, ax = last.cx, ay = last.cy, foot = BIND.down('foot', G.input), charge = st.phase === 'charge';
     // 잡기 허용 구간
@@ -417,11 +424,20 @@
         G.line(e.ax + dx * t0, e.ay + dy * t0, e.ax + dx * t1, e.ay + dy * t1, 'rgba(61,255,143,0.75)', 7);
       }
     }
-    // 발을 조종하는 중(발 조종 키를 누른 채): 발이 디딜 자리를 보인다. 조준점 둘레에서 "올라설 수 있는 면"을 먼저 고른 자리다. 어느 발도 닿지 않으면 회색
-    if (foot && st.footAim) { const fa = st.footAim, dx = fa.bx - fa.ax, dy = fa.by - fa.ay, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, t = (fa.sx - fa.ax) * ux + (fa.sy - fa.ay) * uy, t0 = Math.max(0, t - 12), t1 = Math.min(L, t + 12);
-      const cax = (S.p[0].x - S.p[1].x) / C.T, cay = (S.p[0].y - S.p[1].y) / C.T, can = [2, 3].some(i => { const hj = PH.rootPos(S, i), d = Math.hypot(fa.x - hj.x, fa.y - hj.y); return d <= S.limb[i].max * 0.97 && (!C.JOINT || PH.hipAngle(cax, cay, S.limb[i], fa.x - hj.x, fa.y - hj.y).over <= 0); }), col = can ? '#b79cf0' : 'rgba(90,90,90,0.8)';
-      G.line(fa.ax + ux * t0, fa.ay + uy * t0, fa.ax + ux * t1, fa.ay + uy * t1, 'rgba(255,255,255,0.85)', 8); G.line(fa.ax + ux * t0, fa.ay + uy * t0, fa.ax + ux * t1, fa.ay + uy * t1, col, 5); G.circle(fa.x, fa.y, 5.5, null, col, 2.5);
-      if (!can) G.text('발이 닿지 않는 자리', fa.sx, fa.sy + 16, { size: 10, weight: 800, align: 'center', color: '#333', stroke: 'rgba(255,255,255,0.85)', strokeW: 3 }); }
+    // 발 디딜 자리 미리보기(v0.16.2, GPT 검토 N2). 판정은 조작과 같은 CTRL.footReach(발마다, 지금 자세 기준. 디딤 성공 보장이 아니다).
+    //  · 발을 고르기 전(발 조종 키를 누른 채): 조준한 자리에 어느 발이 닿는지 발마다 표시(왼발만 / 오른발만 / 둘 다 / 둘 다 안 됨)
+    //  · 발을 보낸 뒤: 실제로 보내고 있는 발과 그 발이 가는 고정 목표만, 그 발의 판정으로 표시(발 조종 키를 떼도 그대로)
+    FP.list = []; { const sel = [2, 3].filter(i => st.act[i] && st.manual[i] && st.footTgt && st.footTgt[i]);
+      const items = sel.length ? sel.map(i => ({ tgt: st.footTgt[i], feet: [i], selected: true })) : foot && st.footAim ? [{ tgt: st.footAim, feet: [2, 3], selected: false }] : [];
+      for (const it of items) { const fa = it.tgt, ok = it.feet.filter(i => CTRL.footReach(S, i, fa.x, fa.y).ok), can = ok.length > 0, col = can ? '#9b7be0' : 'rgba(90,90,90,0.85)';
+        FP.list.push({ feet: it.feet.slice(), ok: ok.slice(), selected: it.selected, x: fa.x, y: fa.y });
+        if (!fa.raw && fa.bx !== undefined) { const dx = fa.bx - fa.ax, dy = fa.by - fa.ay, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, t = (fa.sx - fa.ax) * ux + (fa.sy - fa.ay) * uy, t0 = Math.max(0, t - 12), t1 = Math.min(L, t + 12);
+          G.line(fa.ax + ux * t0, fa.ay + uy * t0, fa.ax + ux * t1, fa.ay + uy * t1, 'rgba(255,255,255,0.85)', 7); G.line(fa.ax + ux * t0, fa.ay + uy * t0, fa.ax + ux * t1, fa.ay + uy * t1, col, 4, can ? null : [4, 3]); }
+        G.circle(fa.x, fa.y, 5.5, null, col, 2.5);
+        if (it.selected) { const e = S.p[2 + it.feet[0]]; G.line(e.x, e.y, fa.x, fa.y, can ? 'rgba(155,123,224,0.7)' : 'rgba(90,90,90,0.6)', 1.5, [4, 4]); } // 보내는 발 → 그 발의 목표
+        const tag = (lab, x, on) => { const w = 13; c.beginPath(); G.roundRect(x, fa.y - 24, w, 13, 3); c.fillStyle = on ? '#9b7be0' : 'rgba(255,255,255,0.85)'; c.fill(); c.strokeStyle = on ? '#fff' : 'rgba(90,90,90,0.8)'; c.lineWidth = 1; c.stroke(); G.text(on ? lab : '×', x + w / 2, fa.y - 14, { size: 9, weight: 900, align: 'center', color: on ? '#fff' : '#555' }); };
+        if (it.selected) tag(it.feet[0] === 2 ? 'L' : 'R', fa.x - 6.5, can); else { tag('L', fa.x - 15, ok.includes(2)); tag('R', fa.x + 2, ok.includes(3)); } // 어느 발이 닿는지(× = 그 발은 닿지 않음)
+        if (!can) G.text('지금 자세에서는 닿지 않음', fa.x, fa.y + 17, { size: 10, weight: 800, align: 'center', color: '#333', stroke: 'rgba(255,255,255,0.85)', strokeW: 3 }); } }
     // 입력 → 손발
     const ids = O.handMode === 1 ? [['sendL', foot ? 2 : 0, false], ['sendR', foot ? 3 : 1, false]]
       : (() => { const r = foot ? st.rec.foot : st.rec.hand, o = foot ? 5 - r : 1 - r; return [['sendBest', r, true], ['sendOther', o, false]]; })();
@@ -718,11 +734,12 @@
   // ---- 로그(v0.13.0, 사용자 요청): 화면에 잠깐 떴다 사라지던 알림(경고, 이륙, 결과와 "바꿀 것")을 시각과 함께 쌓아 둔다. 차트 구역을 한 번 더 나눈 칸에 보인다
   // (차트가 위·아래에 붙어 있으면 차트 오른쪽, 옆에 붙어 있으면 차트 아래). 시도가 바뀌어도 남고, 휠로 올려 본다. 리플레이에서는 재생 시각 뒤의 알림을 흐리게 두고, 알림을 누르면 그 시각으로 간다
   const LOG = { items: [], att: 0, scroll: 0, max: 0 }, LOG_COL = { warn: '#ffb7a8', fail: '#ff9c8a', ok: '#7dff9a', hint: '#ffd9a0', info: INK };
-  function logAdd(text, kind) {
-    if (mode !== 'intent' || bot || demo || !text || !S) return; const last = LOG.items[LOG.items.length - 1];
-    if (last && last.att === LOG.att && last.text === text && S.t - last.st < 1.5) { last.st = S.t; return; } // 같은 알림이 잇달아 나오면 한 번만 적는다
+  // at = 사건이 일어난 시각(물리 시각). 없으면 지금. 시각 열·본문·누르면 가는 재생 시각이 모두 이 시각이다(v0.16.2, GPT 검토 N3: 성공은 결과 카드가 뜬 시각이 아니라 목표에 닿은 시각)
+  function logAdd(text, kind, at) {
+    if (mode !== 'intent' || bot || demo || !text || !S) return; const last = LOG.items[LOG.items.length - 1], ev = at ?? S.t;
+    if (last && last.att === LOG.att && last.text === text && ev - last.st < 1.5) { last.st = ev; return; } // 같은 알림이 잇달아 나오면 한 번만 적는다
     if (!last || last.att !== LOG.att) LOG.items.push({ att: LOG.att, kind: 'sep', text: `${lesson() ? `연습 ${lessonI + 1}` : `자유 연습 · 시작 자세 ${station}`} · 시도 ${tries}`, t: null, st: S.t });
-    LOG.items.push({ att: LOG.att, kind, text, t: rec.t0 !== null ? S.t - rec.t0 : null, st: S.t }); if (LOG.items.length > 300) LOG.items.splice(0, LOG.items.length - 300);
+    LOG.items.push({ att: LOG.att, kind, text, t: rec.t0 !== null ? ev - rec.t0 : null, st: ev }); if (LOG.items.length > 300) LOG.items.splice(0, LOG.items.length - 300);
     LOG.scroll = 0; // 새 알림이 오면 가장 새 것이 보이게 맨 아래로
   }
   function drawLogZone(now) {
@@ -738,12 +755,15 @@
     let yy = total <= viewH ? top : top + viewH - total + LOG.scroll; // 적을 때는 위에서부터, 넘치면 가장 새 것이 아래에 오게
     // 리플레이에서는 이번 시도의 로그 한 건(여러 줄이면 그 줄 모두)을 누르면 그 시각으로 간다. 하는 중에는 남기기만 한다
     const blocks = new Map(); { let y2 = yy; for (const r of rows) { if (!r.sep) { const q = blocks.get(r.it) || { y0: y2, y1: y2 }; q.y1 = y2 + lh; blocks.set(r.it, q); } y2 += r.h; } }
-    for (const [it, q] of blocks) { const seek = it.att === LOG.att && phase === 'replay' && it.t !== null, id = `log@${it.att}@${it.t}`; if (!seek || q.y0 < top || q.y1 > top + viewH) continue;
+    const playable = it => it.att === LOG.att && it.t !== null && trk.frames.length > 1 && it.st >= trk.t0() - 1e-6 && it.st <= trk.end() + 1e-6; // 연속으로 적힌 자취 안의 사건만 재생할 수 있다
+    LOG.playable = []; for (const [it] of blocks) if (phase === 'replay' && playable(it)) LOG.playable.push(it.t);
+    for (const [it, q] of blocks) { const seek = phase === 'replay' && playable(it), id = `log@${it.att}@${it.t}`; if (!seek || q.y0 < top || q.y1 > top + viewH) continue;
       if (HUD.hot === id) { c.fillStyle = 'rgba(243,236,214,0.12)'; c.fillRect(z.x + 3, q.y0 - 1, z.w - 9, q.y1 - q.y0 + 2); } HUD.hits.push({ id, x: z.x + 3, y: q.y0 - 1, w: z.w - 9, h: q.y1 - q.y0 + 2 }); }
     rows.forEach(r => { const vis = yy + r.h > top && yy < top + viewH, it = r.it, cur = it.att === LOG.att;
       if (vis && r.sep) { c.fillStyle = 'rgba(243,236,214,0.14)'; c.fillRect(z.x + pad, yy + 8, z.w - pad * 2, 1); const t = it.text, w2 = G.textW(t, 8.5, 800) + 10; c.fillStyle = '#161c17'; c.fillRect(z.x + pad + 6, yy + 2, w2, 13); G.text(t, z.x + pad + 11, yy + 12, { size: 8.5, weight: 800, color: cur ? '#ffd166' : DIM }); }
       else if (vis) { const later = cur && phase === 'replay' && it.t !== null && now !== null && it.t > now + 0.02; c.globalAlpha = later ? 0.35 : cur ? 1 : 0.6;
         if (r.first) G.text(it.t === null ? '시작 전' : `${it.t.toFixed(2)}초`, z.x + pad + tcol, yy + 10, { size: 8.5, weight: 800, align: 'right', color: DIM });
+        if (r.first && cur && phase === 'replay' && it.t !== null && !playable(it)) G.text('재생 기록 없음', z.x + z.w - 8, yy + 10, { size: 8, weight: 700, align: 'right', color: '#ff9c8a' }); // 기록 밖 사건: 남기되 누를 수 없다
         G.text(r.ln, z.x + pad + tcol + 6, yy + 10, { size: fz, weight: it.kind === 'fail' || it.kind === 'ok' ? 800 : 600, color: LOG_COL[it.kind] || INK }); c.globalAlpha = 1; }
       yy += r.h; });
     if (LOG.max > 0) { const bh2 = Math.max(10, viewH * viewH / total), by2 = top + (viewH - bh2) * (1 - LOG.scroll / LOG.max); c.fillStyle = 'rgba(243,236,214,0.14)'; c.fillRect(z.x + z.w - 4, top, 3, viewH); c.fillStyle = 'rgba(243,236,214,0.7)'; c.fillRect(z.x + z.w - 4, by2, 3, bh2); }
@@ -831,7 +851,7 @@
     return '붙잡은 곳 없이 떨어졌다';
   }
   const failText = () => failReason({ mode, why, air, assist: CTRL.OPT.assist });
-  const frameExtra = () => ({ aim: [aim.x, aim.y], g: ghost ? PRACTICE.clone(ghost.S) : null });
+  const frameExtra = () => ({ aim: [aim.x, aim.y], g: ghost ? PRACTICE.clone(ghost.S) : null, shape: shapeCopy() }); // shape = 그 순간의 표시 자세(무릎 방향·골반 돌림)
   // 시각 세 가지를 따로 둔다: okT = 성공 조건을 채운 시각(걸린 시간은 이것으로 센다), t = 결과가 확정된 시각(성공 뒤 OK_WAIT초를 더 보여 준 뒤), 리플레이의 끝 = 자취의 끝.
   // 성공은 조건을 채운 순간 정해진다. 그 뒤 보여 주는 동안 떨어져도 성공이다(떨어졌다는 사실은 함께 적는다)
   function endAttempt(kind) { // kind: 'ok' 성공, 'fail' 떨어짐, 'stop' 하다가 리플레이를 열어 멈춤
@@ -841,20 +861,20 @@
       title: kind === 'ok' ? (lesson() ? '과제 성공' : '목표 도달') : kind === 'fail' ? '매트에 떨어졌습니다' : '멈춤',
       sub: kind === 'ok' ? `성공 시각 ${at(okT)} · ${lesson() ? '이번 과제 ' : ''}시도 ${tries}번째` : `${kind === 'fail' ? '떨어진' : '멈춘'} 시각 ${at(S.t)} · ${lesson() ? '이번 과제 ' : ''}시도 ${tries}번째`,
       reason: kind === 'fail' ? failText() : kind === 'ok' && S.dead ? '성공한 뒤 떨어졌습니다(과제는 성공으로 봅니다)' : null, hint: kind === 'fail' ? hint() : null };
-    if (kind === 'ok') { logAdd(`성공 — ${at(okT)}`, 'ok'); if (ended.reason) logAdd(ended.reason, 'warn'); } else if (kind === 'fail') { logAdd(`떨어짐 — ${ended.reason}`, 'fail'); if (ended.hint) logAdd(ended.hint, 'hint'); } // 결과와 "바꿀 것"도 로그에 남는다
+    if (kind === 'ok') { logAdd(`성공 — ${at(okT)}`, 'ok', okT); if (ended.reason) logAdd(ended.reason, 'warn'); } else if (kind === 'fail') { logAdd(`떨어짐 — ${ended.reason}`, 'fail'); if (ended.hint) logAdd(ended.hint, 'hint'); } // 결과와 "바꿀 것"도 로그에 남는다
     phase = 'ended';
   }
   function openReplay() { // 내가 한 플레이를 적어 둔 자취 그대로 다시 본다(다시 계산하지 않는다). 연속으로 적힌 데까지만 재생한다
     if (!practice() || trk.frames.length < 2) return; if (phase === 'live') endAttempt('stop');
-    rpLive = { S, aim: [aim.x, aim.y], gS: ghost ? ghost.S : null }; rp = PRACTICE.clock(rec.t0 ?? trk.t0(), trk.end()); rp.playing = true; phase = 'replay'; VIEW.manual = false; VIEW.start = 0;
+    rpLive = { S, aim: [aim.x, aim.y], gS: ghost ? ghost.S : null, shape: shapeCopy() }; rp = PRACTICE.clock(rec.t0 ?? trk.t0(), trk.end()); rp.playing = true; phase = 'replay'; VIEW.manual = false; VIEW.start = 0;
   }
-  function closeReplay() { if (phase !== 'replay') return; S = rpLive.S; aim.x = rpLive.aim[0]; aim.y = rpLive.aim[1]; if (ghost) ghost.S = rpLive.gS; rp = null; rpLive = null; phase = 'ended'; } // 실제로 끝난 순간의 몸으로 돌아온다(자취가 아니라 따로 들고 있던 것)
+  function closeReplay() { if (phase !== 'replay') return; S = rpLive.S; aim.x = rpLive.aim[0]; aim.y = rpLive.aim[1]; if (ghost) ghost.S = rpLive.gS; shapeSet(rpLive.shape); rp = null; rpLive = null; phase = 'ended'; } // 실제로 끝난 순간의 몸으로 돌아온다(자취가 아니라 따로 들고 있던 것)
   const RP_STEP = 0.05; // 한 번 넘기는 시간(키와 단추가 같다). 계산 한 걸음(1/120초)이나 화면 한 장이 아니다
   function replayUpdate(dt, inp) {
     if (BIND.pressedIn('rpPlay', inp, 'replay')) rp.toggle();
     if (BIND.pressedIn('rpSpeed', inp, 'replay')) rp.cycleSpeed();
     for (const [id, d] of [['rpBack', -1], ['rpFwd', 1]]) { if (BIND.pressedIn(id, inp, 'replay')) { rp.nudge(d * RP_STEP); rpHold = 0; } else if (BIND.downIn(id, inp, 'replay')) { rpHold += dt; if (rpHold > 0.25) rp.nudge(d * dt); } } // 누르고 있으면 실제 빠르기로 계속
-    rp.update(dt); const f = trk.at(rp.t); S = f.s; if (f.aim) { aim.x = f.aim[0]; aim.y = f.aim[1]; } if (ghost) ghost.S = f.g || rpLive.gS;
+    rp.update(dt); const f = trk.at(rp.t); S = f.s; if (f.aim) { aim.x = f.aim[0]; aim.y = f.aim[1]; } if (ghost) ghost.S = f.g || rpLive.gS; shapeSet(f.shape); // 그 장의 표시 자세
   }
   function doClick(id) { // 화면의 단추를 눌렀을 때
     if (id === 'retry') { reset(); return true; }
@@ -862,7 +882,7 @@
     if (id === 'next') { setLesson(lessonI + 1 >= LESSON.LIST.length ? -1 : lessonI + 1); return true; }
     if (id === 'more' && ended) { ended.more = !ended.more; ended.pos = null; }
     if (id === 'rp_play' && rp) rp.toggle(); if (id === 'rp_back' && rp) rp.nudge(-RP_STEP); if (id === 'rp_fwd' && rp) rp.nudge(RP_STEP); if (id === 'rp_speed' && rp) rp.cycleSpeed();
-    if (id.startsWith('log@') && rp) { const t = +id.split('@')[2]; if (Number.isFinite(t)) { rp.playing = false; rp.seek((rec.t0 ?? 0) + t); } }
+    if (id.startsWith('log@') && rp) { const t = +id.split('@')[2], abs = (rec.t0 ?? 0) + t; if (Number.isFinite(t) && abs >= trk.t0() - 1e-6 && abs <= trk.end() + 1e-6) { rp.playing = false; rp.seek(abs); } } // 기록 밖이면 옮기지 않는다
     if (id === 'view_menu') VM.open = !VM.open; if (id === 'vm_close') VM.open = false; if (id === 'vm_resetpos') { LAY.pos = {}; saveLay(); if (ended) ended.pos = null; }
     if (id.startsWith('vm_')) { const it = VIEW_ITEMS.find(q => 'vm_' + q.id === id); if (it) it.set(!it.get()); }
     if (id === 'log_off') setLog(false); if (id === 'log_on') setLog(true); if (id === 'log_clear') { LOG.items = []; LOG.scroll = 0; } if (id === 'log_stats') showLog = !showLog; if (id === 'view_fit') setZoom(1);

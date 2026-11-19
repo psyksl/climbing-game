@@ -86,7 +86,7 @@ const CTRL = (() => {
   }
   // ---- D안: 의도 조작. 플레이어는 어느 손발을 어디로, 언제 던질지만 정하고 균형·발 위치·손 놓는 순간은 게임이 채운다
   const OPT = { autoFeet: true, autoShift: true, assist: true, handMode: 1, assistRange: 'near', autoLoad: false }; // autoLoad: 모을 때 목표 반대쪽으로 자동으로 싣기(비교용. 기본은 끔 = Space는 아래로 웅크리기만, 좌우는 A/D) // assistRange: 'near' 커서 근처 구간만 / 'ledge' 겨눈 턱 전체
-  const P = { MOVE_STEP: 26, MOVE_GAIN: 0.55, MOVE_MARGIN: 0.95, ANGLE_MARGIN: 10, CATCH_SPAN: 28, REC_MARGIN: 22, REC_HOLD: 0.15, CATCH_R: 45, FOOT_CATCH_R: 30, SHIFT_T: 0.2, THROW_T: 0.32, REL_MIN: 0.03, REL_MAX: 0.14, CROUCH: 40, THROW_D: 250, FEET_V: 150, FULL_CHARGE: 0.6, ROCK_MAX: 0.45, GAIN0: 0.25, CROUCH_MODE: 'away', SWAY_V: 160, SWAY_MAX: 40, LEAN_MAX: 24, DIP_V: 160, DIP_MAX: 28, PULL_T: 0.45, SPLIT_MAX: 58 }; // SPLIT_MAX: 거의 편 다리가 몸통 아래 방향에서 옆으로 벌어질 수 있는 각도(°). 넘으면 자동 발이 그 발을 다시 디딘다
+  const P = { MOVE_STEP: 26, MOVE_GAIN: 0.55, MOVE_MARGIN: 0.95, ANGLE_MARGIN: 10, CATCH_SPAN: 28, REC_MARGIN: 22, REC_HOLD: 0.15, CATCH_R: 45, FOOT_CATCH_R: 30, FOOT_LAND_R: 18, FOOT_REACH_K: 1.1, SHIFT_T: 0.2, THROW_T: 0.32, REL_MIN: 0.03, REL_MAX: 0.14, CROUCH: 40, THROW_D: 250, FEET_V: 150, FULL_CHARGE: 0.6, ROCK_MAX: 0.45, GAIN0: 0.25, CROUCH_MODE: 'away', SWAY_V: 160, SWAY_MAX: 40, LEAN_MAX: 24, DIP_V: 160, DIP_MAX: 28, PULL_T: 0.45, SPLIT_MAX: 58 }; // SPLIT_MAX: 거의 편 다리가 몸통 아래 방향에서 옆으로 벌어질 수 있는 각도(°). 넘으면 자동 발이 그 발을 다시 디딘다
   const handHolds = (s, poly) => [0, 1].some(k => s.limb[k].mode === 'grip' && s.limb[k].anchor.poly === poly);
   function footCandidates(s, i, ot = null) { // ot: 다른 발이 가려는 곳(있으면) // 발을 디딜 만한 곳: 위를 향한 면, 다리가 닿는 곳, 엉덩이보다 아래
     const hp = s.p[1], hj = PHX.rootPos(s, i), L = PHX.C.L, side = i === 2 ? -1 : 1, other = s.limb[5 - i], op = s.p[2 + (5 - i)]; // hj: 이 다리가 붙은 골반 자리(기존 두 몸은 엉덩이 점)
@@ -123,6 +123,13 @@ const CTRL = (() => {
     const e = best.e, R = PHX.C.FOOT_R, cxm = (e.ax + e.bx) / 2, cym = (e.ay + e.by) / 2; let x = best.sx, y = best.sy;
     for (let k = 0; k < 8; k++) { const q = PHX.nearestSurface(s.world, x + e.nx * R, y + e.ny * R); if (q && q.poly === best.poly && Math.abs(q.nx - e.nx) < 0.02 && Math.abs(q.ny - e.ny) < 0.02) break; x += (cxm - x) * 0.3; y += (cym - y) * 0.3; }
     return { x: x + e.nx * R, y: y + e.ny * R, sx: x, sy: y, nx: e.nx, ny: e.ny, poly: best.poly, flat: e.ny <= -0.7, ax: e.ax, ay: e.ay, bx: e.bx, by: e.by };
+  }
+  // 한 발이 (x, y)에 닿을 수 있는가(v0.16.2, GPT 검토 N2): len = 다리 길이 안, hip = 고관절 범위 안, ok = 둘 다. 지금 자세 기준의 판정이다(몸을 옮기면 바뀐다).
+  // "닿는 범위 안"일 뿐 디딤 성공을 보장하지 않는다(디딜 면·빠르기는 실제로 닿을 때 판정). 화면의 발 미리보기와 조작의 "닿지 않음" 안내가 이 함수 하나를 쓴다
+  function footReach(s, i, x, y) {
+    const C = PHX.C, hj = PHX.rootPos(s, i), lb = s.limb[i], dx = x - hj.x, dy = y - hj.y, len = Math.hypot(dx, dy) <= lb.max * P.FOOT_REACH_K; // 몸이 뻗는 발을 따라가므로 다리 길이보다 조금 먼 곳까지 닿는다(foot_preview_study.js로 잰 값)
+    const hip = !C.JOINT || PHX.hipAngle((s.p[0].x - s.p[1].x) / C.T, (s.p[0].y - s.p[1].y) / C.T, lb, dx, dy).over <= 0;
+    return { len, hip, ok: len && hip };
   }
   // 잡기 보조가 허용하는 곳. 'near': 커서에서 가장 가까운 잡을 곳 주변 ±CATCH_SPAN 구간(같은 지형), 'ledge': 그 지형 전체
   function aimSeg(s, io) {
@@ -405,12 +412,12 @@ const CTRL = (() => {
           if (g && g.d <= C.GRAB_R) { const ok = catchAllowed(s, g, io); if (ok === true) attempt(i); else if (ok !== null) st.miss.push({ i, x: g.x, y: g.y, d: ok }); }
         }
         if (i >= 2 && st.act[i] && st.manual[i]) { const q = PHX.nearestSurface(s.world, e.x, e.y), ft = st.footTgt[i], fa = ft && !ft.raw ? ft : null, ax0 = ft ? ft.x : io.mx, ay0 = ft ? ft.y : io.my; // 겨눈 발 자리가 있으면 그 지형에 닿았을 때만 디딘다(가는 길에 스친 다른 면에는 디디지 않는다)
-          if (q && q.d <= C.PLANT_R && q.ny < 0.3 && (fa ? q.poly === fa.poly && q.nx * fa.nx + q.ny * fa.ny > 0.95 : Math.hypot(q.x - ax0, q.y - ay0) <= P.FOOT_CATCH_R) && Math.hypot(e.vx, e.vy) < C.PLANT_V) { // 겨눈 그 면에 닿았을 때만(같은 지형의 옆면·밑면에 먼저 닿아도 디디지 않는다)
+          if (q && q.d <= C.PLANT_R && q.ny < 0.3 && (fa ? q.poly === fa.poly && q.nx * fa.nx + q.ny * fa.ny > 0.95 && Math.hypot(q.x - fa.sx, q.y - fa.sy) <= P.FOOT_LAND_R : Math.hypot(q.x - ax0, q.y - ay0) <= P.FOOT_CATCH_R) && Math.hypot(e.vx, e.vy) < C.PLANT_V) { // 겨눈 그 면에 닿았을 때만(같은 지형의 옆면·밑면에 먼저 닿아도 디디지 않는다)
             if (handHolds(s, q.poly)) st.noStandT = s.t; else attempt(i); } } // 직접 보낸 발도 손으로 잡은 턱에는 디디지 않는다
         if (i >= 2 && st.act[i] && st.manual[i]) { // 직접 보낸 발이 겨눈 자리에 닿지 못한 채 멈춰 있으면 까닭을 알린다(아무 말 없이 발이 허공에 떠 있지 않게)
           const fa = st.footTgt[i], tx = fa ? fa.x : io.mx, ty = fa ? fa.y : io.my, far = Math.hypot(e.x - tx, e.y - ty) > 14 && Math.hypot(e.vx - hp.vx, e.vy - hp.vy) < 80; st.stall = st.stall || [0, 0, 0, 0];
           st.stall[i] = far ? st.stall[i] + dt : 0;
-          if (st.stall[i] > 0.6) { const hj = PHX.rootPos(s, i); st.footFar = { i, t: s.t, why: Math.hypot(tx - hj.x, ty - hj.y) > lb.max * 0.97 ? 'len' : 'hip' }; }
+          if (st.stall[i] > 0.6) { const rr = footReach(s, i, tx, ty); st.footFar = { i, t: s.t, why: !rr.len ? 'len' : 'hip' }; }
           if (st.stall[i] > 1.4 && !io.down('foot')) { st.act[i] = false; st.manual[i] = false; inp.drop[i] = true; st.stall[i] = 0; } } // 키를 뗀 뒤에도 닿지 못하면 그 발은 그만두고 자동 발에 맡긴다
         if (i >= 2 && st.auto[i] && !st.auto[i].swing) { const a = st.auto[i]; if (Math.hypot(e.x - a.x, e.y - a.y) < 8 && Math.hypot(e.vx - hp.vx, e.vy - hp.vy) < C.PLANT_V) attempt(i); }
       }
@@ -433,6 +440,6 @@ const CTRL = (() => {
     }
     return { st, step, mode: 'intent' };
   }
-  return { KEYMAP, LABEL, MODES, OPT, P, make, inRange, footCandidates, catchAllowed, aimSeg, footAim };
+  return { KEYMAP, LABEL, MODES, OPT, P, make, inRange, footCandidates, catchAllowed, aimSeg, footAim, footReach };
 })();
 if (typeof module !== 'undefined') module.exports = CTRL;
