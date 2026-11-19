@@ -59,7 +59,7 @@ const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), out = proc
   await press('Space', 100); const pl2 = (await st()).c.plot; await mv(pl2.x + pl2.w * 0.2, pl2.y + 4); await pg.mouse.down(); await mv(pl2.x + pl2.w * 0.5, pl2.y + 4, { steps: 6 }); await wait(80); const mid = await st(); await pg.mouse.up(); await wait(80);
   check('시간축을 끌면 재생 시각이 따라온다', Math.abs((mid.p.rp.t - mid.p.rp.from) - (mid.c.view + (pl2.x + pl2.w * 0.5 - mid.c.ax - mid.c.pad) / mid.c.pps)) < 0.03);
   check('리플레이 단추(재생·뒤로·앞으로·속도·닫기·다시하기)가 화면에 있다', ['rp_play', 'rp_back', 'rp_fwd', 'rp_speed', 'replay', 'retry'].every(id => hitOf(mid, id)));
-  check('재생 도구는 플레이 구역 안, 차트 구역 쪽 가장자리에 붙어 있다(화면 맨 위의 따로 떨어진 줄이 아니다)', !!mid.p.tools && Math.abs((mid.p.tools.y + mid.p.tools.h) - mid.c.rect.y) < 8 && mid.p.tools.x >= 0 && mid.p.tools.x + mid.p.tools.w <= 960 && mid.p.tools.y > 200, mid.p.tools ? `도구 줄 아래 ${Math.round(mid.p.tools.y + mid.p.tools.h)} · 차트 위 ${Math.round(mid.c.rect.y)}` : '없음');
+  check('재생 도구는 차트의 머리줄 바로 아래에 들어 있다(게임 화면 위에 떠 있지 않다)', !!mid.p.tools && Math.abs(mid.p.tools.y - (mid.c.rect.y + 18)) < 0.5 && mid.p.tools.x >= mid.c.rect.x && mid.p.tools.x + mid.p.tools.w <= mid.c.rect.x + mid.c.rect.w && ['rp_play', 'rp_back', 'rp_fwd', 'rp_speed', 'replay', 'retry'].every(id => { const h = mid.p.hits.find(q => q.id === id); return h && h.y >= mid.c.rect.y && h.y + h.h <= mid.c.rect.y + mid.c.rect.h; }), mid.p.tools ? `도구 y ${Math.round(mid.p.tools.y)} · 차트 y ${Math.round(mid.c.rect.y)} · ${mid.p.tools.rows}줄` : '없음');
   { const b0 = (await st()).p.rp.t; await clickHit('rp_fwd'); const b1 = (await st()).p.rp.t; await press('ArrowRight', 80); const b2 = (await st()).p.rp.t; check('한 번 넘기기는 단추와 키가 같다(0.05초)', Math.abs((b1 - b0) - 0.05) < 1e-6 && Math.abs((b2 - b1) - 0.05) < 1e-6, `단추 ${(b1 - b0).toFixed(3)}초 · 키 ${(b2 - b1).toFixed(3)}초`); }
   await clickHit('rp_play'); check('재생 단추를 마우스로', (await st()).p.rp.playing); await clickHit('rp_play');
   await clickHit('replay'); s = await st(); check('닫으면 결과 화면으로 돌아오고 몸은 끝난 순간 그대로', s.p.phase === 'ended' && Math.max(...s.pos.map((q, i) => Math.hypot(q[0] - endPos[i][0], q[1] - endPos[i][1]))) === 0);
@@ -93,8 +93,8 @@ const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), out = proc
   // 다시 불러와도 자리와 크기가 남는다. 차트 자리 키(J)로 한 바퀴 돌려 아래로 되돌리고, 경계선을 끝까지 내려 가장 작은 크기로
   await pg.reload(); await wait(700); v2 = await view(); check('다시 불러와도 차트 구역의 자리와 크기가 남는다', v2.dock === 'left' && Math.abs(v2.size.bottom - (v.chart.h + 60)) < 1.5, `${v2.dock} · 아래 크기 ${v2.size.bottom.toFixed(0)}`);
   for (let i = 0; i < 3; i++) await press('KeyJ', 120); v2 = await view(); check('차트 자리 키로 왼쪽 → 위 → 오른쪽 → 아래', v2.dock === 'bottom', v2.dock);
-  await mv(480, v2.split.y); await pg.mouse.down(); await mv(480, 538, { steps: 6 }); await wait(60); await pg.mouse.up(); await wait(120); v2 = await view();
-  check('경계선을 끝까지 내려도 가장 작은 크기(열 줄이 구분되는 높이)에서 멈춘다', v2.chart.h === v2.fit && v2.chart.h === v.chart.h, `${v2.chart.h}`);
+  await mv(480, v2.split.y); await pg.mouse.down(); await mv(480, 540 - v.chart.h, { steps: 6 }); await wait(60); await pg.mouse.up(); await wait(120); v2 = await view();
+  check('경계선을 끌어 처음 크기(열 줄이 다 보이는 높이)로 되돌린다', Math.abs(v2.chart.h - v.chart.h) < 0.01 && v2.chart.h === v2.fit, `${v2.chart.h}`);
 
   // ── 3. 차트의 줄 머리에는 이름 없이 키캡만
   for (let i = 0; i < 4; i++) await press('KeyO', 140); await press('KeyP'); await wait(4800);

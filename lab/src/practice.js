@@ -66,8 +66,25 @@ const PRACTICE = (() => {
   // 플레이 구역 안에 게임 화면(W×H)을 비율을 지켜 넣는다. s = 배율, (x0, y0) = 화면에서의 왼쪽 위.
   // ay = 세로로 남는 자리를 위아래로 나누는 비율(0.5 = 가운데, 1 = 게임 화면을 아래에 붙이고 위를 비운다)
   function fitView(play, W, H, ay = 0.5) { const s = Math.min(play.w / W, play.h / H); return { s, x0: play.x + (play.w - W * s) / 2, y0: play.y + (play.h - H * s) * ay }; }
+  // 게임 화면 보기(확대·축소): 맞춤 배율(fitView)에 zoom을 곱한다. 게임 화면이 플레이 구역보다 작은 축은 맞춤 때처럼 놓고(가운데, 세로는 ay),
+  // 큰 축은 게임 화면의 점 (cx, cy)가 구역 가운데에 오게 하되 게임 화면 밖이 구역 안으로 들어오지 않게 막는다. 돌려주는 cx·cy는 실제로 가운데에 놓인 점
+  function camView(play, W, H, ay, zoom, cx, cy) {
+    const f = fitView(play, W, H, ay), s = f.s * zoom, fitsX = W * s <= play.w + 0.5, fitsY = H * s <= play.h + 0.5;
+    const x0 = fitsX ? play.x + (play.w - W * s) / 2 : lim(play.x + play.w / 2 - cx * s, play.x + play.w - W * s, play.x);
+    const y0 = fitsY ? play.y + (play.h - H * s) * ay : lim(play.y + play.h / 2 - cy * s, play.y + play.h - H * s, play.y);
+    return { s, x0, y0, cx: (play.x + play.w / 2 - x0) / s, cy: (play.y + play.h / 2 - y0) / s, fit: f.s, zoom, fitsX, fitsY };
+  }
+  // 마우스 자리(mx, my)에 있던 게임 화면의 점이 그 자리에 그대로 있도록 배율을 바꾼다(지도처럼)
+  function camZoom(v, play, W, H, ay, zoom, mx, my) { const gx = (mx - v.x0) / v.s, gy = (my - v.y0) / v.s, s = v.fit * zoom; return camView(play, W, H, ay, zoom, (play.x + play.w / 2 - (mx - gx * s)) / s, (play.y + play.h / 2 - (my - gy * s)) / s); }
+  // 따라가기: 화면의 점 (px, py)(몸)가 구역 가장자리의 여백(mx, my) 안으로 들어오면 그만큼 보기 자리를 옮긴다. 게임 화면이 구역보다 큰 축만
+  function camFollow(v, play, px, py, mx, my) {
+    const dx = v.fitsX ? 0 : px < play.x + mx ? px - (play.x + mx) : px > play.x + play.w - mx ? px - (play.x + play.w - mx) : 0, dy = v.fitsY ? 0 : py < play.y + my ? py - (play.y + my) : py > play.y + play.h - my ? py - (play.y + play.h - my) : 0;
+    return { cx: v.cx + dx / v.s, cy: v.cy + dy / v.s, moved: dx !== 0 || dy !== 0 };
+  }
+  // 줄 바꿈 배치: 너비들을 왼쪽부터 놓다가 넘치면 다음 줄로. 돌려주는 값: 칸마다 { x, row }, 줄 수
+  function flow(widths, maxW, gap) { const out = []; let x = 0, row = 0; for (const w of widths) { if (x > 0 && x + w > maxW) { x = 0; row++; } out.push({ x, row }); x += w + gap; } return { at: out, rows: widths.length ? row + 1 : 0 }; }
   // 차트 구역의 크기는 그대로 두고, 줄이 늘수록 줄 높이를 줄인다(가장 작게는 min, 줄이 적어도 max보다 크게 하지는 않는다)
   function laneHeight(avail, n, min = 11, max = 50) { return lim(avail / Math.max(1, n), min, max); }
-  return { HZ, MAX_S, clone, track, clock, view, dockZones, dockTarget, splitSize, fitView, laneHeight };
+  return { HZ, MAX_S, clone, track, clock, view, dockZones, dockTarget, splitSize, fitView, laneHeight, camView, camZoom, camFollow, flow };
 })();
 if (typeof module !== 'undefined') module.exports = PRACTICE;

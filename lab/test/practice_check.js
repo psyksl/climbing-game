@@ -52,4 +52,16 @@ check('경계선을 끌면 구역 크기가 마우스를 따라가고 최소·�
   check('기록이 길어지면 시간축이 줄어 전체가 보이고(0초부터), 가장 긴 폭을 넘으면 지금 시각을 따라간다', a[0] === 0 && a[1] === 4 && b2[0] === 0 && b2[1] > 5.4 && c2[0] === 0 && c2[1] > 20 && d2[1] === 60 && d2[0] > 40, `${a[1]} → ${b2[1].toFixed(2)} → ${c2[1].toFixed(1)} → ${d2[1]}초(시작 ${d2[0].toFixed(1)}초)`);
   const vm = P.view(4); vm.zoom(0.5, 1, 10); const sp = vm.span; vm.follow(9, 10, 60); check('손으로 확대한 시간축은 저절로 바뀌지 않는다', vm.manual && vm.span === sp); }
 check('줄이 늘수록 줄 높이가 줄고, 가장 작게는 11, 가장 크게는 50', P.laneHeight(126, 3) === 42 && P.laneHeight(126, 4) === 31.5 && P.laneHeight(126, 10) === 12.6 && P.laneHeight(60, 10) === 11 && P.laneHeight(500, 2) === 50);
+// 게임 화면 보기: 확대·축소, 따라가기
+{ const play = { x: 0, y: 0, w: 960, h: 355 }, f = P.fitView(play, W, H), v1 = P.camView(play, W, H, 0.5, 1, 480, 270);
+  check('배율 1은 맞춤과 같다', Math.abs(v1.s - f.s) < 1e-12 && Math.abs(v1.x0 - f.x0) < 1e-9 && v1.y0 === f.y0 && v1.fitsX && v1.fitsY);
+  const v2 = P.camView(play, W, H, 0.5, 1.4, 480, 270), v3 = P.camView(play, W, H, 0.5, 1.4, 480, -500), v4 = P.camView(play, W, H, 0.5, 1.4, 480, 5000);
+  check('키우면: 구역보다 작은 쪽(가로)은 가운데, 큰 쪽(세로)은 고른 자리가 가운데에 온다', v2.fitsX && !v2.fitsY && Math.abs(v2.x0 + 480 * v2.s - 480) < 1e-9 && Math.abs(v2.y0 + 270 * v2.s - 177.5) < 1e-9);
+  check('게임 화면 밖이 구역 안으로 들어오지 않게 막는다(위·아래 끝)', v3.y0 === 0 && Math.abs(v4.y0 + 540 * v4.s - 355) < 1e-9);
+  const mx = 300, my = 120, g = (my - v2.y0) / v2.s, v5 = P.camZoom(v2, play, W, H, 0.5, 1.4 * 1.1, mx, my);
+  check('휠 확대: 마우스 아래에 있던 자리가 그대로 있다(구역보다 큰 쪽)', Math.abs((my - v5.y0) / v5.s - g) < 1e-9 && Math.abs(v5.s - v2.s * 1.1) < 1e-12);
+  const f1 = P.camFollow(v2, play, 480, 20, 120, 100), f2 = P.camFollow(v2, play, 5, 200, 120, 100), f3 = P.camFollow(v2, play, 480, 340, 120, 100);
+  check('따라가기: 몸이 가장자리 여백에 들어오면 그만큼 옮긴다(구역보다 큰 쪽만)', f1.moved && Math.abs(f1.cy - (v2.cy - 80 / v2.s)) < 1e-9 && f1.cx === v2.cx && !f2.moved && f3.moved && f3.cy > v2.cy);
+  const fl = P.flow([70, 46, 46, 50, 95, 46, 46], 288, 4), fw = P.flow([70, 46, 46, 50, 95, 46, 46], 700, 4), fn = P.flow([70, 46, 46], 60, 4);
+  check('줄 바꿈 배치: 넓으면 한 줄, 좁으면 다음 줄로, 한 칸이 너비보다 커도 줄마다 하나씩', fw.rows === 1 && fl.rows === 2 && fl.at[4].row === 1 && fl.at[4].x === 0 && fl.at[3].x === 174 && fn.rows === 3, `${fw.rows}줄 / ${fl.rows}줄 / ${fn.rows}줄`); }
 PH.setBody('base'); process.exit(fail ? 1 : 0);
