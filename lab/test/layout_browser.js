@@ -153,17 +153,17 @@ const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), out = proc
     check('휠을 아래로: 작아지고 플레이 구역 가운데에 놓인다', z.zoom < 0.8 && Math.abs(z.x0 + 480 * z.s - (z.play.x + z.play.w / 2)) < 0.5, `${(z.s * 100).toFixed(0)}%`);
     await press('KeyZ', 200); const cz = await chart(); await mv(cz.plot.x + 100, cz.plot.y + 10); await wait(80); await pg.mouse.wheel(0, -100); await wait(150); z = await view(); check('차트 위의 휠은 게임 화면 배율을 바꾸지 않는다', z.zoom === 1 && (await chart()).span < cz.span); await press('Backslash', 100); await press('KeyR', 200); }
 
-  // ── 11. 알림 기록: 잠깐 떴다 사라지던 알림이 시각과 함께 남는다. 차트 구역을 한 번 더 나눈 칸(아래·위 붙임 = 차트 오른쪽, 옆 붙임 = 차트 아래)
+  // ── 11. 로그: 잠깐 떴다 사라지던 알림이 시각과 함께 남는다. 차트 구역을 한 번 더 나눈 칸(아래·위 붙임 = 차트 오른쪽, 옆 붙임 = 차트 아래)
   { const logS = () => lab(() => window.__lab.log()); for (let i = 0; i < 4; i++) await press('KeyO', 140); const hitBtn = async id => { const h = (await prac()).hits.find(q => q.id === id); if (!h) return false; await mv(h.x + h.w / 2, h.y + h.h / 2); await wait(60); await pg.mouse.down(); await wait(40); await pg.mouse.up(); await wait(200); return true; };
     await hitBtn('log_clear'); let lg = await logS(); v = await view();
-    check('알림 기록 칸은 차트 구역 안, 차트 오른쪽에 있다(아래 붙임)', lg.on && lg.items.length === 0 && !!v.logPart && v.logPart.x === v.chartPart.x + v.chartPart.w && v.logPart.y === v.chart.y && v.logPart.h === v.chart.h && v.chartPart.w + v.logPart.w === v.chart.w, `차트 ${v.chartPart.w} + 기록 ${v.logPart.w}`);
+    check('로그 칸은 차트 구역 안, 차트 오른쪽에 있다(아래 붙임)', lg.on && lg.items.length === 0 && !!v.logPart && v.logPart.x === v.chartPart.x + v.chartPart.w && v.logPart.y === v.chart.y && v.logPart.h === v.chart.h && v.chartPart.w + v.logPart.w === v.chart.w, `차트 ${v.chartPart.w} + 기록 ${v.logPart.w}`);
     await tryL4(150); await wait(2600); lg = await logS(); const pE = await prac(), fail = lg.items.find(q => q.kind === 'fail'), hintI = lg.items.find(q => q.kind === 'hint'), sep = lg.items[0]; await shot('18_알림기록_실패');
     check('떨어지면 까닭과 "바꿀 것"이 시각과 함께 남는다(결과 카드의 내용과 같다)', !!fail && fail.text === `떨어짐 — ${pE.ended.reason}` && Math.abs(fail.t - (pE.ended.t - pE.ended.t0)) < 0.02 && !!pE.ended.hint && !!hintI && hintI.text === pE.ended.hint && sep.kind === 'sep' && /연습 4 · 시도/.test(sep.text), `${fail && fail.t.toFixed(2)}초 "${fail && fail.text.slice(0, 40)}…" · "${hintI && hintI.text.slice(0, 30)}…"`);
-    check('이륙한 순간의 빠르기·방향·손 놓은 때도 남는다', lg.items.some(q => q.kind === 'info' && /^이륙 \d+px\/s · -?\d+°/.test(q.text) && q.t > 0), (lg.items.find(q => q.kind === 'info') || {}).text);
+    check('점프한 순간의 속도·각도·손 놓은 때도 남는다(용어: 이륙 → 점프)', lg.items.some(q => q.kind === 'info' && /^점프 속도 \d+ · 각도 -?\d+°/.test(q.text) && q.t > 0) && !lg.items.some(q => /이륙/.test(q.text)), (lg.items.find(q => q.kind === 'info') || {}).text);
     const n1 = lg.items.length; await wait(2500); check('기다려도 사라지지 않는다', (await logS()).items.length === n1);
     await press('KeyR', 300); await tryL4(470); await wait(1900); lg = await logS(); const seps = lg.items.filter(q => q.kind === 'sep'), okI = lg.items.find(q => q.kind === 'ok'), pO = await prac();
     check('다시 해도 앞 시도의 알림이 남고, 시도마다 구분 줄이 생긴다. 성공도 시각과 함께 남는다', seps.length === 2 && lg.items.indexOf(fail && lg.items.find(q => q.kind === 'fail')) < lg.items.indexOf(seps[1]) && !!okI && okI.text === `성공 — ${pO.ended.okTime.toFixed(2)}초`, `${seps.map(q => q.text).join(' / ')} · ${okI && okI.text}`);
-    check('뛰느라 발이 뜬 것은 남기지 않는다', !lg.items.some(q => /접촉 끊김/.test(q.text) && q.att === lg.att));
+    check('뛰느라 발이 뜬 것은 남기지 않는다', !lg.items.some(q => /밟는 힘이 없어 발이 떴다/.test(q.text) && q.att === lg.att));
     // 리플레이: 알림을 누르면 그 시각으로 간다
     await press('KeyY', 400); const pr = await prac(), seekHit = pr.hits.find(q => q.id.startsWith('log@')); if (seekHit) { await mv(seekHit.x + 30, seekHit.y + seekHit.h / 2); await wait(80); await pg.mouse.down(); await wait(40); await pg.mouse.up(); await wait(200); }
     const pr2 = await prac(), wantT = seekHit ? +seekHit.id.split('@')[2] : NaN; check('리플레이에서 알림을 누르면 재생 시각이 그 알림의 시각으로 간다(멈춤)', !!seekHit && !pr2.rp.playing && Math.abs((pr2.rp.t - pr2.rp.from) - wantT) < 0.02, `알림 ${wantT.toFixed(2)}초 → 재생 ${(pr2.rp.t - pr2.rp.from).toFixed(2)}초`); await shot('19_알림기록_리플레이'); await press('KeyY', 200);
@@ -173,17 +173,61 @@ const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), out = proc
     await press('KeyR', 300); await tryL4(150); await wait(2600); check('새 알림이 오면 가장 새 것이 보이게 맨 아래로 돌아온다', (await logS()).scroll === 0);
     // 차트/기록 경계선, 옆 붙임에서는 차트 아래
     v = await view(); await mv(v.logSplit.x + 1, v.chart.y + 90); await wait(100); const curL = (await prac()).cursor; await dragTo(v.logSplit.x, v.chart.y + 90, v.logSplit.x - 100, v.chart.y + 90); v2 = await view();
-    check('차트와 알림 기록 사이의 경계선을 끌면 두 칸의 너비가 바뀐다', curL === 'ew-resize' && Math.abs(v2.logPart.w - (v.logPart.w + 100)) < 1.5 && v2.chartPart.w + v2.logPart.w === v2.chart.w, `기록 ${v.logPart.w} → ${v2.logPart.w.toFixed(0)}`);
+    check('차트와 로그 사이의 경계선을 끌면 두 칸의 너비가 바뀐다', curL === 'ew-resize' && Math.abs(v2.logPart.w - (v.logPart.w + 100)) < 1.5 && v2.chartPart.w + v2.logPart.w === v2.chart.w, `기록 ${v.logPart.w} → ${v2.logPart.w.toFixed(0)}`);
     await dragTo(v2.logSplit.x, v2.chart.y + 90, v.logSplit.x, v2.chart.y + 90); await press('KeyJ', 300); v2 = await view(); await shot('20_알림기록_왼쪽_붙임');
-    check('옆 붙임에서는 알림 기록이 차트 아래에 온다', v2.dock === 'left' && v2.logPart.x === v2.chartPart.x && v2.logPart.w === v2.chart.w && v2.logPart.y === v2.chartPart.y + v2.chartPart.h && v2.logSplit && !v2.logSplit.vertical, `차트 ${v2.chartPart.h} + 기록 ${v2.logPart.h}`);
+    check('옆 붙임에서는 로그이 차트 아래에 온다', v2.dock === 'left' && v2.logPart.x === v2.chartPart.x && v2.logPart.w === v2.chart.w && v2.logPart.y === v2.chartPart.y + v2.chartPart.h && v2.logSplit && !v2.logSplit.vertical, `차트 ${v2.chartPart.h} + 기록 ${v2.logPart.h}`);
     for (let g = 0; g < 4 && (await view()).dock !== 'bottom'; g++) await press('KeyJ', 200);
     // 켬·끔
-    await press('KeyL', 200); v2 = await view(); const onBtn = (await prac()).hits.find(q => q.id === 'log_on'); check('알림 기록 키(L)로 끄면 차트가 구역 전체를 쓴다(머리줄에 다시 켜는 단추)', v2.logPart === null && v2.chartPart.w === v2.chart.w && !!onBtn && (await logS()).items.length > 0);
+    await press('KeyL', 200); v2 = await view(); const onBtn = (await prac()).hits.find(q => q.id === 'log_on'); check('로그 키(L)로 끄면 차트가 구역 전체를 쓴다(머리줄에 다시 켜는 단추)', v2.logPart === null && v2.chartPart.w === v2.chart.w && !!onBtn && (await logS()).items.length > 0);
     await pg.reload(); await wait(700); const offKept = (await view()).logPart === null; await press('KeyL', 200); check('끈 상태가 다시 실행해도 남고, 다시 누르면 켜진다', offKept && !!(await view()).logPart);
     const nm = await lab(() => ({ log: ACT.name.log, fit: ACT.name.viewFit, l: BIND.get('log')[0], z: BIND.get('viewFit')[0], cf1: Object.keys(BIND.conflicts(1)).length, cf2: Object.keys(BIND.conflicts(2)).length }));
-    check('알림 기록·화면 맞춤은 키 설정에서 바꿀 수 있는 동작이고 기본 배정에 겹침이 없다', nm.log === '알림 기록' && nm.fit === '화면 맞춤' && nm.l === 'KeyL' && nm.z === 'KeyZ' && nm.cf1 === 0 && nm.cf2 === 0, JSON.stringify(nm)); }
+    check('로그·화면 맞춤은 키 설정에서 바꿀 수 있는 동작이고 기본 배정에 겹침이 없다', nm.log === '로그' && nm.fit === '화면 맞춤' && nm.l === 'KeyL' && nm.z === 'KeyZ' && nm.cf1 === 0 && nm.cf2 === 0, JSON.stringify(nm)); }
 
-  // ── 12. 1920×1080에서도 같은 배치(논리 좌표가 같다)
+  // ── 12. 보기 설정: 연습을 돕는 표시들을 체크박스로 켜고 끈다(단축키를 몰라도 되게)
+  { const hitBtn = async id => { const h = (await prac()).hits.find(q => q.id === id); if (!h) return false; await mv(h.x + Math.min(40, h.w / 2), h.y + h.h / 2); await wait(60); await pg.mouse.down(); await wait(40); await pg.mouse.up(); await wait(200); return true; };
+    for (let g = 0; g < 8 && (await lab(() => window.__lab.lesson().i)) >= 0; g++) await press('KeyO', 160); await press('KeyR', 300); v = await view();
+    const hasBtn = !!(await prac()).hits.find(q => q.id === 'view_menu'), taps0 = await lab(() => window.__lab.lesson().rec.taps.length); await hitBtn('view_menu'); v2 = await view(); await shot('21_보기_설정');
+    const menuKeys = (await lab(() => window.__lab.keys())).filter(k => k.where === 'menu').map(k => `${k.action}:${k.code}`);
+    check('플레이 구역 오른쪽 아래에 보기 설정 단추가 늘 있고, 누르면 체크박스 목록이 열린다', hasBtn && !v.menu && v2.menu && !!v2.menuRect && v2.menuRect.x >= 0 && v2.menuRect.y >= 0 && v2.menuRect.x + v2.menuRect.w <= 960 && v2.menuRect.y + v2.menuRect.h <= 540, JSON.stringify(v2.menuRect));
+    check('단축키가 있는 항목에는 지금 설정된 키가 함께 보인다', ['chart:KeyT', 'log:KeyL', 'guide:KeyK', 'ghost:KeyU'].every(k => menuKeys.includes(k)), menuKeys.join(' '));
+    const flip = {}; for (const id of ['chart', 'log', 'guide', 'help', 'status', 'recent', 'ghost', 'stats']) { const before = await view(), lgB = await lab(() => window.__lab.log()); await hitBtn('vm_' + id); const after = await view(), lgA = await lab(() => window.__lab.log());
+      const st = q => id === 'chart' ? !!q.chart : id === 'log' ? !!q.logPart || (!q.chart && null) : id === 'guide' ? q.guide : q.show[id]; flip[id] = [id === 'log' ? lgB.on : st(before), id === 'log' ? lgA.on : st(after)]; if (id === 'chart') { flip.chartFull = after.play.h === 540; await hitBtn('vm_chart'); } }
+    v2 = await view(); await shot('22_보기_설정_여러_개_끔');
+    check('체크박스를 누르면 그 표시가 꺼진다(입력 비교·로그·키 안내·조작 설명·상태 알림·누른 키 표시·시범 유령) / 플레이 통계는 켜진다', ['chart', 'log', 'guide', 'help', 'status', 'recent', 'ghost'].every(id => flip[id][0] === true && flip[id][1] === false) && flip.stats[0] === false && flip.stats[1] === true && flip.chartFull, JSON.stringify(flip));
+    check('꺼진 것이 실제로 화면에서 빠진다(키 안내·로그 칸·조작 설명 칸)', v2.guideRect === null && v2.logPart === null && v2.helpShown === false && v2.chartPart.w === v2.chart.w);
+    check('보기 설정 창 안을 누르는 것은 게임 입력이 아니다(손을 보내지 않는다)', (await lab(() => window.__lab.lesson().rec.taps.length)) === taps0);
+    await pg.reload(); await wait(700); v2 = await view(); check('켬·끔은 다시 실행해도 남는다', v2.guide === false && v2.logPart === null && v2.show.help === false && v2.show.status === false && v2.show.recent === false);
+    await press('KeyC', 250); check('보기 설정 키(C)로도 연다', (await view()).menu === true); for (const id of ['log', 'guide', 'help', 'status', 'recent']) await hitBtn('vm_' + id); v2 = await view();
+    check('다시 체크하면 돌아온다', !!v2.guideRect && !!v2.logPart && v2.helpShown === true && v2.show.status && v2.show.recent);
+    // 과제 카드·결과 카드
+    for (let i = 0; i < 4; i++) await press('KeyO', 140); const hadCard = !!(await prac()).lessonCard; await hitBtn('vm_lesson'); const noCard = (await prac()).lessonCard === null; await hitBtn('vm_lesson'); await hitBtn('vm_result'); await hitBtn('vm_close'); const closed = !(await view()).menu;
+    await tryL4(150); await wait(2600); let pe = await prac(); const noResult = pe.phase === 'ended' && pe.ended.rect === null && !pe.hits.find(q => q.id === 'retry'); await shot('23_결과_카드_끔'); await press('KeyR', 300); const again = (await prac()).phase === 'live';
+    check('과제 카드를 끄고 켤 수 있다. 결과 카드를 꺼도 시도는 끝난 채 멈추고 다시하기 키는 그대로 된다', hadCard && noCard && closed && noResult && again, `과제 카드 ${hadCard}→${!noCard} · 결과 카드 없음 ${noResult} · R로 다시 ${again}`);
+    await press('KeyC', 250); await hitBtn('vm_result'); await hitBtn('vm_close');
+    // 조작 설명 칸: 게임 화면을 맞춤보다 키우면 숨는다
+    for (let g = 0; g < 8 && (await lab(() => window.__lab.lesson().i)) >= 0; g++) await press('KeyO', 160); await press('KeyR', 300); const h1 = (await view()).helpShown, mq = await g2s(430, 250); await mv(mq[0], mq[1]); await wait(80); await pg.mouse.wheel(0, -100); await wait(150); const h2 = (await view()).helpShown; await press('KeyZ', 200);
+    check('조작 설명 칸은 자유 연습에서만 나오고, 게임 화면을 맞춤보다 키우면 숨는다', h1 === true && h2 === false && (await view()).helpShown === true); }
+
+  // ── 13. 키 안내·과제 카드·결과 카드를 끌어서 옮긴다. 자리는 저장되고, 보기 설정에서 처음 자리로 되돌린다
+  { const hitBtn = async id => { const h = (await prac()).hits.find(q => q.id === id); if (!h) return false; await mv(h.x + h.w / 2, h.y + h.h / 2); await wait(60); await pg.mouse.down(); await wait(40); await pg.mouse.up(); await wait(200); return true; };
+    for (let i = 0; i < 4; i++) await press('KeyO', 140); await press('KeyR', 300); v = await view(); const g0 = v.guideRect, c0 = (await prac()).lessonCard;
+    await mv(g0.x + 40, g0.y + 5); await wait(100); const curG = (await prac()).cursor; await dragTo(g0.x + 40, g0.y + 5, g0.x + 240, g0.y + 105); v2 = await view(); const g1 = v2.guideRect;
+    check('키 안내의 머리 줄을 잡으면 옮기기 마우스 모양이고, 끌면 그만큼 옮겨진다', curG === 'move' && Math.abs(g1.x - (g0.x + 200)) < 1.5 && Math.abs(g1.y - (g0.y + 100)) < 1.5 && g1.moved, `(${Math.round(g0.x)}, ${Math.round(g0.y)}) → (${Math.round(g1.x)}, ${Math.round(g1.y)})`);
+    const tapsB = await lab(() => window.__lab.lesson().rec.taps.length); await mv(g1.x + g1.w - 20, g1.y + 60); await wait(100); const curBody = (await prac()).cursor; await pg.mouse.click((g1.x + g1.w - 20) * K, (g1.y + 60) * K); await wait(250);
+    check('키 안내의 머리 줄이 아닌 곳은 그대로 게임 입력이다(가려진 곳도 겨누고 손을 보낼 수 있다)', curBody === 'none' && (await lab(() => window.__lab.lesson().rec.taps.length)) === tapsB + 1);
+    await press('KeyR', 300); await dragTo(c0.x + 60, c0.y + 10, c0.x - 300, c0.y + 90); let c1 = (await prac()).lessonCard; check('과제 카드도 위쪽 띠를 잡고 끌어 옮긴다', Math.abs(c1.x - (c0.x - 360)) < 1.5 && Math.abs(c1.y - (c0.y + 80)) < 1.5 && c1.moved, `(${Math.round(c0.x)}, ${Math.round(c0.y)}) → (${Math.round(c1.x)}, ${Math.round(c1.y)})`);
+    await dragTo(c1.x + 60, c1.y + 10, -400, -300); c1 = (await prac()).lessonCard; v2 = await view(); check('구역 밖으로 끌어도 플레이 구역 안에 머문다', c1.x === v2.play.x && c1.y === v2.play.y);
+    await tryL4(150); await wait(2600); let pe = await prac(); const e0 = pe.ended.rect, rb = pe.hits.find(q => q.id === 'retry'); await dragTo(e0.x + e0.w - 20, e0.y + 14, e0.x + e0.w - 20 - 150, e0.y + 14 - 40); pe = await prac(); const e1 = pe.ended.rect; await shot('24_카드_옮김');
+    check('결과 카드는 단추가 아닌 곳을 잡고 끌어 옮긴다(끄는 것만으로 다시하기가 눌리지 않는다)', pe.phase === 'ended' && Math.abs(e1.x - (e0.x - 150)) < 1.5 && Math.abs(e1.y - (e0.y - 40)) < 1.5 && !!rb, `(${Math.round(e0.x)}, ${Math.round(e0.y)}) → (${Math.round(e1.x)}, ${Math.round(e1.y)})`);
+    await hitBtn('retry'); check('옮긴 결과 카드의 단추는 그대로 눌린다', (await prac()).phase === 'live'); await tryL4(150); await wait(2600); const e2 = (await prac()).ended.rect; check('다음 시도에서도 결과 카드는 옮긴 자리에 나온다', Math.abs(e2.x - e1.x) < 1.5 && Math.abs(e2.y - e1.y) < 1.5);
+    await pg.reload(); await wait(700); v2 = await view(); check('옮긴 자리는 다시 실행해도 남는다', !!v2.pos.guide && !!v2.pos.lesson && !!v2.pos.result && Math.abs(v2.guideRect.x - g1.x) < 1.5);
+    await press('KeyC', 250); await hitBtn('vm_resetpos'); await hitBtn('vm_close'); v2 = await view(); check('보기 설정의 "카드 자리 처음으로"로 모두 제자리', Object.keys(v2.pos).length === 0 && Math.abs(v2.guideRect.x - g0.x) < 1.5 && !v2.guideRect.moved); }
+
+  // ── 14. 차트 머리줄의 안내 글: 항목 사이를 넉넉히 띄운다
+  { await press('KeyR', 300); v = await view(); const hs = v.hints, gaps = hs.slice(1).map((q, k) => q.x - (hs[k].x + hs[k].w));
+    check('안내 글 세 항목이 따로 놓이고 항목 사이가 20px 이상 떨어져 있다', hs.length === 3 && hs[0].t === '0초 = 첫 입력' && gaps.every(g => g >= 20), `간격 ${gaps.map(g => g.toFixed(0)).join(', ')}px`); }
+
+  // ── 15. 1920×1080에서도 같은 배치(논리 좌표가 같다)
   { const c2 = await b.newContext({ viewport: { width: 1920, height: 1080 } }), p2 = await c2.newPage(); await p2.goto(url); await p2.waitForTimeout(700); const q = await p2.evaluate(() => window.__lab.view());
     check('1920×1080에서도 같은 나눔(논리 좌표 기준)', q.dock === 'bottom' && q.chart.h === q.fit && q.play.h === 540 - q.fit);
     if (out) { for (let i = 0; i < 4; i++) { await p2.keyboard.press('KeyO'); await p2.waitForTimeout(140); } await p2.keyboard.press('KeyP'); await p2.waitForTimeout(4800); await p2.screenshot({ path: path.join(out, '12_1920x1080_아래.png') }); await p2.keyboard.press('KeyJ'); await p2.waitForTimeout(300); await p2.screenshot({ path: path.join(out, '13_1920x1080_왼쪽.png') }); }
