@@ -1893,7 +1893,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
 // 등반 조작 실험실 · 화면과 입력
 'use strict';
 (() => {
-  const W = G.W, H = G.H, OX = -30, OY0 = 130, C = PH.C, BUILD = 'v0.16.2';
+  const W = G.W, H = G.H, OX = -30, OY0 = 130, C = PH.C, BUILD = 'v0.16.3';
   let OY = OY0; // 화면 세로 기준. 과제가 정하면(view) 그 값을 쓴다: 높은 턱이 화면 밖으로 나가지 않게
   const LIMB = ['왼손', '오른손', '왼발', '오른발'], COL = ['#e86a5a', '#4fb3e8', '#e86a5a', '#4fb3e8'], DARK = ['#8a3b3b', '#2a6f97', '#8a3b3b', '#2a6f97'];
   let world = PH.makeWorld(), layout = null;
@@ -1917,7 +1917,9 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
   window.__lab = { keys: () => KEYS.log.slice(), chart: () => ({ mode: LAY.chart ? 'on' : 'off', dock: LAY.dock, size: LAY.size[LAY.dock], view: VIEW.start, span: VIEW.span, manual: VIEW.manual, end: CH.end, rect: CH.rect && { ...CH.rect }, plot: CH.plot && { ...CH.plot }, ax: CH.ax, pad: CH.pad, pps: CH.pps, n: CH.n, laneH: CH.laneH, big: CH.big, heads: CH.heads.map(q => ({ ...q })), off: CH.off && { ...CH.off }, scroll: CH.scroll, scrollMax: CH.scrollMax, head: CH.head, lanesTop: CH.lanesTop, ready: KEYS.ready, panel: !!KEYS.panel }),
     footPreview: () => FP.list.map(q => ({ ...q })),
     trackTimes: () => trk.frames.map(f => f.t), // 시험용: 자취에 적힌 장면의 시각
-    log: () => ({ playable: (LOG.playable || []).slice(), on: LAY.log, rect: LOG.rect && { ...LOG.rect }, items: LOG.items.map(q => ({ att: q.att, kind: q.kind, text: q.text, t: q.t, st: q.st })), att: LOG.att, scroll: LOG.scroll, max: LOG.max, size: { ...LAY.logSize }, stats: showLog }),
+    labelScale: () => ({ s: VW.s, k: lblK(VW.s) }), cursorTags: () => CT.list.slice(), statusRows: () => STR.list.slice(), // 시험용(v0.16.3): 글 배율, 커서 옆 표시, 상태 칸의 줄
+    logTest: (t, k) => logAdd(t, k), sayTest: t => say(S.p[0], t, true, true), // 시험용: 로그·경고를 직접 넣는다
+    log: () => ({ playable: (LOG.playable || []).slice(), on: LAY.log, rect: LOG.rect && { ...LOG.rect }, items: LOG.items.map(q => ({ att: q.att, kind: q.kind, text: q.text, t: q.t, st: q.st, n: q.n || 1, lastT: q.lastT ?? null })), unseen: LOG.unseen || 0, scroll: LOG.scroll, att: LOG.att, scroll: LOG.scroll, max: LOG.max, size: { ...LAY.logSize }, stats: showLog }),
     shape: () => ({ turn: SHAPE.turn.slice(), twist: SHAPE.twist, joints: [0, 1, 2, 3].map(i => { const j = limbJoint(S, i, SHAPE.turn[i]); return { x: j.x, y: j.y, depth: j.depth }; }) }), bendTurn: i => bendTurn(S, i), pelvisTwist: () => pelvisTwist(S),
     view: () => ({ s: VW.s, x0: VW.x0, y0: VW.y0, ox: OX, oy: OY, show: { ...LAY.show, ghost: ghostOn, stats: showLog }, pos: JSON.parse(JSON.stringify(LAY.pos)), menu: VM.open, menuRect: VM.rect && { ...VM.rect }, helpShown: !!HELP.rect, helpRect: HELP.rect && { ...HELP.rect }, hints: (CH.hints || []).map(q => ({ ...q })), zoom: LAY.zoom, fitS: VW.fit, cam: { ...CAM }, hud: { ...HV }, markOff: !!HELP.markOff, play: { ...PZ }, chart: CZ && { ...CZ }, chartPart: KZ && { ...KZ }, logPart: LZ && { ...LZ }, logSplit: LSP && { ...LSP }, split: SPL && { ...SPL }, dock: LAY.dock, size: { ...LAY.size }, lim: LAY_LIM, fit: LAY_FIT, guide: LAY.guide, guideRect: GD.rect && { ...GD.rect }, drag: HUD.drag && { kind: HUD.drag.kind, target: HUD.drag.target || null } }), toScreen: (x, y) => toScreen(x, y), toWorld: (x, y) => toWorld(x, y),
     failReason, practice: () => ({ phase, ended: ended && { ...ended }, marks: CH.marks.map(q => ({ ...q })), hover: CH.hover, tools: CH.tools && { ...CH.tools }, bar: CH.bar && { ...CH.bar }, lessonCard: LC.rect && { ...LC.rect }, trackEnd: trk.end(), trackFull: trk.full, okWait: OK_WAIT, frames: trk.frames.length, rp: rp && { t: rp.t, from: rp.from, to: rp.to, playing: rp.playing, speed: rp.speed }, capture: HUD.capture, cursor: HUD.cursor, hits: HUD.hits.map(h => ({ ...h })) }), lesson: () => ({ i: lessonI, demo: !!demo, ok: lessonOkT, demoOk, demoEnd, rec, demoRec, lastRec, kept, note: lessonNote, ghost: ghost ? { t: ghost.S.t, x: ghost.S.p[0].x, y: ghost.S.p[0].y, dead: ghost.S.dead } : null }), hint: () => hint(), jump: () => jump, ctrlState: () => ctrl.st, opt: () => CTRL.OPT, aim, plog, ui: () => ui, bind: BIND, raw: () => { const m = G.input.mouse; return (m.down[0] || G.input.key('KeyQ') ? 'L' : '-') + (m.down[2] || G.input.key('KeyE') ? 'R' : '-'); }, get s() { return S; }, get bot() { return bot; }, finished: false, results: [] };
@@ -2033,7 +2035,8 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     else if (e.type === 'mat') { if (S.t - plog.sendT < 1.5) plog.fallAfterSend++; endT = practice() ? 0 : bot ? 2.6 : 1.6; G.sfx.thud(); G.shake(5, 0.2); } // 연습(조작 D안)에서는 바로 다시 시작하지 않고 결과 화면으로 간다
     else if (e.type === 'win') { if (lessonI < 0) G.sfx.win(); }
   }
-  function say(e, text, minor, noLog) { fx.push({ x: e.x, y: e.y, t: 1.6, kind: 'text', text }); if (!noLog) logAdd(text, 'warn'); if (!minor) why = { text, t: S.t }; } // 화면에 잠깐 뜨는 알림은 로그에도 남긴다
+  function say(e, text, minor, noLog) { const same = fx.find(f => f.kind === 'text' && f.text === text); if (same) { same.x = e.x; same.y = e.y; same.t = 1.6; same.n = (same.n || 1) + 1; } else fx.push({ x: e.x, y: e.y, t: 1.6, kind: 'text', text, n: 1 }); // 같은 경고가 떠 있으면 새로 쌓지 않고 횟수만 늘린다(v0.16.3)
+    if (!noLog) logAdd(text, 'warn'); if (!minor) why = { text, t: S.t }; } // 화면에 잠깐 뜨는 알림은 로그에도 남긴다
 
   const game = {
     init() { reset(1); },
@@ -2176,21 +2179,25 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
 
   // ---- 그리기
   const TYPE_COL = { ledge: '#7d828c', incut: '#b9793a', jug: '#d9573a', sloper: '#8b7fa8', block: '#6b6f78', rock: '#9a917f' };
+  // 게임 화면 안의 이름표·안내(v0.16.3, GPT 화면 지침 1): 그림은 게임 화면 배율(VW.s)로 줄거나 커져도 글은 맞춤(100%) 크기로 그린다.
+  // 기준점(x, y)을 중심으로 키우므로 글·바탕 칸·기준점에서의 간격이 함께 커진다. 기준점 자체(가리키는 자리)는 그대로다
+  const LBL = { k: 1 }, LBL_MIN = 0.85, lblK = sc => Math.min(1, Math.max(sc, LBL_MIN)) / sc; // 화면에서의 글 크기 = 맞춤의 85~100%: 줄인 화면에서는 85%까지만 줄고(720p에서 11 크기 글 ≈ 12.5px), 키운 화면에서는 맞춤 크기 그대로
+  function atLabel(x, y, fn, k = LBL.k) { const c = G.ctx; if (Math.abs(k - 1) < 1e-3) return fn(); c.save(); c.translate(x, y); c.scale(k, k); c.translate(-x, -y); try { return fn(); } finally { c.restore(); } }
   function drawWorld(c) {
     const v = visible(); // 플레이 구역이 게임 화면보다 넓거나 높으면 벽과 바닥을 그만큼 이어 그린다
     c.fillStyle = '#cfcabd'; c.fillRect(v.x0, v.y0, v.x1 - v.x0, v.y1 - v.y0);
     for (let y = 150 - 40 * Math.max(0, Math.ceil((150 - v.y0) / 40)); y < C.FLOOR; y += 40) for (let x = OX + 20 - 40 * Math.max(0, Math.ceil((OX + 20 - v.x0) / 40)); x < v.x1; x += 40) G.circle(x, y, 1.5, 'rgba(0,0,0,0.13)');
-    c.fillStyle = '#3c5a8a'; c.fillRect(v.x0, C.FLOOR, v.x1 - v.x0, Math.max(60, v.y1 - C.FLOOR));
+    c.fillStyle = '#5d6672'; c.fillRect(v.x0, C.FLOOR, v.x1 - v.x0, Math.max(60, v.y1 - C.FLOOR));
     for (const pl of world) {
       c.beginPath(); pl.pts.forEach((q, i) => i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1])); c.closePath();
       c.fillStyle = pl.goal && !lesson() ? '#d9a521' : TYPE_COL[pl.type]; c.fill(); c.strokeStyle = 'rgba(0,0,0,0.45)'; c.lineWidth = 1.5; c.stroke();
       if (pl.type !== 'rock') for (const e of pl.edges) if (e.grip) G.line(e.ax, e.ay, e.bx, e.by, pl.type === 'sloper' ? '#e9e2ff' : '#fff6d8', 3.5); // 손으로 잡을 수 있는 면
     }
-    const lab = (id, t, dx, dy) => { const pl = world.find(p => p.id === id); G.text(t, pl.cx + dx, pl.cy + dy, { size: 11, align: 'center', color: 'rgba(40,40,40,0.75)', weight: 700 }); };
+    const lab = (id, t, dx, dy) => { const pl = world.find(p => p.id === id), x = pl.cx + dx, y = pl.cy + dy; atLabel(x, y - 4, () => G.text(t, x, y, { size: 11, align: 'center', color: 'rgba(40,40,40,0.75)', weight: 700 })); };
     lab('A', '깊은 턱', -40, 26); lab('B', '턱', 30, 26); if (!lesson()) lab('G', '목표: 두 손으로 잡기', 0, -14); lab('J', '저그', 0, 24); lab('S', '둥근 면(미끄러움)', 0, 24); lab('F1', '발판', 0, 6); lab('F3', '발판', 0, 24); lab('F4', '발판', 0, 24); lab('P', '반동 연습', 0, -14); lab('R', '바위', 6, 60);
     const mk = lesson() && lesson().mark, mp = mk && world.find(p => p.id === mk[0]); // 과제 목표: 금색 테두리와 이름표
     if (mp) { c.beginPath(); mp.pts.forEach((q, i) => i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1])); c.closePath(); c.strokeStyle = '#f2b200'; c.lineWidth = 3; c.stroke();
-      const tw = G.textW(mk[1], 11, 800) + 14, ty = Math.min(...mp.pts.map(q => q[1])) - 26; G.panel(mp.cx - tw / 2, ty, tw, 18, 'rgba(242,178,0,0.95)'); G.text(mk[1], mp.cx, ty + 13, { size: 11, weight: 800, align: 'center', color: '#1d1d1d' }); }
+      const tw = G.textW(mk[1], 11, 800) + 14, ty = Math.min(...mp.pts.map(q => q[1])) - 26; atLabel(mp.cx, ty + 22, () => { G.panel(mp.cx - tw / 2, ty, tw, 18, 'rgba(242,178,0,0.95)'); G.text(mk[1], mp.cx, ty + 13, { size: 11, weight: 800, align: 'center', color: '#1d1d1d' }); }); } // 이름표 아래 끝(목표 바로 위)을 기준으로
   }
   function ik(a, b, len, bend) {
     const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1, d = Math.min(L, len - 0.01), h = Math.sqrt(Math.max(0, (len / 2) ** 2 - (d / 2) ** 2));
@@ -2302,7 +2309,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     if (G.textW(`${k} ${label}`, 12, 800) + G.textW(sub, 10, 600) < 108) G.text(sub, x + 117, H - 11, { size: 10, weight: 600, align: 'right', color: on ? '#222' : 'rgba(255,255,255,0.55)' });
   }
   // ---- D안 도움 표시: 입력별로 움직일 손(1번 방식) 또는 추천 손(2번 방식)을 누르기 전에 보여 준다. 잡기 보조가 허용하는 구간도 표시
-  const FP = { list: [] }; // 발 미리보기에 그린 것(시험이 읽는다)
+  const FP = { list: [] }, CT = { list: [] }, STR = { list: [] }; // 발 미리보기에 그린 것(시험이 읽는다)
   function drawIntentHelp(c) {
     const st = ctrl.st, O = CTRL.OPT, ax = last.cx, ay = last.cy, foot = BIND.down('foot', G.input), charge = st.phase === 'charge';
     // 잡기 허용 구간
@@ -2325,26 +2332,27 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
         FP.list.push({ feet: it.feet.slice(), ok: ok.slice(), selected: it.selected, x: fa.x, y: fa.y });
         if (!fa.raw && fa.bx !== undefined) { const dx = fa.bx - fa.ax, dy = fa.by - fa.ay, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, t = (fa.sx - fa.ax) * ux + (fa.sy - fa.ay) * uy, t0 = Math.max(0, t - 12), t1 = Math.min(L, t + 12);
           G.line(fa.ax + ux * t0, fa.ay + uy * t0, fa.ax + ux * t1, fa.ay + uy * t1, 'rgba(255,255,255,0.85)', 7); G.line(fa.ax + ux * t0, fa.ay + uy * t0, fa.ax + ux * t1, fa.ay + uy * t1, col, 4, can ? null : [4, 3]); }
+        atLabel(fa.x, fa.y, () => { // 고리·L·R 표시·문구는 화면에서 늘 같은 크기(확대·축소와 상관없이)
         G.circle(fa.x, fa.y, 5.5, null, col, 2.5);
-        if (it.selected) { const e = S.p[2 + it.feet[0]]; G.line(e.x, e.y, fa.x, fa.y, can ? 'rgba(155,123,224,0.7)' : 'rgba(90,90,90,0.6)', 1.5, [4, 4]); } // 보내는 발 → 그 발의 목표
         const tag = (lab, x, on) => { const w = 13; c.beginPath(); G.roundRect(x, fa.y - 24, w, 13, 3); c.fillStyle = on ? '#9b7be0' : 'rgba(255,255,255,0.85)'; c.fill(); c.strokeStyle = on ? '#fff' : 'rgba(90,90,90,0.8)'; c.lineWidth = 1; c.stroke(); G.text(on ? lab : '×', x + w / 2, fa.y - 14, { size: 9, weight: 900, align: 'center', color: on ? '#fff' : '#555' }); };
         if (it.selected) tag(it.feet[0] === 2 ? 'L' : 'R', fa.x - 6.5, can); else { tag('L', fa.x - 15, ok.includes(2)); tag('R', fa.x + 2, ok.includes(3)); } // 어느 발이 닿는지(× = 그 발은 닿지 않음)
-        if (!can) G.text('지금 자세에서는 닿지 않음', fa.x, fa.y + 17, { size: 10, weight: 800, align: 'center', color: '#333', stroke: 'rgba(255,255,255,0.85)', strokeW: 3 }); } }
+        if (!can) G.text('지금 자세에서는 닿지 않음', fa.x, fa.y + 17, { size: 10, weight: 800, align: 'center', color: '#333', stroke: 'rgba(255,255,255,0.85)', strokeW: 3 }); });
+        if (it.selected) { const e = S.p[2 + it.feet[0]]; G.line(e.x, e.y, fa.x, fa.y, can ? 'rgba(155,123,224,0.7)' : 'rgba(90,90,90,0.6)', 1.5, [4, 4]); } } } // 보내는 발 → 그 발의 목표
     // 입력 → 손발
-    const ids = O.handMode === 1 ? [['sendL', foot ? 2 : 0, false], ['sendR', foot ? 3 : 1, false]]
+    CT.list = []; const ids = O.handMode === 1 ? [['sendL', foot ? 2 : 0, false], ['sendR', foot ? 3 : 1, false]]
       : (() => { const r = foot ? st.rec.foot : st.rec.hand, o = foot ? 5 - r : 1 - r; return [['sendBest', r, true], ['sendOther', o, false]]; })();
     ids.forEach(([id, li, best], k) => {
       const lb = S.limb[li], e = S.p[lb.end], col = COL[li], strong = O.handMode === 1 || best;
       const verb = charge && li < 2 && lb.mode === 'grip' ? (st.mark[li] ? '놓기 취소' : '도약 때 놓기') : '보내기';
       G.line(e.x, e.y, ax, ay, strong ? col : 'rgba(80,80,80,0.35)', strong ? 2 : 1, [5, 5]);
-      const tag = `${BIND.first(id)} → ${LIMB[li]} ${verb}${best ? ' (추천)' : ''}`, tw = G.textW(tag, 12, 800) + 12;
+      const tag = LAY.show.cursorLong ? `${BIND.first(id)} → ${LIMB[li]} ${verb}${best ? ' (추천)' : ''}` : `${BIND.first(id)}${verb !== '보내기' ? ' ' + verb : ''}${best ? ' 추천' : ''}`, tw = G.textW(tag, 12, 800) + 12; CT.list.push(tag); // 기본은 짧게: 입력 이름(손발 위 표시와 같은 것). 모으는 중의 "도약 때 놓기"처럼 뜻이 바뀔 때만 동작을 붙인다(GPT 화면 지침 7)
       let tx, ty;
       if (O.handMode === 1) { tx = k === 0 ? ax - 16 - tw : ax + 16; ty = ay - 30; } else { tx = ax - tw / 2; ty = best ? ay - 44 : ay + 16; }
-      G.panel(tx, ty, tw, 20, strong ? col : 'rgba(255,255,255,0.8)', strong ? '#fff' : 'rgba(0,0,0,0.3)'); G.text(tag, tx + 6, ty + 14, { size: 12, weight: 800, color: '#111' });
+      atLabel(ax, ay, () => { G.panel(tx, ty, tw, 20, strong ? col : 'rgba(255,255,255,0.8)', strong ? '#fff' : 'rgba(0,0,0,0.3)'); G.text(tag, tx + 6, ty + 14, { size: 12, weight: 800, color: '#111' }); });
       // 같은 표시를 그 손발에도
       const bt = BIND.first(id), bw = G.textW(bt, 11, 800) + 10, bx = e.x + (li % 2 ? 6 : -6 - bw); // 왼쪽 손발은 왼쪽 위, 오른쪽은 오른쪽 위에 붙여 겹치지 않게
-      G.panel(bx, e.y - 32, bw, 17, strong ? col : 'rgba(255,255,255,0.8)', '#fff'); G.text(bt, bx + bw / 2, e.y - 19, { size: 11, weight: 800, align: 'center', color: '#111' });
-      if (strong) G.circle(e.x, e.y, 18 + (best ? Math.sin(S.t * 10) * 2 : 0), null, col, 2.5);
+      atLabel(e.x, e.y, () => { G.panel(bx, e.y - 32, bw, 17, strong ? col : 'rgba(255,255,255,0.8)', '#fff'); G.text(bt, bx + bw / 2, e.y - 19, { size: 11, weight: 800, align: 'center', color: '#111' });
+      if (strong) G.circle(e.x, e.y, 18 + (best ? Math.sin(S.t * 10) * 2 : 0), null, col, 2.5); });
     });
     if (st.move) { // 몸통 이동(WASD) 방향과 막힌 이유
       const ch = S.p[0], ex = ch.x + st.move.dx * 34, ey = ch.y + st.move.dy * 34, a = Math.atan2(st.move.dy, st.move.dx), col = st.move.blocked ? '#ff5a5a' : '#111';
@@ -2435,7 +2443,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
   const LAY_LIM = { bottom: [80, 320], top: [80, 320], left: [180, 460], right: [180, 460] }, laySize = (d, v) => Math.max(LAY_LIM[d][0], Math.min(LAY_LIM[d][1], v));
   // log = 로그 구역(차트 구역을 한 번 더 나눈 것: 위·아래 붙임이면 오른쪽, 옆 붙임이면 아래), logSize.h = 그 너비(위·아래 붙임), logSize.v = 그 높이(옆 붙임). zoom = 게임 화면 배율(1 = 플레이 구역에 맞춤)
   const LAY = { dock: 'bottom', size: { bottom: LAY_FIT, top: LAY_FIT, left: 300, right: 300 }, chart: true, guide: true, log: true, logSize: { h: 270, v: 150 }, zoom: 1,
-    show: { help: true, lesson: true, result: true, status: true, recent: true }, // 보기 설정의 체크박스로 켜고 끄는 것들(차트·로그·키 안내는 위의 chart·log·guide)
+    show: { help: true, lesson: true, result: true, status: true, recent: true, cursorLong: false, helpMore: false }, // 보기 설정의 체크박스로 켜고 끄는 것들(차트·로그·키 안내는 위의 chart·log·guide)
     pos: {} };                                                                    // 끌어서 옮긴 카드의 자리(플레이 구역의 왼쪽 위 기준). 없으면 제자리
   try { const sv = JSON.parse(localStorage.getItem(LAY_STORE) || 'null'); if (sv) { if (DOCKS.includes(sv.dock)) LAY.dock = sv.dock; for (const d of DOCKS) if (sv.size && Number.isFinite(sv.size[d])) LAY.size[d] = laySize(d, sv.size[d]); for (const k of ['chart', 'guide', 'log']) if (typeof sv[k] === 'boolean') LAY[k] = sv[k];
     for (const k of ['h', 'v']) if (sv.logSize && Number.isFinite(sv.logSize[k])) LAY.logSize[k] = sv.logSize[k]; if (Number.isFinite(sv.zoom) && sv.zoom > 0.1 && sv.zoom < 10) LAY.zoom = sv.zoom;
@@ -2629,10 +2637,10 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
   // at = 사건이 일어난 시각(물리 시각). 없으면 지금. 시각 열·본문·누르면 가는 재생 시각이 모두 이 시각이다(v0.16.2, GPT 검토 N3: 성공은 결과 카드가 뜬 시각이 아니라 목표에 닿은 시각)
   function logAdd(text, kind, at) {
     if (mode !== 'intent' || bot || demo || !text || !S) return; const last = LOG.items[LOG.items.length - 1], ev = at ?? S.t;
-    if (last && last.att === LOG.att && last.text === text && ev - last.st < 1.5) { last.st = ev; return; } // 같은 알림이 잇달아 나오면 한 번만 적는다
+    if (last && last.att === LOG.att && last.text === text && last.kind === kind) { last.n = (last.n || 1) + 1; last.lastT = rec.t0 !== null ? ev - rec.t0 : null; return; } // 같은 알림이 잇달아 나오면 한 줄로 묶고 횟수·마지막 시각만 고친다(시각과 누르면 가는 곳은 처음 것, v0.16.3)
     if (!last || last.att !== LOG.att) LOG.items.push({ att: LOG.att, kind: 'sep', text: `${lesson() ? `연습 ${lessonI + 1}` : `자유 연습 · 시작 자세 ${station}`} · 시도 ${tries}`, t: null, st: S.t });
     LOG.items.push({ att: LOG.att, kind, text, t: rec.t0 !== null ? ev - rec.t0 : null, st: ev }); if (LOG.items.length > 300) LOG.items.splice(0, LOG.items.length - 300);
-    LOG.scroll = 0; // 새 알림이 오면 가장 새 것이 보이게 맨 아래로
+    if (LOG.scroll > 0) LOG.unseen = (LOG.unseen || 0) + 1; // 올려 읽는 중이면 끌어내리지 않고 "새 로그 N개"로 알린다(맨 아래에 있으면 새 것이 그대로 보인다)
   }
   function drawLogZone(now) {
     const c = G.ctx, z = LZ, pad = 8, head = 18, fz = 10, lh = 13, tcol = 40, tw = Math.max(40, z.w - pad * 2 - tcol - 6); LOG.rect = { ...z };
@@ -2640,8 +2648,8 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     c.save(); c.beginPath(); c.rect(z.x, z.y, z.w, z.h); c.clip();
     G.text(ACT.name.log, z.x + pad, z.y + 13, { size: 10.5, weight: 800, color: INK });
     { let rx = z.x + z.w - 5; for (const [id, t] of [['log_off', `${BIND.first('log')} 끄기`], ['log_clear', '지우기'], ['log_stats', '통계']]) { const ww = G.textW(t, 9, 800) + 10; rx -= ww; if (rx > z.x + pad + G.textW(ACT.name.log, 10.5, 800) + 4) hudBtn(id, rx, z.y + 3, ww, 13, t, { size: 9 }); rx -= 3; } }
-    const rows = []; for (const it of LOG.items) { if (it.kind === 'sep') { rows.push({ it, sep: true, h: 17 }); continue; } wrap(it.text, tw, fz, 600).forEach((ln, k, all) => rows.push({ it, ln, first: k === 0, h: lh + (k === all.length - 1 ? 3 : 0) })); }
-    const total = rows.reduce((a, r) => a + r.h, 0), top = z.y + head + 2, viewH = z.h - head - 6; LOG.max = Math.max(0, total - viewH); LOG.scroll = Math.max(0, Math.min(LOG.max, LOG.scroll)); LOG.rows = rows.length;
+    const rows = []; for (const it of LOG.items) { if (it.kind === 'sep') { rows.push({ it, sep: true, h: 17 }); continue; } wrap(it.n > 1 ? `${it.text}  ×${it.n}${it.lastT !== null && it.lastT !== undefined ? ` (마지막 ${it.lastT.toFixed(2)}초)` : ''}` : it.text, tw, fz, 600).forEach((ln, k, all) => rows.push({ it, ln, first: k === 0, h: lh + (k === all.length - 1 ? 3 : 0) })); }
+    const total = rows.reduce((a, r) => a + r.h, 0), top = z.y + head + 2, viewH = z.h - head - 6; LOG.max = Math.max(0, total - viewH); if (LOG.scroll > 0 && LOG.total !== undefined && total > LOG.total) LOG.scroll += total - LOG.total; LOG.total = total; LOG.scroll = Math.max(0, Math.min(LOG.max, LOG.scroll)); if (LOG.scroll === 0) LOG.unseen = 0; LOG.rows = rows.length; // 올려 읽는 중에 새 줄이 생겨도 읽던 자리가 그대로 있게
     c.beginPath(); c.rect(z.x, top, z.w, viewH); c.clip();
     if (!rows.length) wrap('아직 남은 것이 없습니다. 경고·점프·결과가 시각과 함께 여기에 남습니다.', z.w - pad * 2, 9.5, 600).forEach((ln, k) => G.text(ln, z.x + pad, top + 12 + k * 13, { size: 9.5, weight: 600, color: DIM }));
     let yy = total <= viewH ? top : top + viewH - total + LOG.scroll; // 적을 때는 위에서부터, 넘치면 가장 새 것이 아래에 오게
@@ -2658,6 +2666,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
         if (r.first && cur && phase === 'replay' && it.t !== null && !playable(it)) G.text('재생 기록 없음', z.x + z.w - 8, yy + 10, { size: 8, weight: 700, align: 'right', color: '#ff9c8a' }); // 기록 밖 사건: 남기되 누를 수 없다
         G.text(r.ln, z.x + pad + tcol + 6, yy + 10, { size: fz, weight: it.kind === 'fail' || it.kind === 'ok' ? 800 : 600, color: LOG_COL[it.kind] || INK }); c.globalAlpha = 1; }
       yy += r.h; });
+    if (LOG.unseen > 0 && LOG.scroll > 0) { const t = `새 로그 ${LOG.unseen}개 ↓`, w3 = G.textW(t, 9, 800) + 14; hudBtn('log_new', z.x + z.w / 2 - w3 / 2, top + viewH - 17, w3, 15, t, { size: 9, primary: true }); HUD.hits.unshift(HUD.hits.pop()); } // 줄 위에 떠 있으므로 줄보다 먼저 맞춘다 // 누르면 맨 아래(가장 새 것)로
     if (LOG.max > 0) { const bh2 = Math.max(10, viewH * viewH / total), by2 = top + (viewH - bh2) * (1 - LOG.scroll / LOG.max); c.fillStyle = 'rgba(243,236,214,0.14)'; c.fillRect(z.x + z.w - 4, top, 3, viewH); c.fillStyle = 'rgba(243,236,214,0.7)'; c.fillRect(z.x + z.w - 4, by2, 3, bh2); }
     c.restore();
   }
@@ -2777,7 +2786,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     if (id.startsWith('log@') && rp) { const t = +id.split('@')[2], abs = (rec.t0 ?? 0) + t; if (Number.isFinite(t) && abs >= trk.t0() - 1e-6 && abs <= trk.end() + 1e-6) { rp.playing = false; rp.seek(abs); } } // 기록 밖이면 옮기지 않는다
     if (id === 'view_menu') VM.open = !VM.open; if (id === 'vm_close') VM.open = false; if (id === 'vm_resetpos') { LAY.pos = {}; saveLay(); if (ended) ended.pos = null; }
     if (id.startsWith('vm_')) { const it = VIEW_ITEMS.find(q => 'vm_' + q.id === id); if (it) it.set(!it.get()); }
-    if (id === 'log_off') setLog(false); if (id === 'log_on') setLog(true); if (id === 'log_clear') { LOG.items = []; LOG.scroll = 0; } if (id === 'log_stats') showLog = !showLog; if (id === 'view_fit') setZoom(1);
+    if (id === 'log_off') setLog(false); if (id === 'log_on') setLog(true); if (id === 'log_clear') { LOG.items = []; LOG.scroll = 0; LOG.unseen = 0; LOG.total = undefined; } if (id === 'log_new') { LOG.scroll = 0; LOG.unseen = 0; } if (id === 'help_more') { LAY.show.helpMore = !LAY.show.helpMore; saveLay(); } if (id === 'log_stats') showLog = !showLog; if (id === 'view_fit') setZoom(1);
     if (id === 'tl_mode') setChart(!LAY.chart); if (id === 'tl_dock') setDock(DOCKS[(DOCKS.indexOf(LAY.dock) + 1) % DOCKS.length]);
     if (id === 'tl_fit') VIEW.fit(CH.end); if (id === 'tl_in') VIEW.zoom(1 / 1.3, VIEW.start + VIEW.span / 2, CH.end); if (id === 'tl_out') VIEW.zoom(1.3, VIEW.start + VIEW.span / 2, CH.end);
     return false;
@@ -2824,6 +2833,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     { id: 'result', name: () => '결과 카드', get: () => LAY.show.result, set: showSet('result') },
     { id: 'status', name: () => '상태 알림', get: () => LAY.show.status, set: showSet('status') },
     { id: 'recent', name: () => '누른 키 표시', get: () => LAY.show.recent, set: showSet('recent') },
+    { id: 'cursorLong', name: () => '커서 옆 긴 설명', get: () => LAY.show.cursorLong, set: showSet('cursorLong') }, // 끄면(기본) 커서 옆에는 입력 이름만(손발 위 표시와 같은 것), 켜면 "좌클릭 → 왼손 보내기"처럼 길게
     { id: 'ghost', name: () => ACT.name.ghost, get: () => ghostOn, set: v => { ghostOn = v; if (!v) ghost = null; }, act: 'ghost' },
     { id: 'stats', name: () => '플레이 통계', get: () => showLog, set: v => { showLog = v; } },
   ];
@@ -2858,9 +2868,10 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
       ['그 밖', `${B1('demo')} 시범 / ${B1('lessonNext')} 연습 과제 / ${B1('reset')} 다시 / ${B1('st1')}~${B1('st5')} 시작 자세 / ${B1('viewMenu')} 보기 설정 / ${B('settings')} 키 설정`],
       ['실험실', `${B1('scheme')} 조작 방식 / ${B1('slow')} 느리게 / ${B1('couple')} 도약 연결 / ${B1('layout')} 연습 배치 / ${B1('phys')} 물리 ${v05 ? 'v0.6' : 'v0.4'} / ${B1('body')} 몸 비율`],
     ];
-    const lw = 46, rows = []; for (const [lab, t] of items) wrap(t, w - 22 - lw, 9, 600).forEach((ln, k) => rows.push({ lab: k ? '' : lab, ln, gap: k ? 0 : 3 }));
+    const more = LAY.show.helpMore, shown = more ? items : items.slice(0, 5); // 기본은 핵심 다섯 줄(손·발·조준·몸·점프). 나머지는 [자세히](GPT 화면 지침 7: 긴 설명을 한 번에 펼쳐 두지 않는다)
+    const lw = 46, rows = []; for (const [lab, t] of shown) wrap(t, w - 22 - lw, 9, 600).forEach((ln, k) => rows.push({ lab: k ? '' : lab, ln, gap: k ? 0 : 3 }));
     const h = 28 + rows.reduce((a, r) => a + 11.5 + r.gap, 0) + 8, [x, y] = panelAt('help', w, h, xd, yd);
-    HELP.rect = { x, y, w, h, moved: !!LAY.pos.help }; c.save(); c.globalAlpha = 0.93; glass(c, x, y, w, h); c.restore(); HUD.hits.push({ id: 'mv_help', x, y, w, h: 24 }); icon(c, 'grip', x + w - 12, y + 12, 3.6, HUD.hot === 'mv_help' || (HUD.drag && HUD.drag.id === 'help') ? INK : 'rgba(255,255,255,0.35)');
+    HELP.rect = { x, y, w, h, moved: !!LAY.pos.help }; c.save(); c.globalAlpha = 0.93; glass(c, x, y, w, h); c.restore(); { const t = more ? '접기' : '자세히', bw = G.textW(t, 8.5, 800) + 10; hudBtn('help_more', x + w - 26 - bw, y + 5, bw, 14, t, { size: 8.5 }); } HUD.hits.push({ id: 'mv_help', x, y, w, h: 24 }); icon(c, 'grip', x + w - 12, y + 12, 3.6, HUD.hot === 'mv_help' || (HUD.drag && HUD.drag.id === 'help') ? INK : 'rgba(255,255,255,0.35)');
     c.fillStyle = '#9fd0ff'; c.beginPath(); G.roundRect(x, y + 9, 3, 14, 2); c.fill(); G.text('조작 설명', x + 12, y + 19, { size: 12, weight: 800, color: '#fff' }); G.text(CTRL.MODES[mode].split(' (')[0], x + 12 + G.textW('조작 설명', 12, 800) + 8, y + 19, { size: 8.5, weight: 600, color: 'rgba(255,255,255,0.55)' });
     let yy = y + 26; for (const r of rows) { yy += r.gap; if (r.lab) G.text(r.lab, x + 12, yy + 9, { size: 9, weight: 800, color: 'rgba(255,214,102,0.9)' }); G.text(r.ln, x + 12 + lw, yy + 9, { size: 9, weight: 600, color: 'rgba(255,255,255,0.86)' }); yy += 11.5; }
   }
@@ -2937,7 +2948,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
       g.beginPath(); g.moveTo(R[0].x, R[0].y); g.lineTo(R[1].x, R[1].y); g.lineTo(R[3].x, R[3].y); g.lineTo(R[2].x, R[2].y); g.closePath(); g.lineWidth = 12 + ex; g.fill(); g.stroke();
       g.beginPath(); g.arc(ch.x + ux * 22, ch.y + uy * 22, 10 + ex / 2, 0, Math.PI * 2); g.fill(); }
     c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 0.42; c.drawImage(ghostLayer, 0, 0); c.restore();
-    G.text('시범', ch.x + ux * 42, ch.y + uy * 42 + 3, { size: 9, weight: 800, align: 'center', color: '#2f6fa8', stroke: 'rgba(255,255,255,0.75)', strokeW: 3 });
+    atLabel(ch.x + ux * 42, ch.y + uy * 42, () => G.text('시범', ch.x + ux * 42, ch.y + uy * 42 + 3, { size: 9, weight: 800, align: 'center', color: '#2f6fa8', stroke: 'rgba(255,255,255,0.75)', strokeW: 3 }));
   }
   // 왼쪽 아래 상태 칸: 모으기 세기, 놓을 손·이동 중인 손, 체중 이동, 몸통이 막힌 이유, 최근 경고를 한곳에 모은다(캐릭터 주변에 글이 겹치지 않게)
   const footFarText = f => `${LIMB[f.i]}: 겨눈 자리에 닿지 않는다 — ${f.why === 'len' ? '다리 길이보다 멀다. 몸을 그쪽으로 옮긴 뒤 디딘다' : '그 높이까지 다리를 들 수 없다. 몸을 더 올린 뒤(몸 위로) 디딘다'}`;
@@ -2961,8 +2972,8 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     if (st.phase === 'charge' && (st.sway || st.swayKey)) rows.push({ t: `몸 싣기 ${st.sway < 0 ? '← 왼쪽' : st.sway > 0 ? '오른쪽 →' : ''} ${Math.round(Math.abs(st.sway))}px / ${CTRL.P.SWAY_MAX} (${BIND.first('moveLeft')}·${BIND.first('moveRight')})`, c: '#ffd166' });
     if (st.move && st.move.blocked) rows.push({ t: st.move.blocked === '손 각도' ? `몸통: 더 못 감 — ${st.move.hand !== null && st.move.hand !== undefined ? LIMB[st.move.hand] : '손'}이 미끄러질 각도. 그 손을 옮기거나 놓으면 갈 수 있다` : `몸통: 더 못 감 — ${st.move.blocked} 길이 한계`, c: '#ff8a8a' });
     const warns = fx.filter(f => f.kind === 'text').slice(-3);
-    for (const f of warns) rows.push({ t: f.text, c: '#ff8a8a', a: Math.min(1, f.t * 2) });
-    if (!rows.length && !meter) return;
+    for (const f of warns) rows.push({ t: f.n > 1 ? `${f.text}  ×${f.n}` : f.text, c: '#ff8a8a', a: Math.min(1, f.t * 2) });
+    STR.list = rows.map(r => r.t); if (!rows.length && !meter) return;
     const lh = 18, w = Math.max(250, ...rows.map(r => G.textW(r.t, 12, 700) + 16)), h = rows.length * lh + (meter ? 30 : 0) + 8, x = PZ.x + 10, y = PZ.y + PZ.h - 8 - h;
     G.panel(x, y, w, h, 'rgba(10,12,16,0.82)');
     let yy = y + 6;
@@ -3054,7 +3065,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
   function draw(c) {
     relayout(); HUD.hits = []; CH.rect = null; CH.plot = null; CH.tools = null; CH.bar = null; LC.rect = null; const liveView = phase !== 'replay'; // 리플레이에서는 그때의 몸만 보인다(효과·이륙 표시·도움 표시는 지금 것이라 감춘다)
     KEYS.log = []; // 이번 프레임에 그린 키캡 목록(시험에서 "화면의 키캡이 지금 설정과 같은지" 확인하는 데 쓴다)
-    c.save(); c.beginPath(); c.rect(PZ.x, PZ.y, PZ.w, PZ.h); c.clip(); c.translate(VW.x0, VW.y0); c.scale(VW.s, VW.s); c.translate(-OX, -OY); // 게임 화면은 플레이 구역 안에만 그린다
+    c.save(); c.beginPath(); c.rect(PZ.x, PZ.y, PZ.w, PZ.h); c.clip(); c.translate(VW.x0, VW.y0); c.scale(VW.s, VW.s); c.translate(-OX, -OY); LBL.k = lblK(VW.s); // 게임 화면은 플레이 구역 안에만 그린다. 글은 맞춤 크기로(atLabel)
     drawWorld(c); drawGhost(c); drawBody(c);
     for (const f of liveView ? fx : []) {
       if (f.kind === 'ring') G.circle(f.x, f.y, 12 + (0.4 - f.t) * 40, null, `rgba(255,255,255,${Math.min(1, f.t * 3)})`, 3);
@@ -3065,18 +3076,18 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
       const o = jump.off; for (const q of trail) G.circle(q[0], q[1], 2, 'rgba(20,20,20,0.45)');
       const ex = o.x + o.vx * 0.14, ey = o.y + o.vy * 0.14, a = Math.atan2(o.vy, o.vx);
       G.line(o.x, o.y, ex, ey, '#111', 3); G.line(ex, ey, ex - 10 * Math.cos(a - 0.5), ey - 10 * Math.sin(a - 0.5), '#111', 3); G.line(ex, ey, ex - 10 * Math.cos(a + 0.5), ey - 10 * Math.sin(a + 0.5), '#111', 3);
-      G.text(`점프 속도 ${Math.round(Math.hypot(o.vx, o.vy))} · 각도 ${Math.round(Math.atan2(-o.vy, o.vx) * 180 / Math.PI)}°${jump.tR !== null && jump.tP !== null ? ` · 손 놓기 ${jump.tR - jump.tP >= 0 ? '+' : ''}${(jump.tR - jump.tP).toFixed(2)}초` : ''}`, o.x - 10, o.y + 22, { size: 12, weight: 800, color: '#111', align: 'right', stroke: 'rgba(255,255,255,0.7)', strokeW: 3 });
+      atLabel(o.x, o.y, () => G.text(`점프 속도 ${Math.round(Math.hypot(o.vx, o.vy))} · 각도 ${Math.round(Math.atan2(-o.vy, o.vx) * 180 / Math.PI)}°${jump.tR !== null && jump.tP !== null ? ` · 손 놓기 ${jump.tR - jump.tP >= 0 ? '+' : ''}${(jump.tR - jump.tP).toFixed(2)}초` : ''}`, o.x - 10, o.y + 22, { size: 12, weight: 800, color: '#111', align: 'right', stroke: 'rgba(255,255,255,0.7)', strokeW: 3 }));
     }
     if (liveView && swing && Math.max(swing.peak, swing.cur) > 6) { // 반동 표시: 손 아래 수직선과 최근 최고 각도
       const r = 118, pk = Math.max(swing.peak, swing.cur) * Math.PI / 180;
       G.line(swing.ax, swing.ay, swing.ax, swing.ay + r, 'rgba(0,0,0,0.25)', 1.5, [3, 5]);
       for (const sg of [-1, 1]) G.line(swing.ax + Math.sin(sg * pk) * (r - 8), swing.ay + Math.cos(pk) * (r - 8), swing.ax + Math.sin(sg * pk) * (r + 8), swing.ay + Math.cos(pk) * (r + 8), '#111', 3);
       const tr = swing.prev ? (swing.peak > swing.prev + 1 ? ' ▲ 커지는 중' : swing.peak < swing.prev - 1 ? ' ▼ 줄어드는 중' : ' ─') : '';
-      G.text(`반동 ${Math.round(Math.max(swing.peak, swing.cur))}°${tr}`, swing.ax, swing.ay - 14, { size: 13, weight: 800, align: 'center', color: '#111', stroke: 'rgba(255,255,255,0.7)', strokeW: 3 });
+      atLabel(swing.ax, swing.ay, () => G.text(`반동 ${Math.round(Math.max(swing.peak, swing.cur))}°${tr}`, swing.ax, swing.ay - 14, { size: 13, weight: 800, align: 'center', color: '#111', stroke: 'rgba(255,255,255,0.7)', strokeW: 3 }));
     }
     if (mode === 'intent' && !bot && !S.dead && !ui && phase === 'live') drawIntentHelp(c);
-    if (!S.dead && (bot || mode !== 'keys')) { const qx = liveView ? last.cx : aim.x, qy = liveView ? last.cy : aim.y; G.line(qx - 9, qy, qx + 9, qy, '#111', 2); G.line(qx, qy - 9, qx, qy + 9, '#111', 2); G.circle(qx, qy, 5, null, '#fff', 1.5); } // 리플레이에서는 그때의 조준점
-    c.restore();
+    if (!S.dead && (bot || mode !== 'keys')) { const qx = liveView ? last.cx : aim.x, qy = liveView ? last.cy : aim.y; atLabel(qx, qy, () => { G.line(qx - 9, qy, qx + 9, qy, '#111', 2); G.line(qx, qy - 9, qx, qy + 9, '#111', 2); G.circle(qx, qy, 5, null, '#fff', 1.5); }); } // 조준점도 화면에서 늘 같은 크기 // 리플레이에서는 그때의 조준점
+    c.restore(); LBL.k = 1;
     const K = CTRL.KEYMAP[mode], sp = kn(K.power);
     const O = CTRL.OPT, onoff = v => v ? '켬' : '끔';
     const B = BIND.label, B1 = BIND.first, hm = O.handMode;
@@ -3108,10 +3119,12 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
       HELP.body.forEach((t, k) => G.text(t, 18, 39 + k * 13, { size: mode === 'intent' ? 11 : 11.5, color: '#222', weight: 600 }));
       G.text(`${BIND.first('demo')} 시범 · ${BIND.first('lessonNext')} 연습 과제 · ${BIND.first('chart')} ${ACT.name.chart} · ${BIND.first('scheme')} 조작 방식 · ${BIND.first('reset')} 다시 · ${BIND.first('st1')}~${BIND.first('st5')} 시작 자세 · ${BIND.first('slow')} 느리게 · ${BIND.first('couple')} 도약 연결 · ${BIND.first('layout')} 연습 배치 · ${BIND.first('phys')} 물리 ${v05 ? 'v0.6' : 'v0.4'} · ${BIND.first('body')} 몸 비율 · ${BIND.label('settings')} 키 설정`, 18, HELP.h - 6, { size: 11, color: '#333', weight: 600, stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
     }
-    const rtx = HELP.rtx = mode === 'intent' && !bot && (lesson() ? LAY.show.lesson && !LAY.pos.lesson : LAY.show.help && !LAY.pos.help && phase === 'live') && cardY() < HV.y0 + 60 * HV.s ? Math.min(W - 12, (PZ.x + PZ.w - 226 - 16 - HV.x0) / HV.s) : W - 12; // 과제 카드가 이 글의 높이까지 올라와 있으면 카드 왼쪽으로 비킨다
+    const rtx = HELP.rtx = mode === 'intent' && !bot && (lesson() ? LAY.show.lesson && !LAY.pos.lesson : LAY.show.help && !LAY.pos.help && phase === 'live') && cardY() < HV.y0 + 64 * HV.s * lblK(HV.s) ? Math.min(W - 12, (PZ.x + PZ.w - 236 - 8 - 10 - HV.x0) / HV.s) : W - 12; // 과제 카드가 이 글의 높이까지 올라와 있으면 카드 왼쪽으로 비킨다
+    atLabel(rtx, 0, () => { // 오른쪽 위 글도 게임 화면 배율과 상관없이 맞춤 크기로(오른쪽 위 모서리 기준)
     G.text(bot ? bot.def.title : `${station}. ${PH.STATIONS[station].name}   시도 ${tries}${slow ? '   느리게 ×0.5' : ''}`, rtx, 24, { size: 13, align: 'right', color: '#222', weight: 800, stroke: 'rgba(255,255,255,0.8)' });
-    G.text(`${bot ? '자동 시연(사람과 같은 입력만 사용) · ' : ''}도약 연결 ${C.COUPLE ? '켬' : '끔'} · ${layout ? '연습 배치' : '기존 벽'}`, rtx, 42, { size: 11, align: 'right', color: '#333', stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
-    G.text(`몸: ${PH.BODIES[PH.getBody()].short} (${BIND.first('body')}로 바꿈)`, rtx, 56, { size: 11, align: 'right', color: '#333', stroke: 'rgba(255,255,255,0.8)', strokeW: 3 }); // 지금 몸(도움말 칸과 겹치지 않게 다음 줄)
+    if (!lesson()) G.text(`${bot ? '자동 시연(사람과 같은 입력만 사용) · ' : ''}도약 연결 ${C.COUPLE ? '켬' : '끔'} · ${layout ? '연습 배치' : '기존 벽'}`, rtx, 42, { size: 11, align: 'right', color: '#333', stroke: 'rgba(255,255,255,0.8)', strokeW: 3 });
+    if (!lesson()) G.text(`몸: ${PH.BODIES[PH.getBody()].short} (${BIND.first('body')}로 바꿈)`, rtx, 56, { size: 11, align: 'right', color: '#333', stroke: 'rgba(255,255,255,0.8)', strokeW: 3 }); // 지금 몸(도움말 칸과 겹치지 않게 다음 줄)
+    }, lblK(HV.s));
     if (endT > 0) G.banner('매트에 떨어짐 — 바로 다시', failText(), 'fail', 380);
     if (endT > 0 && hint()) { const t = hint(), w = G.textW(t, 14, 800) + 28, hy = 458; G.panel(W / 2 - w / 2, hy, w, 28, 'rgba(255,214,102,0.96)'); G.text(t, W / 2, hy + 19, { size: 14, weight: 800, align: 'center', color: '#111' }); }
     else if (S.won && !lesson() && !(mode === 'intent' && !bot)) G.banner('목표 도달!', `${S.t.toFixed(1)}초 · 시도 ${tries} — R 또는 스페이스로 다시`, 'win', 400);
@@ -3127,9 +3140,9 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     if (mode === 'intent' && !bot && !ui && !(endT > 0) && phase === 'live' && LAY.show.status) drawStatus(); // 떨어진 뒤에는 안내 띠와 겹치지 않게 상태 칸을 숨긴다
     if (showLog && mode === 'intent') drawLog();
     { // 플레이 구역의 오른쪽 아래: 게임 화면 배율과 빌드. 배율을 바꿨으면 맞춤으로 되돌리는 단추
-      const by = !CZ && CH.tools ? CH.tools.y - 6 : PZ.y + PZ.h - 8, vt = `게임 화면 ${Math.round(VW.s * 100)}% · 실험 빌드 ${BUILD}`; G.text(vt, PZ.x + PZ.w - 10, by, { size: 11, align: 'right', color: 'rgba(255,255,255,0.6)', weight: 500 });
+      const by = !CZ && CH.tools ? CH.tools.y - 6 : PZ.y + PZ.h - 8, vt = `게임 화면 ${Math.round(VW.s * 100)}% · 실험 빌드 ${BUILD}`; G.text(vt, PZ.x + PZ.w - 10, by, { size: 9.5, align: 'right', color: 'rgba(255,255,255,0.45)', weight: 500 }); // 배율·빌드는 보조 정보라 작고 흐리게(GPT 화면 지침 10)
       if (mode === 'intent' && !bot && !ui) { // 보기 설정 단추(늘 보인다)와, 배율을 바꿨을 때의 맞춤 단추
-        const t0 = `${BIND.first('viewMenu')} ${ACT.name.viewMenu}`, w0 = G.textW(t0, 9, 800) + 12, x0 = PZ.x + PZ.w - 14 - G.textW(vt, 11, 500) - w0; if (x0 > PZ.x + 4) hudBtn('view_menu', x0, by - 12, w0, 15, t0, { size: 9, primary: VM.open });
+        const t0 = `${BIND.first('viewMenu')} ${ACT.name.viewMenu}`, w0 = G.textW(t0, 9, 800) + 12, x0 = PZ.x + PZ.w - 14 - G.textW(vt, 9.5, 500) - w0; if (x0 > PZ.x + 4) hudBtn('view_menu', x0, by - 12, w0, 15, t0, { size: 9, primary: VM.open });
         if (Math.abs(LAY.zoom - 1) > 1e-6) { const t = `${BIND.first('viewFit')} ${ACT.name.viewFit}`, w = G.textW(t, 9, 800) + 12, x = x0 - w - 4; if (x > PZ.x + 4) hudBtn('view_fit', x, by - 12, w, 15, t, { size: 9 }); } } }
     if (mode === 'intent' && !bot && !ui) { // 확대해서 과제의 목표가 구역 밖에 있으면 어느 쪽인지 가장자리에 알린다
       const mk = lesson() && lesson().mark, mp = mk && world.find(pl => pl.id === mk[0]), q = mp && toScreen(mp.cx, mp.cy);

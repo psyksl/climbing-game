@@ -170,7 +170,9 @@ const url = 'file://' + path.join(__dirname, '..', 'climb_lab.html'), out = proc
     // 넘치면 휠로 올려 본다. 새 알림이 오면 맨 아래로
     for (let i = 0; i < 2; i++) { await press('KeyR', 300); await tryL4(150); await wait(2600); } lg = await logS(); const lz = (await view()).logPart; await mv(lz.x + lz.w / 2, lz.y + lz.h / 2); await wait(80); const zs = (await view()).zoom; await pg.mouse.wheel(0, -100); await wait(120); await pg.mouse.wheel(0, -100); await wait(120); const lg2 = await logS();
     check('알림이 칸을 넘치면 휠로 올려 본다(게임 화면 배율·차트는 그대로)', lg.max > 0 && lg.scroll === 0 && lg2.scroll === Math.min(lg2.max, 56) && (await view()).zoom === zs, `넘친 길이 ${lg.max.toFixed(0)} · 올린 만큼 ${lg2.scroll}`);
-    await press('KeyR', 300); await tryL4(150); await wait(2600); check('새 알림이 오면 가장 새 것이 보이게 맨 아래로 돌아온다', (await logS()).scroll === 0);
+    { const s0 = (await logS()).scroll; await press('KeyR', 300); await tryL4(150); await wait(2600); const l3 = await logS(); // v0.16.3(GPT 화면 지침 6): 올려 읽는 중이면 끌어내리지 않고 "새 로그 N개"로 알린다. 누르면 맨 아래로
+      check('올려 읽는 중에 새 알림이 오면 읽던 자리를 지키고 "새 로그 N개"를 띄운다', s0 > 0 && l3.scroll >= s0 && l3.unseen > 0 && (await prac()).hits.some(q => q.id === 'log_new'), `자리 ${s0} → ${l3.scroll} · 새 로그 ${l3.unseen}개`);
+      await hitBtn('log_new'); await wait(150); check('"새 로그 N개"를 누르면 가장 새 것이 보이게 맨 아래로', (await logS()).scroll === 0); }
     // 차트/기록 경계선, 옆 붙임에서는 차트 아래
     v = await view(); await mv(v.logSplit.x + 1, v.chart.y + 90); await wait(100); const curL = (await prac()).cursor; await dragTo(v.logSplit.x, v.chart.y + 90, v.logSplit.x - 100, v.chart.y + 90); v2 = await view();
     check('차트와 로그 사이의 경계선을 끌면 두 칸의 너비가 바뀐다', curL === 'ew-resize' && Math.abs(v2.logPart.w - (v.logPart.w + 100)) < 1.5 && v2.chartPart.w + v2.logPart.w === v2.chart.w, `기록 ${v.logPart.w} → ${v2.logPart.w.toFixed(0)}`);
