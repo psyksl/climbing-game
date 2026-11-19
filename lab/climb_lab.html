@@ -1448,7 +1448,7 @@ const CTRL = (() => {
   }
   function makeIntent() {
     const st = { mode: 'intent', act: [false, false, false, false], armT: [0, 0, 0, 0], mark: [false, false], manual: [false, false, false, false], auto: [null, null, null, null],
-      tryNow: [false, false, false, false], pend: [false, false, false, false], block: [0, 0, 0, 0], staleT: [0, 0, 0, 0], cool: [0, 0, 0, 0],
+      tryNow: [false, false, false, false], pend: [false, false, false, false], block: [0, 0, 0, 0], staleT: [0, 0, 0, 0], cool: [0, 0, 0, 0], placed: [false, false, false, false], // placed = 플레이어가 직접 디딘 발(자동 발이 다시 디디지 않는다)
       trail: [false, false], phase: 'idle', pt: 0, power: 1, move: null, shift: null, air: [], swingLegs: false, opt: OPT, last: '',
       rec: { hand: 1, foot: 3, pendH: null, pendF: null, tH: 0, tF: 0 }, sent: [], miss: [], seg: null };
     const K = KEYMAP.intent;
@@ -1477,7 +1477,8 @@ const CTRL = (() => {
       st.seg = aimSeg(s, io);
       const inp = { cx: io.mx, cy: io.my, hand: [false, false], foot: [false, false], power: false, t: [null, null, null, null], drop: [false, false, false, false] };
       st.air.length = 0;
-      for (let i = 0; i < 4; i++) if (st.pend[i]) { st.pend[i] = false; const m = s.limb[i].mode; if (m === 'grip' || m === 'plant') { st.act[i] = false; st.manual[i] = false; st.auto[i] = null; } else { st.block[i] = s.t + 0.25; if (st.auto[i]) st.auto[i] = null; } }
+      for (let i = 2; i < 4; i++) if (s.limb[i].mode !== 'plant') st.placed[i] = false; // 직접 디딘 발이 떨어지면 다시 자동 발이 맡는다
+      for (let i = 0; i < 4; i++) if (st.pend[i]) { st.pend[i] = false; const m = s.limb[i].mode; if (m === 'plant' && st.manual[i]) st.placed[i] = true; if (m === 'grip' || m === 'plant') { st.act[i] = false; st.manual[i] = false; st.auto[i] = null; } else { st.block[i] = s.t + 0.25; if (st.auto[i]) st.auto[i] = null; } }
       for (let i = 0; i < 4; i++) { if (st.act[i]) st.armT[i] += dt; if (st.act[i] && s.limb[i].mode === 'free' && !st.pend[i] && st.armT[i] > 0.05) st.act[i] = true; }
       st.sent.length = 0; st.miss.length = 0;
       for (const i of [0, 1]) if (st.trail[i] && s.limb[i].mode === 'reach') { st.trail[i] = false; st.act[i] = false; inp.drop[i] = true; } // 놓기만 하는 손: 붙은 것을 뗀 다음 프레임에 힘을 뺀다
@@ -1645,7 +1646,7 @@ const CTRL = (() => {
         if (!OPT.autoFeet || !handOn || st.phase === 'charge' || st.phase === 'throw') { if (st.auto[i]) { st.auto[i] = null; inp.drop[i] = true; } continue; }
         if (lb.mode === 'plant') {
           const e = s.p[2 + i], hj = PHX.rootPos(s, i), len = Math.hypot(e.x - hj.x, e.y - hj.y), ha = C.JOINT ? PHX.hipAngle((c.x - hp.x) / C.T, (c.y - hp.y) / C.T, lb, e.x - hj.x, e.y - hj.y) : null, bad = len > 0.96 * C.L || Math.abs(e.x - hp.x) > 0.8 * C.L || (ha && (ha.over > 0 || (ha.bend < 20 && Math.abs(ha.line) > P.SPLIT_MAX))); // 관절 몸: 고관절 범위를 넘은 발, 거의 편 채 옆으로 너무 벌어진 다리(다리 찢기)도 다시 디딘다
-          st.staleT[i] = bad ? st.staleT[i] + dt : 0;
+          st.staleT[i] = bad && !st.placed[i] ? st.staleT[i] + dt : 0; // 플레이어가 직접 디딘 발은 자동 발이 옮기지 않는다(높이 디딘 발 = 하이 스텝)
           const otherOk = (gripping(s, 0) && gripping(s, 1)) || s.limb[5 - i].mode === 'plant';
           if (st.staleT[i] > 0.3 && otherOk && s.t > st.cool[i] && calm) { const cand = footCandidates(s, i, st.auto[5 - i]); if (cand && Math.hypot(cand.x - e.x, cand.y - e.y) > 15) { st.auto[i] = cand; st.cool[i] = s.t + 0.8; st.staleT[i] = 0; }
             // 다시 디딜 곳이 없는데 다리가 거의 편 채 옆으로 너무 벌어져 있으면(다리 찢기), 두 손으로 잡고 있을 때는 그 발을 떼어 엉덩이 아래로 늘어뜨린다
@@ -1885,7 +1886,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
 // 등반 조작 실험실 · 화면과 입력
 'use strict';
 (() => {
-  const W = G.W, H = G.H, OX = -30, OY0 = 130, C = PH.C, BUILD = 'v0.16.0';
+  const W = G.W, H = G.H, OX = -30, OY0 = 130, C = PH.C, BUILD = 'v0.16.1';
   let OY = OY0; // 화면 세로 기준. 과제가 정하면(view) 그 값을 쓴다: 높은 턱이 화면 밖으로 나가지 않게
   const LIMB = ['왼손', '오른손', '왼발', '오른발'], COL = ['#e86a5a', '#4fb3e8', '#e86a5a', '#4fb3e8'], DARK = ['#8a3b3b', '#2a6f97', '#8a3b3b', '#2a6f97'];
   let world = PH.makeWorld(), layout = null;
