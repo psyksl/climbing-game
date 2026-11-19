@@ -4,7 +4,7 @@
 // 사용: node test/fps_check.js [JSON 출력]
 'use strict';
 const { chromium } = require('playwright'), path = require('path'), fs = require('fs');
-const url = 'file://' + path.join(__dirname, '..', 'climb3d.html') + '?test&noshadow';
+const url = 'file://' + path.join(__dirname, '..', process.env.BUILD || 'climb3d.html') + '?test&noshadow';
 // 입력: GPT 재현 도구와 같은 짜임(걷기 → 달리기 → 돌며 걷기 → 웅크리기 → 점프)
 const N = 1100, inputs = [];
 for (let k = 0; k < N; k++) inputs.push({ mx: k >= 400 && k < 660 ? Math.sin((k - 400) / 80) : 0, mz: k < 660 ? Math.cos(k >= 400 ? (k - 400) / 80 : 0) : 0, run: k >= 180 && k < 400, crouch: k >= 660 && k < 780, jump: k >= 800 && k < 872 });
@@ -13,7 +13,7 @@ const sched = { '120': Array(N + 10).fill(1 / 120), '60': Array(N).fill(1 / 60),
 (async () => {
   const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const pg = await b.newPage({ viewport: { width: 640, height: 360 } }), errs = []; pg.on('pageerror', e => errs.push(e.message));
-  await pg.goto(url); await pg.waitForTimeout(1000); await pg.evaluate(() => __p3.pause(true));
+  await pg.goto(url); await pg.waitForTimeout(1000); await pg.evaluate(m => { __p3.pause(true); if (m) __p3.setMode(m); }, process.env.MODE || '');
   const names = await pg.evaluate(() => __p3.boneNames()), runs = {};
   for (const [k, d] of Object.entries(sched)) { runs[k] = await pg.evaluate(([d, inp]) => { __p3.reset({ pos: [0, 0, 4], yaw: 0 }); return __p3.simFrames(d, inp, 4); }, [d, inputs]); }
   const ref = runs['120'], out = { version: await pg.evaluate(() => __p3.VERSION), N, compare: {} }; let fail = 0;

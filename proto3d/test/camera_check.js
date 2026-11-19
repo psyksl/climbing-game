@@ -2,7 +2,7 @@
 // 실제 프레임 함수(frameCore)를 돌린다. 스크립트 입력(사람 손 아님). 사용: node test/camera_check.js [JSON 출력]
 'use strict';
 const { chromium } = require('playwright'), path = require('path'), fs = require('fs');
-const url = 'file://' + path.join(__dirname, '..', 'climb3d.html') + '?test&noshadow';
+const url = 'file://' + path.join(__dirname, '..', process.env.BUILD || 'climb3d.html') + '?test&noshadow';
 (async () => {
   const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const pg = await b.newPage({ viewport: { width: 640, height: 360 } }), errs = []; pg.on('pageerror', e => errs.push(e.message));

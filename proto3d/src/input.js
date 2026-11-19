@@ -14,6 +14,7 @@ export const BIND = [
   { id: 'reset', ctx: ['any'], keys: ['KeyR'], label: '처음 자리로' },
   { id: 'bones', ctx: ['any'], keys: ['KeyB'], label: '뼈대 보기' },
   { id: 'slow', ctx: ['any'], keys: ['KeyN'], label: '느리게(0.25배)' },
+  { id: 'motionMode', ctx: ['any'], keys: ['KeyM'], label: '모션 바꾸기(캡처 ↔ 자작)' },
 ];
 const ctxOverlap = (a, b) => a.includes('any') || b.includes('any') || a.some(c => b.includes(c));
 export function conflicts() { const out = []; for (let i = 0; i < BIND.length; i++) for (let j = i + 1; j < BIND.length; j++) { const a = BIND[i], b = BIND[j]; for (const k of a.keys) if (b.keys.includes(k) && ctxOverlap(a.ctx, b.ctx)) out.push({ key: k, a: a.id, b: b.id }); } return out; }

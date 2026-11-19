@@ -1,0 +1,8 @@
+{
+  "idle":   { "file": "Idle (4).fbx", "loop": true },
+  "walk":   { "file": "Walking.fbx", "loop": true },
+  "walk2":  { "file": "Walking (2).fbx", "loop": true },
+  "run":    { "file": "Running (4).fbx", "loop": true },
+  "run2":   { "file": "Standard Run.fbx", "loop": true },
+  "sprint": { "file": "Running.fbx", "loop": true }
+}

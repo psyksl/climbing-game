@@ -4,11 +4,11 @@
 //       동작이 바뀔 때 뼈 회전의 한 걸음 최대 변화(도), 엉덩이 높이의 한 걸음 최대 변화, 점프 높이, 단 오르기
 'use strict';
 const { chromium } = require('playwright'), path = require('path'), fs = require('fs');
-const url = 'file://' + path.join(__dirname, '..', 'climb3d.html') + '?test&noshadow';
+const url = 'file://' + path.join(__dirname, '..', process.env.BUILD || 'climb3d.html') + '?test&noshadow';
 (async () => {
   const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const pg = await b.newPage({ viewport: { width: 960, height: 540 } }), errs = []; pg.on('pageerror', e => errs.push(e.message));
-  await pg.goto(url); await pg.waitForTimeout(1200); await pg.evaluate(() => __p3.pause(true));
+  await pg.goto(url); await pg.waitForTimeout(1200); await pg.evaluate(m => { __p3.pause(true); if (m) __p3.setMode(m); }, process.env.MODE || '');
   let fail = 0; const out = { version: await pg.evaluate(() => __p3.VERSION), rows: [] };
   const check = (n, c, x = '') => { console.log(`${c ? 'PASS' : 'FAIL'}  ${n} ${x}`); if (!c) fail++; out.rows.push({ n, pass: !!c, x }); };
   const ev = (f, a) => pg.evaluate(f, a);

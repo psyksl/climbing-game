@@ -81,7 +81,7 @@ function neutralFoot(body, L, ahead = 0) {
   return body.pos.clone().addScaledVector(side, L.sx * DIM.hipW * 1.15).addScaledVector(fwd, ahead);
 }
 function footOut(world, p) { for (const b of world.boxes) { if (b.kind === 'floor' || b.max.y <= p.y + 0.35) continue; const r = 0.09, cx = clamp(p.x, b.min.x, b.max.x), cz = clamp(p.z, b.min.z, b.max.z), dx = p.x - cx, dz = p.z - cz, d = Math.hypot(dx, dz); if (d >= r) continue; if (d > 1e-6) { p.x = cx + dx / d * r; p.z = cz + dz / d * r; } else { const o = [[p.x - b.min.x, -1, 0], [b.max.x - p.x, 1, 0], [p.z - b.min.z, 0, -1], [b.max.z - p.z, 0, 1]].sort((a, c) => a[0] - c[0])[0]; p.x += o[1] * (o[0] + r); p.z += o[2] * (o[0] + r); } } }
-function groundY(world, groundAt, x, z, y) { const g = groundAt(world, x, z, y + 0.35, 0.0, 0.0); return g.y > -Infinity ? g.y : y; }
+export function groundY(world, groundAt, x, z, y) { const g = groundAt(world, x, z, y + 0.35, 0.0, 0.0); return g.y > -Infinity ? g.y : y; }
 
 function stepLeg(M, L, body, world, groundAt, g) {
   const { speed, S, duty, moving, fwd, dt } = g;
@@ -141,7 +141,7 @@ function lerpAngle(a, b, t) { const d = Math.atan2(Math.sin(b - a), Math.cos(b -
 
 const qYaw = new THREE.Quaternion(), qTmp = new THREE.Quaternion(), eul = new THREE.Euler();
 // 자세·접촉 확정: 고정 계산 걸음마다 sim.step이 부른다(그리기에서 부르지 않는다). 다음 걸음의 stepMotion이 여기서 정한 값(ankleT, heel, pivotBehind, overAmt 등)을 읽는다
-export function solvePose(M, body) {
+export function poseProc(M, body) {
   const B = M.rig.bones, P = M.prm, fwd = yawVec(body.yaw), side = V(fwd.z, 0, -fwd.x), t = body.t;
   M.rig.root.position.set(body.pos.x, 0, body.pos.z); M.rig.root.rotation.set(0, 0, 0); M.rig.root.updateMatrixWorld(true);
   const moving = P.speed > 0.12 && body.onGround, ph = (M.visPhase ?? M.phase) * 2 * Math.PI, gaitW = clamp(P.speed / 1.2, 0, 1) * (1 - P.air);
@@ -193,7 +193,7 @@ export function solvePose(M, body) {
     aimBone(B[`upLeg.${L.s}`], ik.mid.clone().sub(hipJ), pole, 'down');
     aimBone(B[`leg.${L.s}`], ik.end.clone().sub(ik.mid), pole, 'down');
     setWorldQuat(B[`foot.${L.s}`], new THREE.Quaternion().setFromAxisAngle(UP, L.yaw).multiply(qTmp.setFromAxisAngle(V(1, 0, 0), pitch)));
-    L.ik = ik; L.ankleT = ankle;
+    L.ik = ik; L.ankleT = ankle; L.pole = pole;
   }
   // 팔: 걸음과 반대로 흔들고, 달리면 팔꿈치를 굽힌다. 웅크림·모으기 = 앞으로/뒤로, 공중 = 위로
   for (const s of ['L', 'R']) {
@@ -207,16 +207,20 @@ export function solvePose(M, body) {
     B[`foreArm.${s}`].quaternion.setFromEuler(eul.set(-elbow, 0, 0)); B[`foreArm.${s}`].updateMatrixWorld(true);
     B[`hand.${s}`].quaternion.setFromEuler(eul.set(-0.1, 0, 0)); B[`hand.${s}`].updateMatrixWorld(true);
   }
-  measure(M, body);
+  for (const s of ['L', 'R']) B[`toe.${s}`].quaternion.identity();
 }
+// 자작 자세만 쓰는 곳(시험·옛 경로): 자세를 풀고 바로 잰다
+export function solvePose(M, body) { poseProc(M, body); measure(M, body); }
 
 // 측정(시험용): 디딘 발의 미끄러짐, 다리 뻗음 비율, 무릎이 뒤로 꺾임, 발이 땅 아래로 들어감
-function measure(M, body) {
+export function measure(M, body) {
   const B = M.rig.bones, st = M.stats, fwd = yawVec(body.yaw);
   for (const L of M.legs) {
-    const ankW = worldPos(B[`foot.${L.s}`]), heelPivot = L.mode === 'plant' && L.heel < 0;
-    const toeW = heelPivot ? B[`foot.${L.s}`].localToWorld(V(0, -(DIM.ankleY - 0.02), DIM.heelZ)) : worldPos(B[`toe.${L.s}`]); // 디딘 축: 발끝을 들면 뒤꿈치
-    if (L.mode === 'plant') { // 디딘 축(뒤꿈치를 들면 발끝, 발끝을 들면 뒤꿈치, 평평하면 발끝)과 디딘 자리의 어긋남
+    // 디딤 설명: 자작 모션은 다리 상태에서, 캡처 모션은 그쪽이 적어 둔 값(L.cd)에서 읽는다. 재는 것은 두 경우 모두 실제 뼈의 자리다
+    const D = L.cd || { plant: L.mode === 'plant', kind: L.heel > 1e-6 ? 'toe' : L.heel < -1e-6 ? 'heel' : 'flat', yaw: L.plantYaw, ground: L.plant.y };
+    const ankW = worldPos(B[`foot.${L.s}`]), heelPivot = D.plant && D.kind === 'heel';
+    const toeZ = D.toeZ ?? DIM.toeZ, toeW = B[`foot.${L.s}`].localToWorld(V(0, -(DIM.ankleY - 0.02), heelPivot ? DIM.heelZ : toeZ)); // 디딘 축: 발끝을 들면 뒤꿈치. 앞쪽 축은 자작 모션 = 발끝(toeZ), 캡처 모션 = 발볼(D.toeZ)
+    if (D.plant) { // 디딘 축(뒤꿈치를 들면 발끝, 발끝을 들면 뒤꿈치, 평평하면 발끝)과 디딘 자리의 어긋남
       const toePlant = L.plant.clone().addScaledVector(yawVec(L.plantYaw), DIM.toeZ);
       const d = Math.hypot(toeW.x - toePlant.x, toeW.z - toePlant.z);
       if (L.prevToe && L.wasPlant && L.prevHeelPivot === heelPivot) { const v = Math.hypot(toeW.x - L.prevToe.x, toeW.z - L.prevToe.z); st.maxSlide = Math.max(st.maxSlide, v); st.slideSum += v; st.slideN++; }
@@ -225,10 +229,11 @@ function measure(M, body) {
     L.prevToe = toeW.clone(); L.prevHeelPivot = heelPivot;
     // 지지 구간 전체(W1.1, GPT 검토 2번): 한 번 디딘 동안 실제로 땅에 닿아 있어야 하는 점이 처음 닿은 자리에서 얼마나 벗어났는지(최대 이탈)와 얼마나 움직였는지(누적).
     // 평평 = 발끝·뒤꿈치 둘 다, 뒤꿈치 듦 = 발끝, 발끝 듦 = 뒤꿈치. 처음 자리는 디딘 순간 그 점의 자리이고, 축이 바뀌어도(평평 → 뒤꿈치 듦) 같은 점은 같은 처음 자리와 견준다
-    { const F = B[`foot.${L.s}`], toeP = F.localToWorld(V(0, -(DIM.ankleY - 0.02), DIM.toeZ)), heelP = F.localToWorld(V(0, -(DIM.ankleY - 0.02), DIM.heelZ));
-      if (L.mode === 'plant') {
-        if (!L.stance) L.stance = { leg: L.s, t0: body.t, toe0: null, heel0: null, prevToe: toeP.clone(), prevHeel: heelP.clone(), maxDev: 0, path: 0, kinds: [], n: 0 }; // 처음 자리 = 그 점이 땅에 처음 닿은 순간(뒤꿈치로 먼저 디디면 발끝은 평평해질 때)
-        const S = L.stance, kind = L.heel > 1e-6 ? 'toe' : L.heel < -1e-6 ? 'heel' : 'flat'; if (S.kinds[S.kinds.length - 1] !== kind) S.kinds.push(kind); S.n++;
+    { const F = B[`foot.${L.s}`], toeP = F.localToWorld(V(0, -(DIM.ankleY - 0.02), toeZ)), heelP = F.localToWorld(V(0, -(DIM.ankleY - 0.02), DIM.heelZ));
+      if (D.plant && L.stance && L.stance.tz !== toeZ) { const S = L.stance; st.stances.push({ leg: S.leg, t0: +S.t0.toFixed(3), dur: +(body.t - S.t0).toFixed(3), maxDev: S.maxDev, path: S.path, kinds: S.kinds.join('>'), handover: true }); st.stanceMaxDev = Math.max(st.stanceMaxDev, S.maxDev); st.stanceMaxPath = Math.max(st.stanceMaxPath, S.path); L.stance = null; } // 재는 점이 바뀌면(캡처 = 발볼, 자작 = 발끝) 같은 구간으로 잇지 않고 새 구간으로 잰다
+      if (D.plant) {
+        if (!L.stance) L.stance = { leg: L.s, t0: body.t, toe0: null, heel0: null, prevToe: toeP.clone(), prevHeel: heelP.clone(), maxDev: 0, path: 0, kinds: [], n: 0, tz: toeZ }; // 처음 자리 = 그 점이 땅에 처음 닿은 순간(뒤꿈치로 먼저 디디면 발끝은 평평해질 때)
+        const S = L.stance, kind = D.kind; if (S.kinds[S.kinds.length - 1] !== kind) S.kinds.push(kind); S.n++;
         if (kind !== 'heel') { if (!S.toe0) S.toe0 = toeP.clone(); else { S.maxDev = Math.max(S.maxDev, toeP.distanceTo(S.toe0)); S.path += toeP.distanceTo(S.prevToe); } }
         if (kind !== 'toe') { if (!S.heel0) S.heel0 = heelP.clone(); else { S.maxDev = Math.max(S.maxDev, heelP.distanceTo(S.heel0)); S.path += heelP.distanceTo(S.prevHeel); } }
         S.prevToe.copy(toeP); S.prevHeel.copy(heelP);
@@ -238,6 +243,6 @@ function measure(M, body) {
     // 무릎: 엉덩이-발목 선보다 앞(발 방향)에 있어야 한다
     const hip = worldPos(B[`upLeg.${L.s}`]), knee = worldPos(B[`leg.${L.s}`]), mid = hip.clone().add(ankW).multiplyScalar(0.5), kf = knee.clone().sub(mid).dot(yawVec(L.yaw));
     if (kf < -0.01) st.kneeFlip++;
-    const ground = L.mode === 'plant' ? L.plant.y : -Infinity; if (ankW.y < ground + DIM.ankleY * 0.5 && L.mode === 'plant' && L.heel === 0) st.below++;
+    if (D.plant && (L.cd || L.heel === 0) && ankW.y < D.ground + DIM.ankleY * 0.5) st.below++;
   }
 }

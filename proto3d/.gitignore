@@ -1,2 +1,4 @@
 node_modules/
 recordings/*.png
+assets_local/
+climb3d_mocap.html

@@ -9,7 +9,7 @@ export const DIM = {
   hipY: 0.95, hipW: 0.09, hipDrop: 0.04, thigh: 0.43, shin: 0.41, ankleY: 0.07,
   spine: 0.10, chest: 0.18, neck: 0.22, head: 0.10, headR: 0.11,
   clavX: 0.06, clavY: 0.18, shoulderX: 0.13, upperArm: 0.30, foreArm: 0.27, hand: 0.17,
-  toeZ: 0.15, heelZ: -0.06,
+  toeZ: 0.15, heelZ: -0.06, ballZ: 0.105, // ballZ = 발볼(발가락 관절) 자리: 뒤꿈치를 들 때 발이 이 점을 축으로 돈다. 발가락 뼈가 여기서 시작한다
 };
 DIM.leg = DIM.thigh + DIM.shin;
 DIM.arm = DIM.upperArm + DIM.foreArm;
@@ -30,7 +30,7 @@ function boneDefs() {
     L.push([`upLeg.${s}`, 'hips', [sx * d.hipW, -d.hipDrop, 0]]);
     L.push([`leg.${s}`, `upLeg.${s}`, [0, -d.thigh, 0]]);
     L.push([`foot.${s}`, `leg.${s}`, [0, -d.shin, 0]]);
-    L.push([`toe.${s}`, `foot.${s}`, [0, -(d.ankleY - 0.02), d.toeZ]]);
+    L.push([`toe.${s}`, `foot.${s}`, [0, -(d.ankleY - 0.02), d.ballZ]]);
   }
   return L;
 }
@@ -92,7 +92,8 @@ export function buildCharacter() {
     { const a = W(`hand.${s}`), b = a.clone().add(new THREE.Vector3(0, -DIM.hand, 0)); geos.push(segment(a, b, 0.038, 0.03, idx(`hand.${s}`), null, acc, 0)); }
     geos.push(segment(W(`upLeg.${s}`), W(`leg.${s}`), 0.085, 0.06, idx(`upLeg.${s}`), idx(`leg.${s}`), C.pants));
     geos.push(segment(W(`leg.${s}`), W(`foot.${s}`), 0.058, 0.045, idx(`leg.${s}`), idx(`foot.${s}`), C.pants));
-    { const f = W(`foot.${s}`); const len = DIM.toeZ - DIM.heelZ + 0.04; geos.push(block([f.x, 0.035, (DIM.toeZ + DIM.heelZ) / 2 + 0.01], [0.095, 0.07, len], idx(`foot.${s}`), C.shoe)); geos.push(block([f.x, f.y + 0.005, -0.02], [0.08, 0.03, 0.06], idx(`foot.${s}`), acc)); }
+    { const f = W(`foot.${s}`), z0 = DIM.heelZ - 0.01, z1 = DIM.ballZ, z2 = DIM.toeZ + 0.03; // 발 = 뒤쪽(발목 뼈) + 발가락 쪽(발가락 뼈). 겉모습은 전과 같은 한 덩어리이고, 발가락 뼈가 돌 때만 앞쪽이 따로 굽는다
+      geos.push(block([f.x, 0.035, (z0 + z1) / 2], [0.095, 0.07, z1 - z0], idx(`foot.${s}`), C.shoe)); geos.push(block([f.x, 0.035, (z1 + z2) / 2], [0.095, 0.07, z2 - z1], idx(`toe.${s}`), C.shoe)); geos.push(block([f.x, f.y + 0.005, -0.02], [0.08, 0.03, 0.06], idx(`foot.${s}`), acc)); }
   }
   const geo = mergeGeometries(geos);
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.0 });
