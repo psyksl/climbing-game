@@ -162,8 +162,8 @@ const CTRL = (() => {
     return null;
   }
   // 관절 몸: 자세 풀이가 준 목표 자세에서 잡은 손이 미끄러질 각도(한계 - 10°)를 넘는가
-  function poseSlips(s, po) {
-    for (const i of [0, 1]) { const lb = s.limb[i]; if (lb.mode !== 'grip' || !po.g[i]) continue;
+  function poseSlips(s, po, skip) { // skip = 하중을 뺄 손(그 손의 각도는 보지 않는다)
+    for (const i of [0, 1]) { const lb = s.limb[i]; if (i === skip || lb.mode !== 'grip' || !po.g[i]) continue;
       const r = PHX.rootPos(s, i), a = lb.anchor, x = r.x + po.g[i][0] - a.x, y = r.y + po.g[i][1] - a.y, l = Math.hypot(x, y) || 1;
       const hang = Math.acos(Math.max(-1, Math.min(1, (x * -a.nx + y * -a.ny) / l))) * 180 / Math.PI;
       const x0 = r.x - a.x, y0 = r.y - a.y, l0 = Math.hypot(x0, y0) || 1, hang0 = Math.acos(Math.max(-1, Math.min(1, (x0 * -a.nx + y0 * -a.ny) / l0))) * 180 / Math.PI;
@@ -239,6 +239,8 @@ const CTRL = (() => {
       // 클릭: 손발 하나에 대한 의도
       // 입력 → 손발: 1번 방식은 입력마다 손이 정해져 있고, 2번 방식은 누르는 순간의 추천 손(또는 그 반대 손)으로 확정한다
       st.footAim = footAim(s, io.mx, io.my); // 발을 직접 보낼 때 겨누는 자리(올라설 수 있는 면 먼저)
+      // 직접 보낸 발은 발 조종 키를 누르고 있는 동안만 조준점을 따라온다. 키를 떼면 그때 겨누던 자리로 계속 가고, 마우스는 손을 조종하는 데 쓴다(사용자 의견: 키를 뗐는데도 발이 마우스를 따라다녔다)
+      st.footTgt = st.footTgt || [null, null, null, null]; for (const i of [2, 3]) { if (!(st.act[i] && st.manual[i])) st.footTgt[i] = null; else if (io.down('foot') || !st.footTgt[i]) st.footTgt[i] = st.footAim ? { ...st.footAim } : { x: io.mx, y: io.my, raw: true }; }
       const footMod = io.down('foot') || io.pressed('foot');
       const ins = OPT.handMode === 1 ? [['sendL', 0], ['sendR', 1]] : [['sendBest', 'best'], ['sendOther', 'other']];
       for (const [id, which] of ins) {
@@ -401,13 +403,14 @@ const CTRL = (() => {
           const g = PHX.nearestGrip(s.world, e.x, e.y);
           if (g && g.d <= C.GRAB_R) { const ok = catchAllowed(s, g, io); if (ok === true) attempt(i); else if (ok !== null) st.miss.push({ i, x: g.x, y: g.y, d: ok }); }
         }
-        if (i >= 2 && st.act[i] && st.manual[i]) { const q = PHX.nearestSurface(s.world, e.x, e.y), fa = st.footAim; // 겨눈 발 자리가 있으면 그 지형에 닿았을 때만 디딘다(가는 길에 스친 다른 면에는 디디지 않는다)
-          if (q && q.d <= C.PLANT_R && q.ny < 0.3 && (fa ? q.poly === fa.poly && q.nx * fa.nx + q.ny * fa.ny > 0.95 : Math.hypot(q.x - io.mx, q.y - io.my) <= P.FOOT_CATCH_R) && Math.hypot(e.vx, e.vy) < C.PLANT_V) { // 겨눈 그 면에 닿았을 때만(같은 지형의 옆면·밑면에 먼저 닿아도 디디지 않는다)
+        if (i >= 2 && st.act[i] && st.manual[i]) { const q = PHX.nearestSurface(s.world, e.x, e.y), ft = st.footTgt[i], fa = ft && !ft.raw ? ft : null, ax0 = ft ? ft.x : io.mx, ay0 = ft ? ft.y : io.my; // 겨눈 발 자리가 있으면 그 지형에 닿았을 때만 디딘다(가는 길에 스친 다른 면에는 디디지 않는다)
+          if (q && q.d <= C.PLANT_R && q.ny < 0.3 && (fa ? q.poly === fa.poly && q.nx * fa.nx + q.ny * fa.ny > 0.95 : Math.hypot(q.x - ax0, q.y - ay0) <= P.FOOT_CATCH_R) && Math.hypot(e.vx, e.vy) < C.PLANT_V) { // 겨눈 그 면에 닿았을 때만(같은 지형의 옆면·밑면에 먼저 닿아도 디디지 않는다)
             if (handHolds(s, q.poly)) st.noStandT = s.t; else attempt(i); } } // 직접 보낸 발도 손으로 잡은 턱에는 디디지 않는다
         if (i >= 2 && st.act[i] && st.manual[i]) { // 직접 보낸 발이 겨눈 자리에 닿지 못한 채 멈춰 있으면 까닭을 알린다(아무 말 없이 발이 허공에 떠 있지 않게)
-          const fa = st.footAim, tx = fa ? fa.x : io.mx, ty = fa ? fa.y : io.my, far = Math.hypot(e.x - tx, e.y - ty) > 14 && Math.hypot(e.vx - hp.vx, e.vy - hp.vy) < 80; st.stall = st.stall || [0, 0, 0, 0];
+          const fa = st.footTgt[i], tx = fa ? fa.x : io.mx, ty = fa ? fa.y : io.my, far = Math.hypot(e.x - tx, e.y - ty) > 14 && Math.hypot(e.vx - hp.vx, e.vy - hp.vy) < 80; st.stall = st.stall || [0, 0, 0, 0];
           st.stall[i] = far ? st.stall[i] + dt : 0;
-          if (st.stall[i] > 0.6) { const hj = PHX.rootPos(s, i); st.footFar = { i, t: s.t, why: Math.hypot(tx - hj.x, ty - hj.y) > lb.max * 0.97 ? 'len' : 'hip' }; } }
+          if (st.stall[i] > 0.6) { const hj = PHX.rootPos(s, i); st.footFar = { i, t: s.t, why: Math.hypot(tx - hj.x, ty - hj.y) > lb.max * 0.97 ? 'len' : 'hip' }; }
+          if (st.stall[i] > 1.4 && !io.down('foot')) { st.act[i] = false; st.manual[i] = false; inp.drop[i] = true; st.stall[i] = 0; } } // 키를 뗀 뒤에도 닿지 못하면 그 발은 그만두고 자동 발에 맡긴다
         if (i >= 2 && st.auto[i] && !st.auto[i].swing) { const a = st.auto[i]; if (Math.hypot(e.x - a.x, e.y - a.y) < 8 && Math.hypot(e.vx - hp.vx, e.vy - hp.vy) < C.PLANT_V) attempt(i); }
       }
       // 물리 입력 만들기
@@ -416,9 +419,10 @@ const CTRL = (() => {
         if (i >= 2 && st.auto[i]) inp.t[i] = st.auto[i].swing
           ? (st.phase === 'charge' ? [hp.x - ux * 35, hp.y + 25] : [hp.x + ux * 80, hp.y + uy * 80 + 20])
           : [st.auto[i].x, st.auto[i].y];
-        else if (st.act[i] && i >= 2 && st.manual[i] && st.footAim) { // 직접 보낸 발은 겨눈 발 자리로 간다
+        else if (st.act[i] && i >= 2 && st.manual[i] && st.footTgt[i] && st.footTgt[i].raw) inp.t[i] = [st.footTgt[i].x, st.footTgt[i].y];
+        else if (st.act[i] && i >= 2 && st.manual[i] && st.footTgt[i]) { // 직접 보낸 발은 겨눈 발 자리로 간다
           // 위를 향한 면에는 위에서 내려 디딘다: 발이 아직 그 면보다 낮고 옆에 있으면 먼저 발 자리의 조금 위로 간다(아래에서 곧장 가면 턱의 옆면·밑면에 걸린다)
-          const fa = st.footAim, e = s.p[2 + i], up = (e.x - fa.sx) * fa.nx + (e.y - fa.sy) * fa.ny, lat = Math.abs((e.x - fa.sx) * -fa.ny + (e.y - fa.sy) * fa.nx);
+          const fa = st.footTgt[i], e = s.p[2 + i], up = (e.x - fa.sx) * fa.nx + (e.y - fa.sy) * fa.ny, lat = Math.abs((e.x - fa.sx) * -fa.ny + (e.y - fa.sy) * fa.nx);
           inp.t[i] = fa.ny < -0.5 && up < 7 && lat > 6 ? [fa.sx + fa.nx * 18, fa.sy + fa.ny * 18] : [fa.x, fa.y]; }
         else if (st.act[i]) inp.t[i] = [io.mx, io.my];
         if (st.tryNow[i]) { reach = false; st.tryNow[i] = false; st.pend[i] = true; }

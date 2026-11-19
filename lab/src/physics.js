@@ -23,6 +23,7 @@ const PH = (() => {
     JCAP: 1.5,                          // 관절 힘 곡선의 상한(관절이 90°일 때 힘의 배수)
     ARM_K: 1, LEG_K: 1,                 // 관절 몸에서 팔·다리 기준 힘 배율
     HIP_OUT: 130, HIP_IN: 45,           // 허벅지가 몸통 아래 방향에서 바깥쪽·안쪽으로 벗어날 수 있는 각도
+    HIP_CROSS: 40,                      // 뻗는(붙지 않은) 다리가 몸 안쪽(반대편 다리 쪽)으로 넘어갈 수 있는 각도. 골반을 틀지 않고는 발이 반대편 끝까지 가지 못한다(v0.8.2). 디딘 채 체중을 옮길 때 기우는 다리에는 쓰지 않는다
     SW_RATE: 5,                         // 팔꿈치가 꺾이는 쪽을 바꾸는 빠르기(1/초). 뒤집힘 없이 팔을 돌려 넘기는 동작
     STAND_V: 60, STAND_ARM: 0.25,        // 서 있기: 발이 몸 아래에 있는데 팔이 체중의 STAND_ARM배 넘게 지고 있으면 다리를 STAND_V(px/s)로 펴서 발이 체중을 받게 한다
     ELEV_ONE: 20, ELEV_BOTH: 2, ELEV_V: 110, // 어깨 올림: 한 팔만 위로 뻗거나 잡으면 그쪽 어깨가 ELEV_ONE px까지 올라간다(몸통이 옆으로 늘어나는 것). 두 팔을 다 올리면 ELEV_BOTH까지만. 빠르기 ELEV_V px/s
@@ -312,7 +313,7 @@ const PH = (() => {
           // 관절 몸: 고관절은 바깥쪽으로 많이, 안쪽(몸 중심선 너머)으로는 조금만 벌어진다. 각도가 +면 화면 왼쪽이므로 왼다리의 바깥쪽
           // (허벅지 기준 범위를 골반→발 선의 범위로 옮기면: 바깥쪽은 굽힌 만큼 좁아지고 안쪽은 그만큼 넓어진다)
           const out = (lb.i === 2 ? 1 : -1) * ang > 0, bend = C.JOINT ? Math.atan2(jointH(lb, Math.max(lb.min, Math.min(lb.max, tl))), Math.max(lb.min, Math.min(lb.max, tl)) / 2) * 180 / Math.PI : 0;
-          const lim = (C.JOINT ? (out ? C.HIP_OUT - bend : C.HIP_IN + bend) : C.LEG_RANGE) * Math.PI / 180;
+          const lim = (C.JOINT ? (out ? C.HIP_OUT - bend : Math.min(C.HIP_IN + bend, C.HIP_CROSS)) : C.LEG_RANGE) * Math.PI / 180;
           if (Math.abs(ang) > lim) { const a = Math.sign(ang) * lim, ca = Math.cos(a), sa = Math.sin(a); tx = (dxn * ca - dyn * sa) * tl; ty = (dyn * ca + dxn * sa) * tl; }
         }
         const tm = Math.max(lb.min * 1.1, Math.min(lb.max * 0.97, tl)); tx *= tm / tl; ty *= tm / tl;
@@ -541,7 +542,7 @@ const PH = (() => {
     for (const q of s.p) { L += q.m * ((q.x - cx) * (q.vy - py / m) - (q.y - cy) * (q.vx - px / m)); E += 0.5 * q.m * (q.vx * q.vx + q.vy * q.vy) - q.m * C.G * q.y; }
     return { px, py, L, E, cx, cy, m };
   }
-  const VERSION = 'v0.8.1'; // 물리 판 번호: 계산 결과가 달라지는 변경을 하면 올린다(시범·기록이 어느 물리에서 만든 것인지 적는 데 쓴다)
+  const VERSION = 'v0.8.2'; // 물리 판 번호: 계산 결과가 달라지는 변경을 하면 올린다(시범·기록이 어느 물리에서 만든 것인지 적는 데 쓴다)
   return { VERSION, rect, C, M, W, MASS, GRIP, STATIONS, BODIES, setBody, getBody, rootPos, jointPos, jointCap, hipAngle, solvePose, makeWorld, create, step, diag, nearestGrip, nearestSurface };
 })();
 if (typeof module !== 'undefined') module.exports = PH;
