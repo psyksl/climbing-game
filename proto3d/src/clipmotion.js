@@ -54,12 +54,14 @@ function soft(p, hipJ) { const v = p.clone().sub(hipJ), d = v.length(); return d
 function softInv(p, hipJ) { const v = p.clone().sub(hipJ), d = v.length(); if (d <= SOFT_A) return p.clone(); const x = Math.min((d - SOFT_A) / SOFT_S, 0.993); return hipJ.clone().addScaledVector(v, (SOFT_A - SOFT_S * Math.log(1 - x)) / d); }
 const newPose = n => ({ hip: V(), q: Array.from({ length: n }, () => new THREE.Quaternion()) });
 function sample(c, u, out) {
+  if (c.pp) { const w = ((u % 2) + 2) % 2; return sampleAt(c, (w > 1 ? 2 - w : w) * (c.n - 1) / c.fps, out); } // 가만히 있는 자세(반복 지점 없음): 끝까지 갔다가 거꾸로
   const x = ((u % 1) + 1) % 1 * c.n, f0 = Math.floor(x) % c.n, f1 = (f0 + 1) % c.n, t = x - Math.floor(x), nb = c.nb, H = c.hip, Q = c.q;
   out.hip.set(lerp(H[f0 * 3], H[f1 * 3], t), lerp(H[f0 * 3 + 1], H[f1 * 3 + 1], t), lerp(H[f0 * 3 + 2], H[f1 * 3 + 2], t));
   for (let i = 0; i < nb; i++) { const a = (f0 * nb + i) * 4, b = (f1 * nb + i) * 4, s = Q[a] * Q[b] + Q[a + 1] * Q[b + 1] + Q[a + 2] * Q[b + 2] + Q[a + 3] * Q[b + 3] < 0 ? -1 : 1;
     out.q[i].set(lerp(Q[a], s * Q[b], t), lerp(Q[a + 1], s * Q[b + 1], t), lerp(Q[a + 2], s * Q[b + 2], t), lerp(Q[a + 3], s * Q[b + 3], t)).normalize(); }
 }
-const conAt = (c, u, i) => c.con[i][Math.floor(((u % 1) + 1) % 1 * c.n) % c.n] === '1'; // 그 위상에서 발이 닿아 있는지(변환할 때 원본의 높이·빠르기로 정해 둔 값)
+const conAt = (c, u, i) => c.con[i][Math.floor(((u % 1) + 1) % 1 * c.n) % c.n] === '1';
+const cyc = (c, phase, turns) => (c.cycles > 1 ? (phase + (turns % c.cycles)) / c.cycles : phase); // 걸음 주기가 두 번 든 동작: 위상(한 주기) + 지금이 몇 번째 주기인지 → 동작 안의 자리 // 그 위상에서 발이 닿아 있는지(변환할 때 원본의 높이·빠르기로 정해 둔 값)
 // 반복하지 않는 동작을 시각 t(초)의 자세로
 function sampleAt(c, t, out) { const x = clamp(t * c.fps, 0, c.n - 1), f0 = Math.floor(x), f1 = Math.min(f0 + 1, c.n - 1), u = x - f0, nb = c.nb, H = c.hip, Q = c.q;
   out.hip.set(lerp(H[f0 * 3], H[f1 * 3], u), lerp(H[f0 * 3 + 1], H[f1 * 3 + 1], u), lerp(H[f0 * 3 + 2], H[f1 * 3 + 2], u));
@@ -78,7 +80,7 @@ export function poseRaw(rig, names, c, t, origin, yaw, tmp) {
 }
 export function makeClipState(set, rig, body) {
   const n = set.names.length;
-  return { set, rig, drop: 0, w: 0, on: false, init: false, phase: 0, idleT: 0, wLoc: 0, r: 0, cw: 0, wLocC: 0, gy: body.pos.y, groundT: 9, lastSpeed: 0, A: newPose(n), Bp: newPose(n), Cp: newPose(n), Dp: newPose(n),
+  return { set, rig, turns: 0, drop: 0, w: 0, on: false, init: false, phase: 0, idleT: 0, wLoc: 0, r: 0, cw: 0, wLocC: 0, gy: body.pos.y, groundT: 9, lastSpeed: 0, A: newPose(n), Bp: newPose(n), Cp: newPose(n), Dp: newPose(n),
     act: { kind: 'none', w: 0, tt: 0, tt0: 0, xf: 1, pu: 0, rate: 1, v0: 0, u: 0, fallW: 0, runW: 0, landK: 1, hs: 0 }, // 점프 층: kind = none/charge/push/air/land, tt = 점프 동작의 시각(초)
     G: Object.assign(newSnap(rig), { kind: [null, null] }), // G = 자작에게 넘겨준 순간의 최종 자세(얼려 둔 것)
     P0: newSnap(rig), F: newSnap(rig), // P0 = 이번 걸음의 자작 자세, F = 넘겨받은 순간의 자작 자세(얼려 둔 것)
@@ -124,7 +126,7 @@ export function stepClip(C, M, body, input, dt, enabled) {
     const wT = a.kind === 'none' ? 0 : a.kind === 'land' ? a.landK * moveK * (1 - smooth(clamp((a.tt - m.B) / Math.max(0.05, W.jump.dur - 0.05 - m.B), 0, 1))) : a.kind === 'air' ? 1 : moveK; // 착지: 가장 낮은 장면을 지나면 걷기·서 있기 쪽으로 풀린다
     a.w += (wT - a.w) * (1 - Math.exp(-(wT > a.w ? lerp(18, 3, C.cw) : 9) * dt)); if (a.w < 1e-3) a.w = 0; // 깊이 웅크린 채 모으기 시작하면 천천히 올라온다(엉덩이가 한 번에 솟지 않게)
   }
-  if (body.onGround && gs > 0.02) C.phase = (C.phase + gs * dt / C.stride) % 1;
+  if (body.onGround && gs > 0.02) { const p = C.phase + gs * dt / C.stride; if (p >= 1) C.turns = (C.turns + 1) % 2; C.phase = p % 1; } // turns = 지금이 짝수 번째 주기인지 홀수 번째인지(두 주기짜리 동작용)
   C.idleT += dt; C.lastSpeed = gs;
   C.gy = body.onGround ? C.gy + (body.pos.y - C.gy) * (1 - Math.exp(-12 * dt)) : body.pos.y; // 계단: 기준 땅 높이는 부드럽게 따라간다
 }
@@ -149,7 +151,7 @@ export function poseClip(C, M, body, world, groundAt, dt) {
   // 섞은 캡처 자세
   const A = C.A, act = C.act; sample(W.idle, C.idleT / W.idle.dur, A);
   if (C.wLoc > 1e-3) { sample(W.walk, C.phase, C.Bp); if (C.r > 1e-3) { sample(W.run, C.phase, C.Cp); mix(C.Bp, C.Cp, C.r, C.Bp); } mix(A, C.Bp, C.wLoc, A); }
-  if (C.cw > 0) { sample(W.crouchIdle, C.idleT / W.crouchIdle.dur, C.Bp); if (C.wLocC > 1e-3) { sample(W.sneak, C.phase, C.Cp); mix(C.Bp, C.Cp, C.wLocC, C.Bp); } mix(A, C.Bp, smooth(C.cw), A); } // 웅크림
+  if (C.cw > 0) { sample(W.crouchIdle, C.idleT / W.crouchIdle.dur, C.Bp); if (C.wLocC > 1e-3) { sample(W.sneak, cyc(W.sneak, C.phase, C.turns), C.Cp); mix(C.Bp, C.Cp, C.wLocC, C.Bp); } mix(A, C.Bp, smooth(C.cw), A); } // 웅크림
   if (act.w > 0) { // 점프 층
     const m = W.jump.marks; sampleAt(W.jump, act.tt, C.Bp);
     if (act.kind === 'push') { // 밀기: 다리·엉덩이는 높이를 맞춘 시각(act.tt), 윗몸(팔 흔들기)은 가장 낮은 장면 → 뜨는 장면을 미는 진행만큼. 모으던 자세에서 그쪽으로 넘어간다
@@ -171,7 +173,7 @@ export function poseClip(C, M, body, world, groundAt, dt) {
     // 닿음: 걷기 동작이 충분히 섞이기 전에는 서 있는 것(두 발 디딤). 그 뒤로는 걷기나 달리기 한쪽이 거의 다일 때 그쪽 값, 둘을 섞는 동안(빨라지거나 느려지는 중)에는 둘 다 닿아 있을 때만
     // (한쪽 값만 쓰면 섞은 자세에서는 이미 뗀 발을 계속 고정해 다리가 끌려간다)
     const conStand = C.wLoc < CLIP.CON_LOC ? true : C.r < 0.15 ? conAt(W.walk, C.phase, i) : C.r > 0.85 ? conAt(W.run, C.phase, i) : conAt(W.walk, C.phase, i) && conAt(W.run, C.phase, i);
-    const conCrouch = C.cw > 0 ? (C.wLocC < CLIP.CON_LOC ? true : conAt(W.sneak, C.phase, i)) : true, conLoco = C.cw < 0.15 ? conStand : C.cw > 0.85 ? conCrouch : conStand && conCrouch;
+    const conCrouch = C.cw > 0 ? (C.wLocC < CLIP.CON_LOC ? true : conAt(W.sneak, cyc(W.sneak, C.phase, C.turns), i)) : true, conLoco = C.cw < 0.15 ? conStand : C.cw > 0.85 ? conCrouch : conStand && conCrouch;
     // 점프 층이 맡는 동안: 모으기·밀기·착지 = 두 발 디딤, 공중 = 두 발 뜸. 달리며 내려앉으면 두 발을 붙들지 않고 바로 걸음을 잇는다
     const oStep = !!C.feet[1 - i].step; // 다른 발을 고쳐 디디는 중이면 이 발은 떼지 않는다(두 발이 함께 뜨지 않게)
     const con = act.kind === 'air' ? false : act.w > 0.5 && !(act.kind === 'land' && C.lastSpeed > 1.0) ? true : conLoco || (oStep && !!f.lock), gAt = (x, z) => groundY(world, groundAt, x, z, body.pos.y);

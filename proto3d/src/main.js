@@ -8,9 +8,10 @@ import { makeSim } from './sim.js';
 import { BIND, conflicts, keyName, makeInput } from './input.js';
 import CLIPS from 'clip-data';
 import GALLERY from 'gallery-data'; // 동작 보기용 자료(받은 동작 전부를 이 뼈대로 옮긴 값. 있을 때만)
-import { poseRaw } from './clipmotion.js'; // 캡처 동작 자료(빌드할 때 assets_local/clips.json이 있으면 들어온다. 없으면 null)
+import { poseRaw } from './clipmotion.js';
+import { buildProps, makeSwingRope, applyGrips } from './demo.js'; // 캡처 동작 자료(빌드할 때 assets_local/clips.json이 있으면 들어온다. 없으면 null)
 
-export const VERSION = 'p3d-0.3.0';
+export const VERSION = 'p3d-0.4.0';
 const params = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: params.has('test') });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = !params.has('noshadow');
@@ -29,9 +30,21 @@ const cam = { yaw: Math.PI + 0.35, pitch: 0.28, dist: 4.2, target: new THREE.Vec
 // 동작 보기: 받은 동작을 하나씩 이 캐릭터로 튼다(게임 계산은 멈춘다. 발 고정·IK 없이 옮긴 자세 그대로)
 const gal = { on: false, i: 0, t: 0, names: GALLERY ? Object.keys(GALLERY.clips) : [], origin: new THREE.Vector3(), yaw: 0 };
 if (GALLERY) for (const c of Object.values(GALLERY.clips)) { c.hip = Float32Array.from(c.hip); c.q = Float32Array.from(c.q); }
-const galClip = () => GALLERY.clips[gal.names[gal.i]], galPose = () => poseRaw(rig, GALLERY.bones, galClip(), Math.min(gal.t, galClip().dur), gal.origin, gal.yaw);
-function galOpen(v) { gal.on = v && !!GALLERY; if (gal.on) { gal.origin.copy(body.pos); gal.yaw = body.yaw; gal.t = 0; galPose(); } else reset({ pos: gal.origin.toArray(), yaw: gal.yaw }); }
-function galGo(d, cat) { const n = gal.names.length; if (cat) { const c0 = galClip().cat; let k = gal.i; do { k = (k + d + n) % n; } while (GALLERY.clips[gal.names[k]].cat === c0 && k !== gal.i); if (d < 0) { const c1 = GALLERY.clips[gal.names[k]].cat; while (GALLERY.clips[gal.names[(k - 1 + n) % n]].cat === c1 && k !== 0) k = (k - 1 + n) % n; } gal.i = k; } else gal.i = (gal.i + d + n) % n; gal.t = 0; }
+const galClip = () => GALLERY.clips[gal.names[gal.i]];
+// 시연장: 동작에 맞는 지형 조각을 놓고, 잡은 손은 그 자리에 붙인다(물리 판정 없음). gal.props = 지형 보임
+const KIND_KO = { ledge: '턱·매달리기', wall: '벽', rope: '밧줄', ladder: '사다리', stairs: '계단', narrow: '좁은 길', ground: '땅' };
+const stage = new THREE.Group(), dots = [0, 1, 2, 3].map(e => { const m = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), new THREE.MeshBasicMaterial({ color: e % 2 ? '#4f9be0' : '#e0705c' })); m.visible = false; return m; }); // 닿아 있는 손발 표시(왼쪽 = 붉은색, 오른쪽 = 푸른색)
+scene.add(stage); dots.forEach(d => scene.add(d)); gal.props = true; gal.built = null;
+const galToWorld = p => p.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), gal.yaw).add(gal.origin);
+function galBuild() { const c = galClip(); stage.clear(); stage.position.copy(gal.origin); stage.rotation.set(0, gal.yaw, 0); const b = buildProps(c); stage.add(b.group); gal.built = { clip: c, holds: b.holds, info: b.info, rope: null };
+  if (b.info.dynamic === 'rope') { const palms = t => { poseRaw(rig, GALLERY.bones, c, t, new THREE.Vector3(), 0); return ['L', 'R'].map(s => rig.bones[`hand.${s}`].localToWorld(new THREE.Vector3(0, -0.08, 0))); }; gal.built.rope = makeSwingRope(b.group, c, palms); b.info.pieces++; } }
+function galPose() { const c = galClip(), t = Math.min(gal.t, c.dur); if (!gal.built || gal.built.clip !== c) galBuild(); stage.visible = gal.on && gal.props;
+  poseRaw(rig, GALLERY.bones, c, t, gal.origin, gal.yaw); dots.forEach(d => { d.visible = false; });
+  if (gal.props) { for (const m of applyGrips(rig, c, gal.built.holds, t, galToWorld)) { dots[m.e].position.copy(m.p); dots[m.e].visible = true; }
+    if (gal.built.rope) { const inv = p => p.clone().sub(gal.origin).applyAxisAngle(new THREE.Vector3(0, 1, 0), -gal.yaw), pl = ['L', 'R'].map(s => inv(rig.bones[`hand.${s}`].localToWorld(new THREE.Vector3(0, -0.08, 0)))); gal.built.rope(pl[0], pl[1], rig.bones.hips.position.y - gal.origin.y); } } }
+function galOpen(v) { gal.on = v && !!GALLERY; if (gal.on) { gal.origin.copy(body.pos); gal.yaw = body.yaw; gal.t = 0; galPose(); } else { stage.visible = false; dots.forEach(d => { d.visible = false; }); reset({ pos: gal.origin.toArray(), yaw: gal.yaw }); } }
+// cat = 지형 종류가 다른 다음(앞) 동작으로 넘어간다
+function galGo(d, cat) { const n = gal.names.length; if (cat) { const K = k => GALLERY.clips[gal.names[k]].kind, c0 = K(gal.i); let k = gal.i; do { k = (k + d + n) % n; } while (K(k) === c0 && k !== gal.i); gal.i = k; } else gal.i = (gal.i + d + n) % n; gal.t = 0; }
 let slow = false, acc = 0, last = performance.now(), override = null, paused = false, fresh = true, lastDelta = []; // override = 시험에서 넣는 입력
 
 function readInput() {
@@ -79,7 +92,7 @@ function stateName() {
   return v < 0.12 ? '대기' : motion.prm.runW > 0.5 ? '달리기' : '걷기';
 }
 function drawHud(fps) {
-  if (gal.on) { const c = galClip(); hud.innerHTML = `<div class=ver>3D 모션 시제품 ${VERSION} · 임시 캐릭터(자작)</div><div><b>동작 보기</b> ${gal.i + 1} / ${gal.names.length} &nbsp; <b>${gal.names[gal.i]}</b></div><div><b>분류</b> ${c.cat} &nbsp; <b>시각</b> ${Math.min(gal.t, c.dur).toFixed(2)} / ${c.dur.toFixed(2)}초</div><div class=dim>받은 동작을 이 캐릭터로 옮긴 그대로(원본의 이동 포함 · 발 고정 없음 · 게임 계산은 멈춤)</div><div class=${slow ? 'slow' : 'real'}>${slow ? '느리게 ×0.25' : '실제 속도'}</div>`; return; }
+  if (gal.on) { const c = galClip(); hud.innerHTML = `<div class=ver>3D 모션 시제품 ${VERSION} · 임시 캐릭터(자작)</div><div><b>동작 보기</b> ${gal.i + 1} / ${gal.names.length} &nbsp; <b>${gal.names[gal.i]}</b></div><div><b>분류</b> ${c.cat} &nbsp; <b>지형</b> ${KIND_KO[c.kind] || '-'}${gal.props ? '' : '(숨김)'}${gal.built && gal.built.info.removed ? ` · 맞지 않아 뺀 조각 ${gal.built.info.removed}개` : c.kind !== 'ground' && gal.built && !gal.built.info.pieces ? ' · 조각 없음(손발 자리로는 지형을 정하지 못함)' : ''} &nbsp; <b>시각</b> ${Math.min(gal.t, c.dur).toFixed(2)} / ${c.dur.toFixed(2)}초</div><div class=slow>시연 · 물리 판정 없음</div><div class=dim>받은 동작을 이 캐릭터로 옮겨 지형에 맞춰 튼 것입니다. 잡을 수 있는지·버티는지는 따지지 않습니다(게임 계산은 멈춤).<br>지형은 이 동작에서 손발이 닿는 자리로 만든 임시 조각입니다. 점 = 닿아 있는 손발(붉은색 왼쪽, 푸른색 오른쪽)</div><div class=${slow ? 'slow' : 'real'}>${slow ? '느리게 ×0.25' : '실제 속도'}</div>`; return; }
   const v = Math.hypot(body.vel.x, body.vel.z), st = motion.stats;
   const C = sim.clip, cap = C && C.w > 0.5, footName = (L, i) => cap ? (C.feet[i].step ? '고쳐 디딤' : C.feet[i].lock ? (C.feet[i].kind === 'heel' ? '디딤(뒤꿈치)' : '디딤(발끝)') : '옮기는 중') : L.mode === 'plant' ? (L.heel > 0 ? '디딤(뒤꿈치 듦)' : '디딤') : L.mode === 'swing' ? '옮기는 중' : '공중';
   hud.innerHTML = `<div class=ver>3D 모션 시제품 ${VERSION} · 임시 캐릭터(자작)</div>`
@@ -106,7 +119,7 @@ function frame(now) {
   if (input.wasPressed('slow')) slow = !slow;
   if (input.wasPressed('motionMode') && sim.clipSet) sim.useClip = !sim.useClip;
   if (input.wasPressed('gallery') && GALLERY) galOpen(!gal.on);
-  if (gal.on) { if (input.wasPressed('galNext')) galGo(1); if (input.wasPressed('galPrev')) galGo(-1); if (input.wasPressed('galCatNext')) galGo(1, true); if (input.wasPressed('galCatPrev')) galGo(-1, true); }
+  if (gal.on) { if (input.wasPressed('galNext')) galGo(1); if (input.wasPressed('galPrev')) galGo(-1); if (input.wasPressed('galCatNext')) galGo(1, true); if (input.wasPressed('galCatPrev')) galGo(-1, true); if (input.wasPressed('galProps')) gal.props = !gal.props; }
   if (!paused) frameCore(dtR, readInput()); else renderer.render(scene, camera); // 시험이 걸음을 직접 진행하는 동안 화면 쪽 계산은 멈춘다
   input.endFrame(); requestAnimationFrame(frame);
 }
@@ -142,7 +155,9 @@ window.__p3 = {
   // 시험용 한 장: 시점을 몸 기준으로 바로 놓고 그린다(멈춘 채 찍을 때). off = 몸이 보는 쪽 기준 시점 각도
   shot(o = {}) { cam.yaw = body.yaw + (o.off ?? Math.PI / 2); cam.pitch = o.pitch ?? 0.1; cam.dist = cam.eff = o.dist ?? 3.2; cam.follow = null; cam.dirEff = null; cam.target.set(body.pos.x, body.pos.y + (o.h ?? 0.95), body.pos.z); updateCamera(0); renderer.render(scene, camera); drawHud(fpsS); },
   boneNames: () => rig.list.map(b => b.name),
-  galleryList: () => GALLERY ? gal.names.map(n => ({ name: n, cat: GALLERY.clips[n].cat, dur: GALLERY.clips[n].dur })) : null,
+  galleryList: () => GALLERY ? gal.names.map(n => ({ name: n, cat: GALLERY.clips[n].cat, kind: GALLERY.clips[n].kind, dur: GALLERY.clips[n].dur, holds: (GALLERY.clips[n].holds || []).length })) : null,
+  galleryInfo: () => gal.built ? { ...gal.built.info, name: gal.names[gal.i], inside: (() => { stage.updateMatrixWorld(true); const h = rig.bones.hips.getWorldPosition(new THREE.Vector3()); let n = 0; stage.traverse(o => { if (o.isMesh && o.geometry.type === 'BoxGeometry' && new THREE.Box3().setFromObject(o).expandByScalar(-0.03).containsPoint(stage.worldToLocal(h.clone()).applyMatrix4(stage.matrixWorld))) n++; }); return n > 0; })(), grips: gal.built.holds.filter(h => h.grip).length, palmErr: ['L', 'R'].map((s, e) => { const h = gal.built.holds.find(h => h.e === e && h.grip && gal.t * gal.built.clip.fps >= h.f0 && gal.t * gal.built.clip.fps <= h.f1); return h ? rig.bones[`hand.${s}`].localToWorld(new THREE.Vector3(0, -0.08, 0)).distanceTo(galToWorld(h.grip)) : null; }) } : null,
+  galleryProps: v => { gal.props = v; },
   gallery(name, t = 0, o = {}) { if (!GALLERY) return false; if (name === null) { galOpen(false); return true; } if (!gal.on) galOpen(true); gal.i = Math.max(0, gal.names.indexOf(name)); gal.t = t; galPose(); const h = rig.bones.hips.getWorldPosition(new THREE.Vector3()); cam.yaw = gal.yaw + (o.off ?? Math.PI / 2); cam.pitch = o.pitch ?? 0.1; cam.dist = cam.eff = o.dist ?? 3.4; cam.follow = null; cam.dirEff = null; cam.target.set(o.fixed ? gal.origin.x : h.x, (o.fixed ? gal.origin.y + 1.0 : h.y) + (o.up ?? 0.1), o.fixed ? gal.origin.z : h.z); const want = cam.target.clone(); updateCamera(0); cam.target.copy(want); camera.position.copy(cam.target).addScaledVector(cam.dirEff, cam.dist); camera.lookAt(cam.target); renderer.render(scene, camera); drawHud(fpsS); return true; },
   hasClips: () => !!sim.clipSet, setMode: m => { if (sim.clipSet) sim.useClip = m === 'clip'; return sim.useClip ? 'clip' : 'proc'; }, mode: () => (sim.useClip ? 'clip' : 'proc'),
   clip: () => sim.clip ? { w: sim.clip.w, on: sim.clip.on, phase: sim.clip.phase, wLoc: sim.clip.wLoc, r: sim.clip.r, stride: sim.clip.stride, feet: sim.clip.feet.map(f => ({ s: f.s, lock: !!f.lock, kind: f.kind, step: !!f.step, off: f.off.length() })) } : null,

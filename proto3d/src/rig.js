@@ -97,7 +97,7 @@ export function buildCharacter() {
   }
   const geo = mergeGeometries(geos);
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.0 });
-  const mesh = new THREE.SkinnedMesh(geo, mat); mesh.castShadow = true;
+  const mesh = new THREE.SkinnedMesh(geo, mat); mesh.castShadow = true; mesh.frustumCulled = false; // 뼈가 뿌리에서 멀리 가는 동작(동작 보기의 원본 이동)에서 화면 밖으로 잘못 걸러지지 않게
   const skeleton = new THREE.Skeleton(list);
   mesh.add(bones.hips); mesh.bind(skeleton);
   const root = new THREE.Group(); root.add(mesh);

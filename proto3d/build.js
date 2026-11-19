@@ -2,8 +2,8 @@
 'use strict';
 const esbuild = require('esbuild'), fs = require('fs'), path = require('path');
 const src = path.join(__dirname, 'src');
-// 2D판과 같은 검사: 줄 끝 주석 뒤에 코드가 이어지는 실수를 막는다
-for (const f of [...fs.readdirSync(src).map(x => path.join(src, x)), ...fs.readdirSync(path.join(__dirname, 'test')).map(x => path.join(__dirname, 'test', x))].filter(f => f.endsWith('.js'))) fs.readFileSync(f, 'utf8').split('\n').forEach((ln, i) => { const m = ln.match(/^(?:[^'"`/]|'[^']*'|"[^"]*"|`[^`]*`)*?\/\/(.*)$/); if (m && (/;\s*[A-Za-z_$][\w$.]*\s*[=(]/.test(m[1]) && /\)\s*;|\}\s*$/.test(m[1]) || /[A-Za-z_$][\w$]*(\.[\w$]+)+\s*=\s*[^=]/.test(m[1]) && /;\s*\}?\s*$/.test(m[1]))) { console.error(`주석 뒤 코드로 보임: ${path.relative(__dirname, f)}:${i + 1}`); process.exit(1); } });
+// 2D판과 같은 검사: 줄 끝 주석 뒤에 코드가 이어지는 실수를 막는다(src·test·tools의 .js와 .mjs)
+for (const f of ['src', 'test', 'tools'].flatMap(d => fs.readdirSync(path.join(__dirname, d)).map(x => path.join(__dirname, d, x))).filter(f => /\.m?js$/.test(f))) fs.readFileSync(f, 'utf8').split('\n').forEach((ln, i) => { const m = ln.match(/^(?:[^'"`/]|'[^']*'|"[^"]*"|`[^`]*`)*?\/\/(.*)$/); if (m && (/;\s*[A-Za-z_$][\w$.]*\s*[=(]/.test(m[1]) && /\)\s*;|\}\s*$/.test(m[1]) || /[A-Za-z_$][\w$]*(\.[\w$]+)+\s*=\s*[^=]/.test(m[1]) && /;\s*\}?\s*$/.test(m[1]))) { console.error(`주석 뒤 코드로 보임: ${path.relative(__dirname, f)}:${i + 1}`); process.exit(1); } });
 // 캡처 동작 자료(assets_local/clips.json)는 저장소에 넣지 않는다(외부 자료를 옮긴 값). 있으면 climb3d_mocap.html을 따로 만든다. climb3d.html에는 넣지 않는다
 const clipFile = path.join(__dirname, 'assets_local', 'clips.json'), galFile = path.join(__dirname, 'assets_local', 'gallery.json'), hasClips = fs.existsSync(clipFile);
 const bundle = withClips => esbuild.buildSync({ entryPoints: [path.join(src, 'main.js')], bundle: true, format: 'iife', minify: true, write: false, target: 'es2020', legalComments: 'none',

@@ -25,6 +25,8 @@ const SRC_END = { 'hand.L': 'LeftHandMiddle1', 'hand.R': 'RightHandMiddle1' };
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const r4 = x => Math.round(x * 1e4) / 1e4, r3 = x => Math.round(x * 1e3) / 1e3;
+const PALM = new THREE.Vector3(0, -0.08, 0), BALL = new THREE.Vector3(0, -(DIM.ankleY - 0.02), DIM.ballZ); // 손바닥 가운데(손목에서 8cm), 발볼
+export const EFF = ['hand.L', 'hand.R', 'foot.L', 'foot.R'];
 
 export function convert(file, opt = {}) {
   const buf = fs.readFileSync(file), obj = new FBXLoader().parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), '');
@@ -46,19 +48,24 @@ export function convert(file, opt = {}) {
     TB[n].setFromUnitVectors(ours, src);
   }
   const mixer = new THREE.AnimationMixer(obj); mixer.clipAction(clip).play();
-  const fps = opt.fps || 30, nAll = Math.max(2, Math.round(clip.duration * fps) + 1), frames = [];
-  for (let f = 0; f < nAll; f++) {
+  const fps = opt.fps || 30, nRaw = Math.max(2, Math.round(clip.duration * fps) + 1); let frames = [];
+  for (let f = 0; f < nRaw; f++) {
     mixer.setTime(Math.min(f / fps, clip.duration - 1e-6)); obj.updateMatrixWorld(true);
     const hp = wp(sb('Hips')), fr = { hip: hp.clone(), q: {}, src: {} };
     for (const n of BONES) fr.q[n] = wq(sb(SRC[n])).multiply(rest[n]).multiply(TB[n]); // 세계 회전(우리 뼈)
     fr.leg = ['Left', 'Right'].map(S => ({ hipJ: wp(sb(S + 'UpLeg')), ank: wp(sb(S + 'Foot')), toe: wp(sb(S + 'ToeBase')) }));
+    fr.eff = [wp(sb('LeftHand')), wp(sb('RightHand')), fr.leg[0].toe, fr.leg[1].toe]; // 손목·발볼(원본, cm): 서 있는지(닿아 있는지) 판정에 쓴다
     for (const n of ['hand.L', 'hand.R', 'foot.L', 'foot.R', 'head', 'leg.L', 'leg.R', 'foreArm.L', 'foreArm.R']) fr.src[n] = wp(sb(SRC[n])).sub(hp).multiplyScalar(k); // 맞춤 확인용(엉덩이 기준, 줄인 값)
     frames.push(fr);
   }
+  if (opt.frames) frames = frames.slice(opt.frames[0], opt.frames[1] + 1); // 동작의 한 토막만 쓴다(장면 번호, 초당 30장 기준)
+  const nAll = frames.length;
   // 뿌리 이동: 걷기·달리기(loop) = 처음→끝을 같은 빠르기로, 그 밖 = 첫 자리 고정
   const h0 = frames[0].hip, h1 = frames[nAll - 1].hip, net = V(h1.x - h0.x, 0, h1.z - h0.z), loop = !!opt.loop, inplace = loop || !!opt.inplace, n = loop ? nAll - 1 : nAll; // inplace = 반복하지 않는 동작에서도 처음→끝의 수평 이동을 뺀다(달리며 뛰기)
   const out = { src: path.basename(file), fps, n, dur: r4(n / fps), loop, k: r4(k * 100), hip: [], q: [], fit: {} };
-  if (loop) { out.stride = r4(net.length() * k); out.speed = r4(out.stride / out.dur); out.srcSpeed = r4(net.length() / 100 / clip.duration); }
+  const cycles = opt.cycles || 1; // 동작 하나에 걸음 주기가 두 번 들어 있으면 2(보폭 = 한 주기의 거리)
+  if (loop) { out.stride = r4(net.length() * k / cycles); out.speed = r4(net.length() * k / out.dur); out.srcSpeed = r4(net.length() / 100 / (n / fps)); if (cycles > 1) out.cycles = cycles; }
+  if (opt.pingpong) out.pp = true; // 반복 지점이 없는 가만히 있는 자세: 끝까지 갔다가 거꾸로 돌아온다
   let fitMax = {}, lowest = [], legClamp = 0;
   const pose = [];
   for (let f = 0; f < n; f++) {
@@ -81,7 +88,8 @@ export function convert(file, opt = {}) {
     for (const nm in fr.src) { const d = B[nm].getWorldPosition(V()).sub(hw).distanceTo(fr.src[nm]); fitMax[nm] = Math.max(fitMax[nm] || 0, d); }
     let low = Infinity; for (const s of ['L', 'R']) { const F = B[`foot.${s}`]; low = Math.min(low, F.localToWorld(V(0, -(DIM.ankleY - 0.02), DIM.toeZ)).y - 0.02, F.localToWorld(V(0, -(DIM.ankleY - 0.02), DIM.heelZ)).y - 0.02); }
     lowest.push(low);
-    pose.push({ hip: [hx, B.hips.position.y, hz], q: BONES.map(nm => B[nm].quaternion.clone()) });
+    const effOurs = [['hand.L', PALM], ['hand.R', PALM], ['foot.L', BALL], ['foot.R', BALL]].map(([bn, l]) => B[bn].localToWorld(l.clone()));
+    pose.push({ eff: effOurs, hip: [hx, B.hips.position.y, hz], q: BONES.map(nm => B[nm].quaternion.clone()) });
   }
   const sorted = [...lowest].sort((a, b) => a - b), yfix = opt.yfit ? -sorted[Math.floor(sorted.length * 0.1)] : 0; // 다리를 발목 자리로 맞춘 뒤에는 쓰지 않는다(yfit을 줄 때만). 우리 발이 원본보다 길어 뒤꿈치를 들면 발끝 점이 1~2cm 땅 아래로 내려가는데, 실행할 때 발끝을 땅에 고정하며 풀린다
   out.yfix = r4(yfix); out.legRatio = r4(legClamp); out.fit = Object.fromEntries(Object.entries(fitMax).map(([a, b]) => [a, r4(b)]));
@@ -105,6 +113,16 @@ export function convert(file, opt = {}) {
     for (let f = G; f <= LD; f++) { const sN = (f - G) / (LD - G); pose[f].hip[1] -= Hc * 4 * sN * (1 - sN); }
     out.marks = { A: r4(A / fps), G: r4(G / fps), TO: r4(TO / fps), LD: r4(LD / fps), B: r4(B / fps), rise: r4(Hc) };
   }
+  if (opt.holds) { // 손발 닿음(동작 준비용): 원본에서 그 손발이 거의 서 있는 구간(0.2초 이상) = 무언가를 잡거나 디딘 구간. 닿은 자리는 이 뼈대로 옮긴 뒤의 자리(뿌리 기준)
+    const SPD = 38, run = EFF.map((_, e) => frames.slice(0, n).map((fr, f) => { const a = frames[Math.min(f + 1, n - 1)].eff[e], b = frames[Math.max(f - 1, 0)].eff[e], dt = (Math.min(f + 1, n - 1) - Math.max(f - 1, 0)) / fps; return dt > 0 && a.distanceTo(b) / dt < SPD; }));
+    // holds의 r = 그 손발이 엉덩이보다 얼마나 위인가(손이 허리 아래에서 서 있는 것은 잡은 것이 아니라 내려뜨린 손이다), d = 엉덩이에서 옆으로 떨어진 거리(발이 엉덩이 바로 아래 멀리 있으면 서 있는 발, 앞으로 나가 있으면 벽에 댄 발)
+    out.eff = []; out.holds = [];
+    run.forEach((r, e) => { for (let f = 1; f < n - 1; f++) if (!r[f] && r[f - 1] && r[f + 1]) r[f] = true; // 한 장짜리 틈은 메운다
+      // 느리게 미끄러지는 손발은 닿은 것이 아니다: 구간이 시작한 자리에서 7cm 넘게 벗어나면 거기서 구간을 끊는다
+      { let a0 = -1; for (let f = 0; f < n; f++) { if (!r[f]) { a0 = -1; continue; } if (a0 < 0) a0 = f; else if (frames[f].eff[e].distanceTo(frames[a0].eff[e]) > 7) { r[f] = false; a0 = -1; } } }
+      let s0 = -1; for (let f = 0; f <= n; f++) { const on = f < n && r[f]; if (on && s0 < 0) s0 = f; if (!on && s0 >= 0) { if (f - s0 >= Math.max(3, Math.round(0.2 * fps))) { const m = V(); let rel = 0, hd = 0; for (let k = s0; k < f; k++) { const q = pose[k].eff[e]; m.add(q); rel += q.y - pose[k].hip[1]; hd += Math.hypot(q.x - pose[k].hip[0], q.z - pose[k].hip[2]); } m.multiplyScalar(1 / (f - s0)); out.holds.push({ e, f0: s0, f1: f - 1, p: [r3(m.x), r3(m.y + yfix), r3(m.z)], r: r3(rel / (f - s0)), d: r3(hd / (f - s0)) }); } else for (let k = s0; k < f; k++) r[k] = false; s0 = -1; } }
+      out.eff.push(r.map(x => (x ? '1' : '0')).join('')); });
+  }
   const rq = opt.coarse ? r3 : r4; // 동작 보기용(coarse)은 소수 셋째 자리까지
   for (const f of order) { const p = pose[f]; out.hip.push(rq(p.hip[0]), rq(p.hip[1] + yfix), rq(p.hip[2])); for (const q of p.q) out.q.push(rq(q.x), rq(q.y), rq(q.z), rq(q.w)); }
   if (opt.coarse) { delete out.fit; delete out.contact; }
@@ -112,7 +130,12 @@ export function convert(file, opt = {}) {
 }
 
 // 이름으로 나눈 분류(동작 보기와 목록에서 쓴다)
-export const category = n => /\bHang|Hanging|Shimmy|Freehang|Climb|Rope|Ladder|Wall|Swing/i.test(n) ? '등반·매달리기' : /Jump|Fall|Land|Flip|Trip|Drop/i.test(n) ? '점프·낙하' : /Walk|Run|Sprint|Strafe|Turn|Sneak|Stairs|Crawl|Change Direction|Wheelbarrow/i.test(n) ? '걷기·달리기' : /Idle|Stand|Crouch|Kneel|Bored|Looking|Breathing|Getting Up|Situp|Teeter|Floating|Stretch|Pose/i.test(n) ? '서 있기·일어서기' : '기타';
+export const category = n => /\bHang|Hanging|Shimmy|Freehang|Climb|Rope|Ladder|Wall|Swing/i.test(n) ? '등반·매달리기' : /Jump|Fall|Land|Flip|Trip|Drop/i.test(n) ? '점프·낙하' : /Walk|Run|Sprint|Strafe|Turn|Sneak|Stairs|Crawl|Change Direction|Wheelbarrow|Side Step/i.test(n) ? '걷기·달리기' : /Idle|Stand|Crouch|Kneel|Bored|Looking|Breathing|Getting Up|Situp|Teeter|Floating|Stretch|Pose/i.test(n) ? '서 있기·일어서기' : '기타';
+
+// 이름으로 정한 지형 종류(동작 시연장에서 어떤 지형을 놓을지)
+export const terrainKind = n => /Rope|Swing/i.test(n) ? 'rope' : /Ladder/i.test(n) ? 'ladder' : /Wall Run|Sprint To Wall|Jump From Wall|Climbing (Up|Down) Wall/i.test(n) ? 'wall' : /Stairs/i.test(n) ? 'stairs' : /Teeter|Cover Sneak/i.test(n) ? 'narrow'
+  : /\bHang|Hanging|Shimmy|Freehang|Climbing To Top|^Climbing( \(\d+\))?$|^Climbing Down( \(\d+\))?$/i.test(n) ? 'ledge' : 'ground';
+export const KIND_KO = { ledge: '턱·매달리기', wall: '벽', rope: '밧줄', ladder: '사다리', stairs: '계단', narrow: '좁은 길·벽에 붙기', ground: '땅' };
 
 if (process.argv[1] && process.argv[1].endsWith('mixamo_convert.mjs')) {
   const args = process.argv.slice(2), all = args[0] === '--all'; if (all) args.shift();
@@ -120,9 +143,14 @@ if (process.argv[1] && process.argv[1].endsWith('mixamo_convert.mjs')) {
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   if (all) { // 동작 보기용: 폴더의 FBX를 모두 옮긴다(초당 15장, 원본 이동 포함, 반복 처리 없음)
     const clips = {}, files = fs.readdirSync(dir).filter(f => /\.fbx$/i.test(f)).sort((a, b) => a.localeCompare(b, 'en', { numeric: true })); let bad = 0;
-    for (const f of files) { try { const r = convert(path.join(dir, f), { fps: 15, coarse: true }); r.cat = category(f); clips[f.replace(/\.fbx$/i, '')] = r; } catch (e) { bad++; console.log('실패', f, e.message); } }
+    for (const f of files) { try { const r = convert(path.join(dir, f), { fps: 15, coarse: true, holds: true }); r.cat = category(f); r.kind = terrainKind(f.replace(/\.fbx$/i, '')); clips[f.replace(/\.fbx$/i, '')] = r; } catch (e) { bad++; console.log('실패', f, e.message); } }
     fs.writeFileSync(outFile, JSON.stringify({ note: 'Mixamo(Adobe) 동작을 이 시제품 뼈대로 옮긴 값(동작 보기용). 저장소에 넣지 않는다.', bones: BONES, clips }));
     console.log(outFile, Object.keys(clips).length, '개 · 실패', bad, '·', fs.statSync(outFile).size, 'bytes');
+    if (listFile) { // 동작 표(이름·분류·지형·길이·손발이 닿는 구간 수와 높이). 동작 값은 들어가지 않는다
+      const rows = ['동작,분류,지형,길이(초),왼손 잡음(구간 수),오른손 잡음,왼발 디딤,오른발 디딤,손 잡는 높이(m),땅 위 발 디딤 높이(m),끝날 때 엉덩이 높이 변화(m)'];
+      for (const [nm, c] of Object.entries(clips)) { const cnt = e => c.holds.filter(h => h.e === e).length, hs = [...new Set(c.holds.filter(h => h.e < 2).map(h => h.p[1].toFixed(1)))].sort().join(' '), fs2 = [...new Set(c.holds.filter(h => h.e >= 2 && h.p[1] > 0.08).map(h => h.p[1].toFixed(1)))].sort().join(' ');
+        rows.push([`"${nm}"`, c.cat, KIND_KO[c.kind], c.dur, cnt(0), cnt(1), cnt(2), cnt(3), `"${c.kind === 'ground' || c.kind === 'stairs' || c.kind === 'narrow' ? '' : hs}"`, `"${fs2}"`, r3(c.hip[c.hip.length - 2] - c.hip[1])].join(',')); }
+      fs.writeFileSync(listFile, rows.join('\n') + '\n'); console.log(listFile, rows.length - 1, '줄'); }
   } else {
     const list = JSON.parse(fs.readFileSync(listFile || new URL('./mixamo_clips.json', import.meta.url), 'utf8')), clips = {};
     for (const [name, c] of Object.entries(list)) { const r = convert(path.join(dir, c.file), c); clips[name] = r; console.log(name.padEnd(14), c.file.padEnd(28), `${r.n}장 ${r.dur}초`, r.loop ? `보폭 ${r.stride}m · ${r.speed}m/s(원본 ${r.srcSpeed})` : '', `다리 뻗음 최대 ${r.legRatio}`, r.marks ? `표시 ${JSON.stringify(r.marks)}` : '', `닿은 몫 L ${r.duty[0]} R ${r.duty[1]} · 둘 다 뜸 ${r.flight}`, '\n   L ' + r.contact[0] + '\n   R ' + r.contact[1] + '\n   끝 자리 차이(최대, m):', JSON.stringify(r.fit)); }

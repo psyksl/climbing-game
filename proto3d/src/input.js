@@ -18,8 +18,9 @@ export const BIND = [
   { id: 'gallery', ctx: ['any'], keys: ['KeyG'], label: '동작 보기 켬·끔' },
   { id: 'galPrev', ctx: ['gallery'], keys: ['BracketLeft'], label: '동작 보기: 앞 동작' },
   { id: 'galNext', ctx: ['gallery'], keys: ['BracketRight'], label: '동작 보기: 다음 동작' },
-  { id: 'galCatPrev', ctx: ['gallery'], keys: ['Minus'], label: '동작 보기: 앞 분류' },
-  { id: 'galCatNext', ctx: ['gallery'], keys: ['Equal'], label: '동작 보기: 다음 분류' },
+  { id: 'galCatPrev', ctx: ['gallery'], keys: ['Minus'], label: '동작 보기: 앞 지형' },
+  { id: 'galCatNext', ctx: ['gallery'], keys: ['Equal'], label: '동작 보기: 다음 지형' },
+  { id: 'galProps', ctx: ['gallery'], keys: ['KeyH'], label: '동작 보기: 지형 조각 보임·숨김' },
 ];
 const ctxOverlap = (a, b) => a.includes('any') || b.includes('any') || a.some(c => b.includes(c));
 export function conflicts() { const out = []; for (let i = 0; i < BIND.length; i++) for (let j = i + 1; j < BIND.length; j++) { const a = BIND[i], b = BIND[j]; for (const k of a.keys) if (b.keys.includes(k) && ctxOverlap(a.ctx, b.ctx)) out.push({ key: k, a: a.id, b: b.id }); } return out; }

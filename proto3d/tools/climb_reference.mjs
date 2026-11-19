@@ -12,7 +12,7 @@ console.warn = () => {};
 const GROUPS = [
   ['매달려 있기', /^(Hanging Idle|Hanging)( \(\d+\))?$/], ['옆으로 옮기기(시미)', /Shimmy|Moving While Hanging/], ['매달려 뛰어 옮기기(홉)', /Hang Hop/],
   ['벽 타고 오르내리기', /Climbing (Up|Down) Wall/], ['턱 위로 올라서기', /Climbing To Top|Freehang Climb|Braced Hang To Crouch/], ['매달리러 가기·내려오기', /To Freehang|To Hang|To Braced Hang|To Hanging|Braced Hang Drop|Freehang Drop|^Braced Hang$|Braced To Free|Free Hang To Braced/],
-  ['밧줄·사다리', /Rope|Ladder/], ['그 밖의 Climbing', /^Climbing( \(\d+\))?$|Climbing Down( \(\d+\))?$/],
+  ['밧줄 오르기', /Climbing A Rope|Rope Climb/], ['사다리', /Ladder/], ['밧줄에 매달려 흔들기', /Swing/], ['벽으로 달려 오르기·벽 차기', /Wall Run|Sprint To Wall|Jump From Wall/], ['그 밖의 Climbing', /^Climbing( \(\d+\))?$|Climbing Down( \(\d+\))?$/],
 ];
 const [dir, outFile] = process.argv.slice(2), V = () => new THREE.Vector3(), deg = r => r * 180 / Math.PI;
 const ang = (u, v) => deg(Math.acos(THREE.MathUtils.clamp(u.clone().normalize().dot(v.clone().normalize()), -1, 1)));
