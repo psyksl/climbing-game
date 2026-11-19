@@ -241,6 +241,7 @@ const PH = (() => {
     JCAP: 1.5,                          // 관절 힘 곡선의 상한(관절이 90°일 때 힘의 배수)
     ARM_K: 1, LEG_K: 1,                 // 관절 몸에서 팔·다리 기준 힘 배율
     HIP_OUT: 130, HIP_IN: 45,           // 허벅지가 몸통 아래 방향에서 바깥쪽·안쪽으로 벗어날 수 있는 각도
+    TILT_MAX: 45,                       // 손으로만 매달렸을 때 몸통이 곧추선 방향에서 기울 수 있는 각도(넘으면 몸통 근육이 되돌린다)
     HIP_CROSS: 40,                      // 뻗는(붙지 않은) 다리가 몸 안쪽(반대편 다리 쪽)으로 넘어갈 수 있는 각도. 골반을 틀지 않고는 발이 반대편 끝까지 가지 못한다(v0.8.2). 디딘 채 체중을 옮길 때 기우는 다리에는 쓰지 않는다
     SW_RATE: 5,                         // 팔꿈치가 꺾이는 쪽을 바꾸는 빠르기(1/초). 뒤집힘 없이 팔을 돌려 넘기는 동작
     STAND_V: 60, STAND_ARM: 0.25,        // 서 있기: 발이 몸 아래에 있는데 팔이 체중의 STAND_ARM배 넘게 지고 있으면 다리를 STAND_V(px/s)로 펴서 발이 체중을 받게 한다
@@ -268,7 +269,7 @@ const PH = (() => {
     legPush: 1.8 * W, legPull: 0, legPress: 0.15 * W, ankle: 0.15 * W, ankleK: 0.02 * W, ankleC: 300, palm: 0.3 * W, palmK: 0.03 * W, palmC: 400, legK: 1.8 * W / 3, legC: 2400, legRate: 750,
     handReach: 0.3 * W, handKp: 0.3 * W / 15, handKd: 110,
     footReach: 0.5 * W, footKp: 0.5 * W / 15, footKd: 250,
-    upK: 0.1 * W, upC: 1500, upMax: 1.5 * W,
+    upK: 0.1 * W, upC: 1500, upMax: 1.5 * W, tiltK: 0.04 * W, tiltD: 0.02 * W, tiltMax: 1.2 * W, // 몸통 버팀: 넘은 1°마다 0.04W, 도는 빠르기에 따른 제동, 최대 1.2W
     freeC: [4, 4, 10, 10],
   };
   const GRIP = { // th: 손이 버티는 방향의 한계각(면을 누르는 방향 기준)
@@ -634,6 +635,13 @@ const PH = (() => {
       f = Math.max(-M.upMax, Math.min(M.upMax, f));
       c.fx += f * gx; c.fy += f * gy; hp.fx -= f * gx; hp.fy -= f * gy;
     }
+    // 몸통 버팀(v0.8.3, 관절 몸): 손으로만 매달려 발이 떠 있을 때, 몸통이 곧추선 방향에서 TILT_MAX°보다 기울면 배·허리 근육이 엉덩이를 가슴 아래로 되돌린다.
+    // 사람은 매달린 채 다리를 흔들어도 몸통이 거의 수평(79°)까지 눕지 않는다. 몸통에 수직인 힘을 가슴·엉덩이에 반대로 주어(돌림 힘만) 무게중심은 그대로 둔다
+    if (C.JOINT && handOn && !planted && C.TILT_MAX) {
+      const dx = c.x - hp.x, dy = c.y - hp.y, l = Math.hypot(dx, dy) || 1, tilt = Math.atan2(dx, -dy) * 180 / Math.PI, over = Math.abs(tilt) - C.TILT_MAX;
+      if (over > 0) { const nx = -dy / l, ny = dx / l, sg = Math.sign(tilt), om = ((c.vx - hp.vx) * nx + (c.vy - hp.vy) * ny) / l; // om: 몸통이 도는 빠르기
+        const f = Math.min(M.tiltMax, M.tiltK * over + M.tiltD * Math.max(0, sg * om)) * sg; c.fx -= f * nx; c.fy -= f * ny; hp.fx += f * nx; hp.fy += f * ny; }
+    }
     for (let i = 0; i < p.length; i++) {
       const q = p[i], lb = i >= 2 ? s.limb[i - 2] : null;
       q.px = q.x; q.py = q.y;
@@ -760,7 +768,7 @@ const PH = (() => {
     for (const q of s.p) { L += q.m * ((q.x - cx) * (q.vy - py / m) - (q.y - cy) * (q.vx - px / m)); E += 0.5 * q.m * (q.vx * q.vx + q.vy * q.vy) - q.m * C.G * q.y; }
     return { px, py, L, E, cx, cy, m };
   }
-  const VERSION = 'v0.8.2'; // 물리 판 번호: 계산 결과가 달라지는 변경을 하면 올린다(시범·기록이 어느 물리에서 만든 것인지 적는 데 쓴다)
+  const VERSION = 'v0.8.3'; // 물리 판 번호: 계산 결과가 달라지는 변경을 하면 올린다(시범·기록이 어느 물리에서 만든 것인지 적는 데 쓴다)
   return { VERSION, rect, C, M, W, MASS, GRIP, STATIONS, BODIES, setBody, getBody, rootPos, jointPos, jointCap, hipAngle, solvePose, makeWorld, create, step, diag, nearestGrip, nearestSurface };
 })();
 if (typeof module !== 'undefined') module.exports = PH;
@@ -1699,7 +1707,7 @@ if (typeof module !== 'undefined') module.exports = CTRL;
 'use strict';
 const LESSON = (() => {
   const VERSION = 2;       // 과제·시범 묶음의 판 번호: 시범 입력, 연습용 턱, 성공 조건, 기준 설정을 바꾸면 올린다
-  const PHYS = 'v0.8.2';   // 이 시범 시각을 찾았을 때의 물리 판(PH.VERSION). 물리 판이 달라지면 시범을 다시 확인하고 이 값을 맞춘다(test/lessons_check.js가 확인)
+  const PHYS = 'v0.8.3';   // 이 시범 시각을 찾았을 때의 물리 판(PH.VERSION). 물리 판이 달라지면 시범을 다시 확인하고 이 값을 맞춘다(test/lessons_check.js가 확인)
   // 시범의 기준 설정: 시범과 유령은 플레이어 설정과 상관없이 늘 이 설정으로 계산한다
   const BASE = { opt: { autoFeet: true, autoShift: true, assist: true, handMode: 1, assistRange: 'near', autoLoad: false }, body: 'joint', mode: 'intent', layout: null, physOn: true, couple: 0 };
   // 같은 입력이라도 결과를 바꾸는 보조 설정: 과제에 들어올 때 기준에 맞추고 나갈 때 되돌린다. 손 선택 방식(handMode)은 입력 방법일 뿐이라 플레이어 것을 그대로 둔다
@@ -1877,7 +1885,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
 // 등반 조작 실험실 · 화면과 입력
 'use strict';
 (() => {
-  const W = G.W, H = G.H, OX = -30, OY0 = 130, C = PH.C, BUILD = 'v0.15.1';
+  const W = G.W, H = G.H, OX = -30, OY0 = 130, C = PH.C, BUILD = 'v0.16.0';
   let OY = OY0; // 화면 세로 기준. 과제가 정하면(view) 그 값을 쓴다: 높은 턱이 화면 밖으로 나가지 않게
   const LIMB = ['왼손', '오른손', '왼발', '오른발'], COL = ['#e86a5a', '#4fb3e8', '#e86a5a', '#4fb3e8'], DARK = ['#8a3b3b', '#2a6f97', '#8a3b3b', '#2a6f97'];
   let world = PH.makeWorld(), layout = null;
@@ -1900,6 +1908,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
   let recent = [], spWas = false, lastMiss = null, showLog = false, S, station = 1, tries = 0, fx = [], why = null, endT = 0, slow = false, tick = 0, bot = null, autoI = 0, doneT = 0, air = null, jump = null, trail = [], swing = null, last = BOTS.idle();
   window.__lab = { keys: () => KEYS.log.slice(), chart: () => ({ mode: LAY.chart ? 'on' : 'off', dock: LAY.dock, size: LAY.size[LAY.dock], view: VIEW.start, span: VIEW.span, manual: VIEW.manual, end: CH.end, rect: CH.rect && { ...CH.rect }, plot: CH.plot && { ...CH.plot }, ax: CH.ax, pad: CH.pad, pps: CH.pps, n: CH.n, laneH: CH.laneH, big: CH.big, heads: CH.heads.map(q => ({ ...q })), off: CH.off && { ...CH.off }, scroll: CH.scroll, scrollMax: CH.scrollMax, head: CH.head, lanesTop: CH.lanesTop, ready: KEYS.ready, panel: !!KEYS.panel }),
     log: () => ({ on: LAY.log, rect: LOG.rect && { ...LOG.rect }, items: LOG.items.map(q => ({ att: q.att, kind: q.kind, text: q.text, t: q.t })), att: LOG.att, scroll: LOG.scroll, max: LOG.max, size: { ...LAY.logSize }, stats: showLog }),
+    shape: () => ({ turn: SHAPE.turn.slice(), twist: SHAPE.twist, joints: [0, 1, 2, 3].map(i => { const j = limbJoint(S, i, SHAPE.turn[i]); return { x: j.x, y: j.y, depth: j.depth }; }) }), bendTurn: i => bendTurn(S, i), pelvisTwist: () => pelvisTwist(S),
     view: () => ({ s: VW.s, x0: VW.x0, y0: VW.y0, ox: OX, oy: OY, show: { ...LAY.show, ghost: ghostOn, stats: showLog }, pos: JSON.parse(JSON.stringify(LAY.pos)), menu: VM.open, menuRect: VM.rect && { ...VM.rect }, helpShown: !!HELP.rect, helpRect: HELP.rect && { ...HELP.rect }, hints: (CH.hints || []).map(q => ({ ...q })), zoom: LAY.zoom, fitS: VW.fit, cam: { ...CAM }, hud: { ...HV }, markOff: !!HELP.markOff, play: { ...PZ }, chart: CZ && { ...CZ }, chartPart: KZ && { ...KZ }, logPart: LZ && { ...LZ }, logSplit: LSP && { ...LSP }, split: SPL && { ...SPL }, dock: LAY.dock, size: { ...LAY.size }, lim: LAY_LIM, fit: LAY_FIT, guide: LAY.guide, guideRect: GD.rect && { ...GD.rect }, drag: HUD.drag && { kind: HUD.drag.kind, target: HUD.drag.target || null } }), toScreen: (x, y) => toScreen(x, y), toWorld: (x, y) => toWorld(x, y),
     failReason, practice: () => ({ phase, ended: ended && { ...ended }, marks: CH.marks.map(q => ({ ...q })), hover: CH.hover, tools: CH.tools && { ...CH.tools }, bar: CH.bar && { ...CH.bar }, lessonCard: LC.rect && { ...LC.rect }, trackEnd: trk.end(), trackFull: trk.full, okWait: OK_WAIT, frames: trk.frames.length, rp: rp && { t: rp.t, from: rp.from, to: rp.to, playing: rp.playing, speed: rp.speed }, capture: HUD.capture, cursor: HUD.cursor, hits: HUD.hits.map(h => ({ ...h })) }), lesson: () => ({ i: lessonI, demo: !!demo, ok: lessonOkT, demoOk, demoEnd, rec, demoRec, lastRec, kept, note: lessonNote, ghost: ghost ? { t: ghost.S.t, x: ghost.S.p[0].x, y: ghost.S.p[0].y, dead: ghost.S.dead } : null }), hint: () => hint(), jump: () => jump, ctrlState: () => ctrl.st, opt: () => CTRL.OPT, aim, plog, ui: () => ui, bind: BIND, raw: () => { const m = G.input.mouse; return (m.down[0] || G.input.key('KeyQ') ? 'L' : '-') + (m.down[2] || G.input.key('KeyE') ? 'R' : '-'); }, get s() { return S; }, get bot() { return bot; }, finished: false, results: [] };
 
@@ -2188,20 +2197,56 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     if (o > a + 4) bendMem[i] = -prev;
     return bendMem[i];
   }
+  // ---- 사람다운 몸 그리기(v0.16.0, 4단계 첫 판). 물리는 그대로 두고 그림만 바꾼다(물리의 질점 6개·관절 길이는 같다).
+  // 조사(README v0.16.0 절): 고관절 정상 범위(AAOS 평균) 굽힘 128°·폄 17°·벌림 33°·모음 14°·안쪽 돌림 42°·바깥 돌림 44°. 두 발로 뛸 때 무릎은 발끝 쪽(앞)을 향하고 무릎 사이 간격이 발목 간격보다 크게 벌어지지 않는 것이 보통이다(무릎이 안·밖으로 꺾이는 것은 부상 위험 자세로 다룬다).
+  // 등반에서는 무릎이 벽 쪽(화면 안쪽)으로 굽고, 발을 넓게 벌리고 엉덩이를 벽에 붙일 때(개구리 자세)만 무릎을 옆으로 연다.
+  // 그래서 무릎·팔꿈치가 굽는 방향을 "옆(화면)" 몫과 "벽 쪽(화면 안쪽)" 몫으로 나눈다. 화면에 보이는 것은 옆 몫뿐이다 → 웅크려도 무릎이 <> 모양으로 벌어지지 않는다.
+  const SHAPE = { turn: [0.85, 0.85, 0.3, 0.3], twist: 0 }; // turn = 굽는 방향 가운데 옆으로 향하는 몫(0 = 모두 벽 쪽, 1 = 모두 옆). 화면 한 장마다 조금씩 따라간다
+  const clamp01 = v => Math.max(0, Math.min(1, v));
+  function bendTurn(s, i) {
+    const lb = s.limb[i]; if (lb.arm) return 0.85; // 팔꿈치는 매달릴 때 옆·뒤로 벌어진다(옆 몫이 크다)
+    const ch = s.p[0], hp = s.p[1], e = s.p[lb.end], ax = (ch.x - hp.x) / C.T, ay = (ch.y - hp.y) / C.T, dx = e.x - hp.x, dy = e.y - hp.y;
+    const lat = Math.abs(dx * -ay + dy * ax), down = -(dx * ax + dy * ay);                       // 몸통 축에 수직인 거리, 엉덩이 아래로 내려간 거리
+    const wide = clamp01((lat / lb.max - 0.2) / 0.35), high = clamp01(1 - down / (0.85 * lb.max)); // 발이 옆으로 멀고 엉덩이 가까이 올라와 있을수록 개구리 자세
+    return 0.22 + 0.6 * wide * (0.45 + 0.55 * high);
+  }
+  // 화면에 그릴 팔꿈치·무릎: 물리의 관절 자리(옆으로 굽은 높이 h)에서 옆 몫만 남긴다. depth = 벽 쪽으로 굽은 정도(0~1, 그늘에 쓴다)
+  function limbJoint(s, i, turn) {
+    const j = PH.jointPos(s, i), lb = s.limb[i], mx = (j.rx + s.p[lb.end].x) / 2, my = (j.ry + s.p[lb.end].y) / 2, U = lb.max / 2 * 1.02;
+    return { x: mx + (j.x - mx) * turn, y: my + (j.y - my) * turn, rx: j.rx, ry: j.ry, depth: Math.min(1, j.h * Math.sqrt(Math.max(0, 1 - turn * turn)) / U) };
+  }
+  // 골반 돌림(-1 ~ 1): 한 다리가 몸 안쪽(반대편 다리 쪽)으로 넘어가면 골반이 그쪽으로 돈다. 골반을 틀지 않고 발만 반대편으로 꺾이는 꼭두각시 모양을 피한다
+  function pelvisTwist(s) {
+    const ch = s.p[0], hp = s.p[1], ax = (ch.x - hp.x) / C.T, ay = (ch.y - hp.y) / C.T; let t = 0;
+    for (const i of [2, 3]) { const lb = s.limb[i], r = PH.rootPos(s, i), e = s.p[lb.end], h = PH.hipAngle(ax, ay, lb, e.x - r.x, e.y - r.y), os = i === 2 ? 1 : -1, inward = -os * h.line;
+      if (inward > 12) t += -os * clamp01((inward - 12) / 30); }
+    return Math.max(-1, Math.min(1, t));
+  }
+  function updateShape(s, dt) { for (let i = 0; i < 4; i++) SHAPE.turn[i] += (bendTurn(s, i) - SHAPE.turn[i]) * Math.min(1, dt * 8); SHAPE.twist += (pelvisTwist(s) - SHAPE.twist) * Math.min(1, dt * 6); }
+  const shade = (hex, k) => { const n = parseInt(hex.slice(1), 16), f = v => Math.round(v * (1 - k)); return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`; };
+  // 몸통: 어깨·가슴(윗옷)과 골반(바지)을 나눠 그리고 허리로 잇는다. 골반은 돌림만큼 한쪽이 좁아 보인다. 머리는 목 위에서 겨누는 쪽을 조금 바라본다
+  function drawTorso(c, s, R, twist, look, col = { top: '#3b3f46', bot: '#2c3a52', head: '#3b3f46' }) {
+    const ch = s.p[0], hp = s.p[1], ux = (ch.x - hp.x) / C.T, uy = (ch.y - hp.y) / C.T, nx = -uy, ny = ux, wx = hp.x + ux * C.T * 0.42, wy = hp.y + uy * C.T * 0.42, ww = (C.HW || 8) + 6;
+    const lh = { x: R[2].x - nx * 5, y: R[2].y - ny * 5 }, rh = { x: R[3].x + nx * 5, y: R[3].y + ny * 5 }, pw = 1 - 0.35 * Math.abs(twist);  // 엉덩이 바깥 선
+    if (twist > 0) { lh.x = hp.x + (lh.x - hp.x) * pw; lh.y = hp.y + (lh.y - hp.y) * pw; } else if (twist < 0) { rh.x = hp.x + (rh.x - hp.x) * pw; rh.y = hp.y + (rh.y - hp.y) * pw; }
+    c.lineJoin = 'round';
+    c.beginPath(); c.moveTo(wx - nx * ww, wy - ny * ww); c.lineTo(wx + nx * ww, wy + ny * ww); c.lineTo(rh.x, rh.y); c.lineTo(lh.x, lh.y); c.closePath(); c.fillStyle = col.bot; c.strokeStyle = col.bot; c.lineWidth = 9; c.fill(); c.stroke();
+    c.beginPath(); c.moveTo(R[0].x, R[0].y); c.lineTo(R[1].x, R[1].y); c.lineTo(wx + nx * (ww + 1), wy + ny * (ww + 1)); c.lineTo(wx - nx * (ww + 1), wy - ny * (ww + 1)); c.closePath(); c.fillStyle = col.top; c.strokeStyle = col.top; c.lineWidth = 11; c.fill(); c.stroke();
+    if (twist) { c.globalAlpha = 0.25 * Math.abs(twist); c.beginPath(); const sx = twist > 0 ? lh : rh; c.moveTo(wx, wy); c.lineTo(sx.x, sx.y); c.lineTo(hp.x, hp.y); c.closePath(); c.fillStyle = '#000'; c.fill(); c.globalAlpha = 1; } // 돌아간 쪽 그늘
+    const nkx = ch.x + ux * 9, nky = ch.y + uy * 9, hx = ch.x + ux * 21 + (look ? look[0] : 0), hy = ch.y + uy * 21 + (look ? look[1] : 0);
+    G.line(nkx, nky, hx, hy, col.top, 7); G.circle(hx, hy, 9.5, col.head);
+  }
   function drawBody(c) {
     const p = S.p, ch = p[0], hp = p[1], ux = (ch.x - hp.x) / C.T, uy = (ch.y - hp.y) / C.T;
-    if (C.JOINT) { // 관절 몸: 팔은 어깨에서, 다리는 골반 양옆에서 나오고, 팔꿈치·무릎은 물리가 정한 자리에 그린다
-      const R = [0, 1, 2, 3].map(i => PH.rootPos(S, i));
+    if (C.JOINT) { // 관절 몸: 팔은 어깨에서, 다리는 골반 양옆에서 나온다. 팔꿈치·무릎은 굽는 방향의 옆 몫만 화면에 보이고(벽 쪽 몫은 그늘), 위팔·허벅지는 굵고 아래는 가늘다
+      const R = [0, 1, 2, 3].map(i => PH.rootPos(S, i)), live = phase !== 'replay'; if (live) updateShape(S, 1 / 60);
+      const tgt = last && last.cx !== undefined ? [last.cx - ch.x, last.cy - ch.y] : null, tl = tgt ? Math.hypot(tgt[0], tgt[1]) || 1 : 1, look = tgt ? [tgt[0] / tl * 3, tgt[1] / tl * 3] : null;
       for (const i of [2, 3, 0, 1]) { // 다리 먼저, 그 위에 몸통, 팔은 맨 위
-        const lb = S.limb[i], r = R[i], e = p[lb.end], j = PH.jointPos(S, i);
-        c.beginPath(); c.moveTo(r.x, r.y); c.lineTo(j.x, j.y); c.lineTo(e.x, e.y);
-        c.strokeStyle = DARK[i]; c.lineWidth = lb.arm ? 7 : 9; c.lineCap = 'round'; c.lineJoin = 'round'; c.globalAlpha = lb.mode === 'free' ? 0.65 : 1; c.stroke();
-        G.circle(j.x, j.y, lb.arm ? 4.5 : 5.5, DARK[i], 'rgba(255,255,255,0.75)', 1.5); c.globalAlpha = 1; // 팔꿈치·무릎
-        if (i === 3) { // 몸통: 어깨–골반 사다리꼴 + 머리
-          c.beginPath(); c.moveTo(R[0].x, R[0].y); c.lineTo(R[1].x, R[1].y); c.lineTo(R[3].x, R[3].y); c.lineTo(R[2].x, R[2].y); c.closePath();
-          c.fillStyle = '#3b3f46'; c.strokeStyle = '#3b3f46'; c.lineWidth = 12; c.lineJoin = 'round'; c.fill(); c.stroke();
-          G.circle(ch.x + ux * 22, ch.y + uy * 22, 10, '#3b3f46');
-        }
+        const lb = S.limb[i], e = p[lb.end], j = limbJoint(S, i, SHAPE.turn[i]), r = { x: j.rx, y: j.ry }, w0 = lb.arm ? 7.5 : 10.5, w1 = lb.arm ? 6 : 8;
+        c.globalAlpha = lb.mode === 'free' ? 0.65 : 1; c.lineCap = 'round';
+        G.line(r.x, r.y, j.x, j.y, shade(DARK[i], 0.25 * j.depth), w0); G.line(j.x, j.y, e.x, e.y, DARK[i], w1);  // 위팔·허벅지는 벽 쪽으로 굽은 만큼 어둡게(멀어 보이게)
+        G.circle(j.x, j.y, lb.arm ? 3.8 : 4.6, shade(DARK[i], 0.15 * j.depth), 'rgba(255,255,255,0.6)', 1.2); c.globalAlpha = 1;
+        if (i === 3) drawTorso(c, S, R, SHAPE.twist, look);
       }
     } else for (const i of [2, 3, 0, 1]) { // 다리 먼저, 팔 나중
       const lb = S.limb[i], r = p[lb.root], e = p[lb.end], mid = ik([r.x, r.y], [e.x, e.y], lb.max + 2, chooseBend(i, [r.x, r.y], [e.x, e.y], lb.max + 2, ux, uy));
@@ -2860,7 +2905,7 @@ if (typeof module !== 'undefined') module.exports = PRACTICE;
     if (!ghostLayer || ghostLayer.width !== cv.width || ghostLayer.height !== cv.height) { ghostLayer = document.createElement('canvas'); ghostLayer.width = cv.width; ghostLayer.height = cv.height; }
     const g = ghostLayer.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height); g.setTransform(c.getTransform()); g.lineCap = 'round'; g.lineJoin = 'round';
     for (const [col, ex] of [['#ffffff', 4], ['#3f8fd0', 0]]) { g.strokeStyle = col; g.fillStyle = col;
-      for (const i of [2, 3, 0, 1]) { const e = s.p[2 + i], j = PH.jointPos(s, i); g.beginPath(); g.moveTo(R[i].x, R[i].y); g.lineTo(j.x, j.y); g.lineTo(e.x, e.y); g.lineWidth = (i < 2 ? 7 : 9) + ex; g.stroke(); }
+      for (const i of [2, 3, 0, 1]) { const e = s.p[2 + i], j = limbJoint(s, i, bendTurn(s, i)); g.beginPath(); g.moveTo(R[i].x, R[i].y); g.lineTo(j.x, j.y); g.lineTo(e.x, e.y); g.lineWidth = (i < 2 ? 7 : 9) + ex; g.stroke(); } // 유령도 같은 규칙(무릎은 벽 쪽으로)
       g.beginPath(); g.moveTo(R[0].x, R[0].y); g.lineTo(R[1].x, R[1].y); g.lineTo(R[3].x, R[3].y); g.lineTo(R[2].x, R[2].y); g.closePath(); g.lineWidth = 12 + ex; g.fill(); g.stroke();
       g.beginPath(); g.arc(ch.x + ux * 22, ch.y + uy * 22, 10 + ex / 2, 0, Math.PI * 2); g.fill(); }
     c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 0.42; c.drawImage(ghostLayer, 0, 0); c.restore();

@@ -23,6 +23,7 @@ const PH = (() => {
     JCAP: 1.5,                          // 관절 힘 곡선의 상한(관절이 90°일 때 힘의 배수)
     ARM_K: 1, LEG_K: 1,                 // 관절 몸에서 팔·다리 기준 힘 배율
     HIP_OUT: 130, HIP_IN: 45,           // 허벅지가 몸통 아래 방향에서 바깥쪽·안쪽으로 벗어날 수 있는 각도
+    TILT_MAX: 45,                       // 손으로만 매달렸을 때 몸통이 곧추선 방향에서 기울 수 있는 각도(넘으면 몸통 근육이 되돌린다)
     HIP_CROSS: 40,                      // 뻗는(붙지 않은) 다리가 몸 안쪽(반대편 다리 쪽)으로 넘어갈 수 있는 각도. 골반을 틀지 않고는 발이 반대편 끝까지 가지 못한다(v0.8.2). 디딘 채 체중을 옮길 때 기우는 다리에는 쓰지 않는다
     SW_RATE: 5,                         // 팔꿈치가 꺾이는 쪽을 바꾸는 빠르기(1/초). 뒤집힘 없이 팔을 돌려 넘기는 동작
     STAND_V: 60, STAND_ARM: 0.25,        // 서 있기: 발이 몸 아래에 있는데 팔이 체중의 STAND_ARM배 넘게 지고 있으면 다리를 STAND_V(px/s)로 펴서 발이 체중을 받게 한다
@@ -50,7 +51,7 @@ const PH = (() => {
     legPush: 1.8 * W, legPull: 0, legPress: 0.15 * W, ankle: 0.15 * W, ankleK: 0.02 * W, ankleC: 300, palm: 0.3 * W, palmK: 0.03 * W, palmC: 400, legK: 1.8 * W / 3, legC: 2400, legRate: 750,
     handReach: 0.3 * W, handKp: 0.3 * W / 15, handKd: 110,
     footReach: 0.5 * W, footKp: 0.5 * W / 15, footKd: 250,
-    upK: 0.1 * W, upC: 1500, upMax: 1.5 * W,
+    upK: 0.1 * W, upC: 1500, upMax: 1.5 * W, tiltK: 0.04 * W, tiltD: 0.02 * W, tiltMax: 1.2 * W, // 몸통 버팀: 넘은 1°마다 0.04W, 도는 빠르기에 따른 제동, 최대 1.2W
     freeC: [4, 4, 10, 10],
   };
   const GRIP = { // th: 손이 버티는 방향의 한계각(면을 누르는 방향 기준)
@@ -416,6 +417,13 @@ const PH = (() => {
       f = Math.max(-M.upMax, Math.min(M.upMax, f));
       c.fx += f * gx; c.fy += f * gy; hp.fx -= f * gx; hp.fy -= f * gy;
     }
+    // 몸통 버팀(v0.8.3, 관절 몸): 손으로만 매달려 발이 떠 있을 때, 몸통이 곧추선 방향에서 TILT_MAX°보다 기울면 배·허리 근육이 엉덩이를 가슴 아래로 되돌린다.
+    // 사람은 매달린 채 다리를 흔들어도 몸통이 거의 수평(79°)까지 눕지 않는다. 몸통에 수직인 힘을 가슴·엉덩이에 반대로 주어(돌림 힘만) 무게중심은 그대로 둔다
+    if (C.JOINT && handOn && !planted && C.TILT_MAX) {
+      const dx = c.x - hp.x, dy = c.y - hp.y, l = Math.hypot(dx, dy) || 1, tilt = Math.atan2(dx, -dy) * 180 / Math.PI, over = Math.abs(tilt) - C.TILT_MAX;
+      if (over > 0) { const nx = -dy / l, ny = dx / l, sg = Math.sign(tilt), om = ((c.vx - hp.vx) * nx + (c.vy - hp.vy) * ny) / l; // om: 몸통이 도는 빠르기
+        const f = Math.min(M.tiltMax, M.tiltK * over + M.tiltD * Math.max(0, sg * om)) * sg; c.fx -= f * nx; c.fy -= f * ny; hp.fx += f * nx; hp.fy += f * ny; }
+    }
     for (let i = 0; i < p.length; i++) {
       const q = p[i], lb = i >= 2 ? s.limb[i - 2] : null;
       q.px = q.x; q.py = q.y;
@@ -542,7 +550,7 @@ const PH = (() => {
     for (const q of s.p) { L += q.m * ((q.x - cx) * (q.vy - py / m) - (q.y - cy) * (q.vx - px / m)); E += 0.5 * q.m * (q.vx * q.vx + q.vy * q.vy) - q.m * C.G * q.y; }
     return { px, py, L, E, cx, cy, m };
   }
-  const VERSION = 'v0.8.2'; // 물리 판 번호: 계산 결과가 달라지는 변경을 하면 올린다(시범·기록이 어느 물리에서 만든 것인지 적는 데 쓴다)
+  const VERSION = 'v0.8.3'; // 물리 판 번호: 계산 결과가 달라지는 변경을 하면 올린다(시범·기록이 어느 물리에서 만든 것인지 적는 데 쓴다)
   return { VERSION, rect, C, M, W, MASS, GRIP, STATIONS, BODIES, setBody, getBody, rootPos, jointPos, jointCap, hipAngle, solvePose, makeWorld, create, step, diag, nearestGrip, nearestSurface };
 })();
 if (typeof module !== 'undefined') module.exports = PH;

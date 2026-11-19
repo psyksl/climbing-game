@@ -5,7 +5,7 @@
 'use strict';
 const LESSON = (() => {
   const VERSION = 2;       // 과제·시범 묶음의 판 번호: 시범 입력, 연습용 턱, 성공 조건, 기준 설정을 바꾸면 올린다
-  const PHYS = 'v0.8.2';   // 이 시범 시각을 찾았을 때의 물리 판(PH.VERSION). 물리 판이 달라지면 시범을 다시 확인하고 이 값을 맞춘다(test/lessons_check.js가 확인)
+  const PHYS = 'v0.8.3';   // 이 시범 시각을 찾았을 때의 물리 판(PH.VERSION). 물리 판이 달라지면 시범을 다시 확인하고 이 값을 맞춘다(test/lessons_check.js가 확인)
   // 시범의 기준 설정: 시범과 유령은 플레이어 설정과 상관없이 늘 이 설정으로 계산한다
   const BASE = { opt: { autoFeet: true, autoShift: true, assist: true, handMode: 1, assistRange: 'near', autoLoad: false }, body: 'joint', mode: 'intent', layout: null, physOn: true, couple: 0 };
   // 같은 입력이라도 결과를 바꾸는 보조 설정: 과제에 들어올 때 기준에 맞추고 나갈 때 되돌린다. 손 선택 방식(handMode)은 입력 방법일 뿐이라 플레이어 것을 그대로 둔다
