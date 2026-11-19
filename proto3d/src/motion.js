@@ -11,7 +11,7 @@ const PHY_DT = 1 / 120;
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z), clamp = THREE.MathUtils.clamp, lerp = THREE.MathUtils.lerp, smooth = t => t * t * (3 - 2 * t);
 const UP = V(0, 1, 0);
 // 걸음 모양(속도에 따라 걷기 ↔ 달리기 사이를 섞는다)
-export const GAIT_EXC = 0.66, GAIT_EXC_RUN = 0.58, GAIT_FRONT = 0.24; // 달리기는 디딘 발이 끝까지 펴지기 전에 떼도록 조금 좁게 // 디딘 발이 몸에 대해 움직일 수 있는 거리(m)와 그중 앞쪽(발을 내리는 자리) 몫. 다리 0.84m·엉덩이 관절 0.85m에서 잰 값
+export const GAIT_EXC = 0.80, GAIT_EXC_RUN = 0.84, GAIT_FRONT = 0.30, GAIT_FRONT_RUN = 0.36; // W1.1: 엉덩이를 조금 더 낮춰(걷기 3cm, 달리기 12cm) 다리를 굽혀 쓰는 대신 보폭을 넓혔다(짧고 잦은 걸음 지적) // 달리기는 디딘 발이 끝까지 펴지기 전에 떼도록 조금 좁게 // 디딘 발이 몸에 대해 움직일 수 있는 거리(m)와 그중 앞쪽(발을 내리는 자리) 몫. 다리 0.84m·엉덩이 관절 0.85m에서 잰 값
 export const GAIT = {
   // 한 주기(두 걸음)의 보폭 m. 디딘 발이 몸에 대해 움직이는 거리(duty × 보폭)가 다리로 닿는 범위(앞 FRONT + 뒤, 합 EXC)를 넘지 않게 묶는다
   stride: (v, r) => Math.min(0.8 + 0.48 * v, lerp(GAIT_EXC, GAIT_EXC_RUN, r) / lerp(0.60, 0.30, r)),
@@ -29,7 +29,7 @@ export function makeMotion(rig, body) {
   });
   return {
     rig, legs, phase: 0, prm: { speed: 0, runW: 0, crouch: 0, charge: 0, air: 0, land: 0, lean: 0, hipY: body.pos.y + DIM.hipY - 0.025 }, hipVisY: body.pos.y,
-    arms: { swing: 0 }, stats: { maxSlide: 0, slideSum: 0, slideN: 0, maxRatio: 0, kneeFlip: 0, below: 0 }, lastVel: V(), lastSpeed: 0, idleT: 0, takeoffT: -9,
+    arms: { swing: 0 }, stats: { maxSlide: 0, slideSum: 0, slideN: 0, maxRatio: 0, kneeFlip: 0, below: 0, stances: [], stanceMaxDev: 0, stanceMaxPath: 0 }, lastVel: V(), lastSpeed: 0, idleT: 0, takeoffT: -9,
   };
 }
 export function yawVec(yaw) { return V(Math.sin(yaw), 0, Math.cos(yaw)); }
@@ -53,11 +53,14 @@ export function stepMotion(M, body, input, world, groundAt, dt) {
   // 걸음 위상: 실제로 간 거리 / 보폭
   const duty = GAIT.duty(P.runW), S = GAIT.stride(Math.max(speed, 0.4), P.runW);
   const moving = body.onGround && speed > 0.12;
+  if (moving && !M.wasMoving && M.legs.every(L => L.mode === 'plant')) M.phase = Math.max(0, duty - (lerp(GAIT_EXC, GAIT_EXC_RUN, P.runW) - lerp(GAIT_FRONT, GAIT_FRONT_RUN, P.runW)) / S); // 출발: 한 발은 뒤로 닿는 만큼만 디딘 채 두고 다른 발은 바로 흔들기 시작한다
+  M.wasMoving = moving;
   if (moving) M.phase = (M.phase + speed * dt / S) % 1;
+  { M.visPhase = M.visPhase ?? M.phase; if (moving) M.visPhase += speed * dt / S; const d = ((M.phase - M.visPhase) % 1 + 1.5) % 1 - 0.5; M.visPhase = ((M.visPhase + d * Math.min(1, dt * 14)) % 1 + 1) % 1; } // 상체(팔·골반)용 위상: 다리 위상이 맞춰질 때 한 번에 바뀌지 않고 따라간다
   for (const L of M.legs) stepLeg(M, L, body, world, groundAt, { speed, S, duty, moving, fwd, side, dt });
   // 엉덩이 높이(세계): 땅 높이는 부드럽게 따라가고(계단에서 튀지 않게), 웅크림·모으기·착지·달리기만큼 낮춘다
   const bob = moving ? (lerp(0.022, 0.035, P.runW) * Math.cos(4 * Math.PI * (M.phase - duty / 2))) : Math.sin(body.t * 1.6) * 0.004;
-  let hip = DIM.hipY - 0.025 - lerp(0.015, 0.075, P.runW) * clamp(speed / 1.5, 0, 1) - 0.30 * P.crouch - 0.30 * P.charge - 0.22 * P.land + bob * (1 - P.crouch);
+  let hip = DIM.hipY - 0.025 - lerp(0.03, 0.12, P.runW) * clamp(speed / 1.5, 0, 1) - 0.30 * P.crouch - 0.30 * P.charge - 0.22 * P.land + bob * (1 - P.crouch);
   hip += 0.07 * (M.pushHeel / 0.75); // 발끝으로 선 만큼 엉덩이도 높다
   hip -= 1.2 * Math.max(0, ...M.legs.map(L => L.mode === 'plant' ? (L.overAmt || 0) : 0)); // 디딘 발에 닿지 않으면 무릎을 굽혀 엉덩이를 낮춘다
   if (!body.onGround) { hip = DIM.hipY - 0.03; }
@@ -94,22 +97,25 @@ function stepLeg(M, L, body, world, groundAt, g) {
     L.t += dt; // 흔들기 진행 q는 줄어들지 않는다(빨라지거나 느려지면 남은 시간만 바꾼다 → 발이 뒤로 가지 않음)
     let rem = (1 - L.q) * L.dur;
     if (moving && L.gait) { const p = (M.phase + L.off) % 1, rate = speed / S, wrapped = p < L.p0 - 1e-6; rem = wrapped ? 0 : Math.min(1.2, (1 - p) / rate); }
-    if (!L.gait || speed < 1.0) rem = Math.min(rem, (1 - L.q) * 0.3); // 느려지거나 멈출 때는 걸음을 짧게 마무리한다(발이 몸 뒤에 남아 늘어나지 않게)
+    if (!L.gait || speed < 1.0) rem = Math.min(rem, (1 - L.q) * 0.3);
+    rem = Math.min(rem, (1 - L.q) * (speed < 0.9 ? 0.32 : 0.45)); // 흔들기는 0.45초를 넘지 않는다(출발 첫 걸음이 느린 속도 기준으로 길어져 뒤에 남은 발이 닿지 않게 되던 것) // 느려지거나 멈출 때는 걸음을 짧게 마무리한다(발이 몸 뒤에 남아 늘어나지 않게)
     if (L.hurry) { L.remCap = Math.max(0.05, Math.min(L.remCap ?? rem, rem) - dt * 6); rem = Math.min(rem, L.remCap); } // 서둘러 내릴 때도 한 번에 빨라지지 않게
     L.q = rem <= dt ? Math.min(1, L.q + dt / 0.12) : Math.min(1, L.q + Math.min((1 - L.q) * dt / rem, dt / 0.12)); L.dur = L.t + rem; // 흔들기 전체를 0.12초보다 빨리 끝내지는 않는다(빨라지는 순간 다리가 튀지 않게)
     const q = L.q, remain = rem;
     // 내릴 자리 = 몸이 내릴 때 있을 자리 기준(걷는 중) 또는 기본 자리(멈춘 뒤)
     const mv = smooth(clamp((speed - 0.05) / 0.6, 0, 1)); // 걷는 정도(0 = 멈춤). 멈추거나 출발할 때 발 목표가 한 번에 바뀌지 않게 이 값으로 섞는다
-    const ahead = mv * Math.min(duty * S / 2, GAIT_FRONT); // 앞으로 너무 멀리 내리면 닿지 않는다
-    const to = neutralFoot(body, L, ahead).addScaledVector(V(body.vel.x, 0, body.vel.z), remain);
+    const ahead = mv * Math.min(duty * S / 2, lerp(GAIT_FRONT, GAIT_FRONT_RUN, M.prm.runW)); // 앞으로 너무 멀리 내리면 닿지 않는다
+    const to = neutralFoot(body, L, ahead); // 내릴 자리 = 지금 몸 기준(몸과 함께 움직인다). 미래 자리로 앞질러 가면 흔들기 중간에 발이 너무 앞에 나가 다리가 다 펴졌다
     { const sd = V(fwd.z, 0, -fwd.x).multiplyScalar(L.sx), gap = to.clone().sub(body.pos).dot(sd); if (gap < 0.06) to.addScaledVector(sd, 0.06 - gap); } // 몸 가운데를 넘어 반대편에 내리지 않는다(다리가 꼬이지 않게)
     footOut(world, to); // 발 내릴 자리가 지형(벽) 안이면 밖으로
     to.y = groundY(world, groundAt, to.x, to.z, body.pos.y);
     if (L.preBehind === undefined && q > 0.5) L.preBehind = to.clone().sub(body.pos).dot(yawVec(body.yaw)) < -0.02; // 내릴 자리가 몸 앞이면 뒤꿈치 축(발끝 듦), 뒤면 발끝 축
-    const e = smooth(q), lift = lerp(0.07, GAIT.lift(M.prm.runW), mv) * (1 - Math.cos(2 * Math.PI * q)) / 2 + Math.max(0, to.y - L.from.y) * Math.sin(Math.PI * Math.min(1, q * 1.4));
-    L.foot.lerpVectors(L.from, to, e); L.foot.y = lerp(L.from.y, to.y, e) + lift;
+    const e = smooth(q), lift = lerp(0.07, GAIT.lift(M.prm.runW), mv) * lerp((1 - Math.cos(2 * Math.PI * q)) / 2, Math.sin(Math.PI * q), M.prm.runW) // 달리기는 발을 빨리 들어 올린다 + Math.max(0, to.y - L.from.y) * Math.sin(Math.PI * Math.min(1, q * 1.4));
+    const fromNow = L.from.clone().addScaledVector(body.pos.clone().sub(L.fromBody || body.pos).setY(0), smooth(clamp(q / 0.3, 0, 1))); // 뗀 자리는 처음 30% 동안 몸을 따라오기 시작한다(달릴 때 뗀 발이 몸 뒤에 남아 다리가 다 펴지지 않게)
+    L.foot.lerpVectors(fromNow, to, e); L.foot.y = lerp(L.from.y, to.y, e) + lift;
     L.yaw = lerpAngle(L.fromYaw, body.yaw, e); L.pitch = (L.fromPitch || 0) * (1 - smooth(Math.min(1, q * 2))) - lerp(0.1, 0.25, mv) * Math.sin(Math.PI * q) * q; // 뗄 때의 발목 각도(뒤꿈치 듦)에서 이어서, 내릴 때 발끝을 든다
-    if (q >= 1) { L.mode = 'plant'; L.since = 0; L.plant.copy(to); L.plantYaw = L.yaw; L.foot.copy(to); L.slide = 0; }
+    if (q >= 1) { if (moving && L.gait) M.phase = (1 - L.off) % 1; // 발이 내린 순간 걸음 위상을 이 발의 디딤 시작으로 맞춘다(일찍 내려도 바로 다시 들리지 않게)
+      L.mode = 'plant'; L.since = 0; L.plant.copy(to); L.plantYaw = L.yaw; L.foot.copy(to); L.slide = 0; }
     return;
   }
   // 디딘 발: 세계 자리 고정
@@ -118,37 +124,39 @@ function stepLeg(M, L, body, world, groundAt, g) {
   if (moving) { // 위상이 흔들기 구간에 들어가면 뗀다(걷기는 다른 발이 디뎌 있을 때만)
     const p = (M.phase + L.off) % 1;
     const stale = Math.abs(Math.atan2(Math.sin(body.yaw - L.plantYaw), Math.cos(body.yaw - L.plantYaw))) > 0.9; // 돌기 전 방향 그대로 남은 발
-    if (stale && other.mode === 'plant' && L.since > 0.06) { startSwing(L, 0.26); return; } // 걷기 시작할 때 옛 방향의 발부터 고쳐 디딘다(위상보다 먼저)
+    if (stale && other.mode === 'plant' && L.since > 0.06) { startSwing(L, 0.26, body); return; } // 걷기 시작할 때 옛 방향의 발부터 고쳐 디딘다(위상보다 먼저)
     if (L.over && other.mode === 'swing') other.hurry = true; // 이 발이 닿지 않게 되면 흔드는 발을 서둘러 내린다
-    if ((p >= duty || L.over) && L.since > 0.06 && (other.mode === 'plant' || M.prm.runW > 0.5)) { startSwing(L, (1 - p) / (speed / S)); L.gait = true; L.p0 = p; } // 막 디딘 발은 곧바로 다시 떼지 않는다. 다리가 닿지 않게 되면(L.over) 위상보다 일찍 뗀다
+    if ((p >= duty || L.over) && L.since > 0.06 && (other.mode === 'plant' || M.prm.runW > 0.5)) { startSwing(L, (1 - p) / (speed / S), body); L.gait = true; L.p0 = p; } // 막 디딘 발은 곧바로 다시 떼지 않는다. 다리가 닿지 않게 되면(L.over) 위상보다 일찍 뗀다
   } else if (body.onGround && other.mode === 'plant') { // 멈춰 있음: 기본 자리에서 멀거나 발 방향이 몸과 많이 다르면 한 발씩 고쳐 디딘다
     const n = neutralFoot(body, L), dErr = Math.hypot(n.x - L.plant.x, n.z - L.plant.z), yawErr = Math.abs(Math.atan2(Math.sin(body.yaw - L.plantYaw), Math.cos(body.yaw - L.plantYaw)));
     const oErr = (() => { const no = neutralFoot(body, other); return Math.hypot(no.x - other.plant.x, no.z - other.plant.z); })();
-    if ((dErr > 0.09 || yawErr > 0.6) && dErr >= oErr - 1e-6 && M.prm.charge < 0.05) startSwing(L, yawErr > 0.6 ? 0.24 : 0.32); // 돌 때는 빨리 고쳐 디딘다
+    if ((dErr > 0.09 || yawErr > 0.6) && dErr >= oErr - 1e-6 && M.prm.charge < 0.05) startSwing(L, yawErr > 0.6 ? 0.24 : 0.32, body); // 돌 때는 빨리 고쳐 디딘다
   }
 }
-function startSwing(L, dur) { L.gait = false; L.since = 0; L.fromPitch = L.heel || 0; L.liftOff = L.ankleT ? L.ankleT.clone().sub(L.plant).sub(V(0, DIM.ankleY, 0)) : V(); L.q = 0; L.hurry = false; L.remCap = undefined; L.preBehind = undefined; L.pitch = L.fromPitch; L.mode = 'swing'; L.t = 0; L.dur = clamp(dur, 0.12, 0.6); L.from.copy(L.plant); L.fromYaw = L.plantYaw; } // liftOff = 뗄 때 발목 자리(뒤꿈치를 든 만큼). 흔들기는 거기서 이어서 시작한다
+function startSwing(L, dur, body) { if (body) L.fromBody = body.pos.clone(); L.gait = false; L.since = 0; L.fromPitch = L.heel || 0; L.liftOff = L.ankleT ? L.ankleT.clone().sub(L.plant).sub(V(0, DIM.ankleY, 0)) : V(); L.q = 0; L.hurry = false; L.remCap = undefined; L.preBehind = undefined; L.pitch = L.fromPitch; L.mode = 'swing'; L.t = 0; L.dur = clamp(dur, 0.12, 0.6); L.from.copy(L.plant); L.fromYaw = L.plantYaw; } // liftOff = 뗄 때 발목 자리(뒤꿈치를 든 만큼). 흔들기는 거기서 이어서 시작한다
 function landFeet(M, body, world, groundAt) {
   for (const L of M.legs) { const p = L.foot.clone(); p.y = groundY(world, groundAt, p.x, p.z, body.pos.y); L.mode = 'plant'; L.since = 0; L.plant.copy(p); L.plantYaw = body.yaw; L.foot.copy(p); }
 }
 function lerpAngle(a, b, t) { const d = Math.atan2(Math.sin(b - a), Math.cos(b - a)); return a + d * t; }
 
-// 자세를 뼈에 적용한다(그리기 전, 또는 시험에서 매 걸음)
 const qYaw = new THREE.Quaternion(), qTmp = new THREE.Quaternion(), eul = new THREE.Euler();
-export function applyPose(M, body) {
+// 자세·접촉 확정: 고정 계산 걸음마다 sim.step이 부른다(그리기에서 부르지 않는다). 다음 걸음의 stepMotion이 여기서 정한 값(ankleT, heel, pivotBehind, overAmt 등)을 읽는다
+export function solvePose(M, body) {
   const B = M.rig.bones, P = M.prm, fwd = yawVec(body.yaw), side = V(fwd.z, 0, -fwd.x), t = body.t;
   M.rig.root.position.set(body.pos.x, 0, body.pos.z); M.rig.root.rotation.set(0, 0, 0); M.rig.root.updateMatrixWorld(true);
-  const moving = P.speed > 0.12 && body.onGround, ph = M.phase * 2 * Math.PI, gaitW = clamp(P.speed / 1.2, 0, 1) * (1 - P.air);
+  const moving = P.speed > 0.12 && body.onGround, ph = (M.visPhase ?? M.phase) * 2 * Math.PI, gaitW = clamp(P.speed / 1.2, 0, 1) * (1 - P.air);
   // 골반: 위치·방향(걸음에 따른 비틀림), 앞으로 기울기
-  const twist = gaitW * lerp(0.10, 0.16, P.runW) * Math.sin(ph);
+  const twist = gaitW * lerp(0.13, 0.18, P.runW) * Math.sin(ph);
   const leanF = 0.05 * gaitW + 0.16 * P.runW * gaitW + P.lean + 0.30 * P.crouch + 0.22 * P.charge + 0.18 * P.land - 0.10 * P.air;
-  B.hips.position.set(body.pos.x - M.rig.root.position.x, P.hipY, body.pos.z - M.rig.root.position.z);
+  // 체중 이동: 디딘 발 쪽으로 골반이 옮겨 가고(걷기 2.8cm, 달리기 1.2cm), 흔드는 다리 쪽 골반이 조금 내려간다(약 3.5°)
+  const dutyP = GAIT.duty(P.runW), sway = gaitW * lerp(0.028, 0.012, P.runW) * Math.cos(ph - Math.PI * dutyP), roll = sway * 2.2;
+  B.hips.position.set(body.pos.x - M.rig.root.position.x + side.x * sway, P.hipY, body.pos.z - M.rig.root.position.z + side.z * sway);
   qYaw.setFromAxisAngle(UP, body.yaw + twist * 0.6);
-  setWorldQuat(B.hips, qYaw.clone().multiply(qTmp.setFromEuler(eul.set(leanF * 0.35, 0, 0))));
+  setWorldQuat(B.hips, qYaw.clone().multiply(qTmp.setFromEuler(eul.set(leanF * 0.35, 0, roll))));
   // 척추·가슴: 기울기를 나눠 받고, 골반 비틀림과 반대로 돈다
-  B.spine.quaternion.setFromEuler(eul.set(leanF * 0.30, -twist * 0.5, 0)); B.spine.updateMatrixWorld(true);
+  B.spine.quaternion.setFromEuler(eul.set(leanF * 0.30, -twist * 0.5, -roll * 0.5)); B.spine.updateMatrixWorld(true); // 골반이 기운 만큼 척추가 되돌려 어깨는 거의 수평
   const breath = Math.sin(t * 1.6) * 0.015 * (1 - gaitW);
-  B.chest.quaternion.setFromEuler(eul.set(leanF * 0.35 - breath, -twist * 0.7, 0)); B.chest.updateMatrixWorld(true);
+  B.chest.quaternion.setFromEuler(eul.set(leanF * 0.35 - breath, -twist * 0.8, -roll * 0.4)); B.chest.updateMatrixWorld(true);
   // 머리: 앞(몸이 가는 쪽)을 본다
   setWorldQuat(B.neck, new THREE.Quaternion().setFromAxisAngle(UP, body.yaw).multiply(qTmp.setFromEuler(eul.set(0.05 + leanF * 0.2, 0, 0))));
   B.head.quaternion.setFromEuler(eul.set(-leanF * 0.15 - 0.03 * P.air, 0, 0)); B.head.updateMatrixWorld(true);
@@ -190,7 +198,8 @@ export function applyPose(M, body) {
   // 팔: 걸음과 반대로 흔들고, 달리면 팔꿈치를 굽힌다. 웅크림·모으기 = 앞으로/뒤로, 공중 = 위로
   for (const s of ['L', 'R']) {
     const sx = s === 'L' ? 1 : -1, legPh = s === 'L' ? ph + Math.PI : ph; // 왼팔은 오른다리와 함께
-    const swingA = gaitW * lerp(0.32, 0.75, P.runW) * Math.sin(legPh);
+    const swingA = gaitW * lerp(0.42, 0.75, P.runW) * Math.sin(legPh);
+    B[`shoulder.${s}`].quaternion.setFromEuler(eul.set(0, sx * swingA * 0.12, 0)); B[`shoulder.${s}`].updateMatrixWorld(true); // 팔을 흔들면 빗장뼈(어깨)도 조금 앞뒤로
     let pitchA = -swingA - 0.45 * P.crouch + 0.55 * P.charge - 1.6 * P.air * clamp(1.2 - (t - M.takeoffT) * 1.6, 0.2, 1) * (1 - P.charge) - 0.25 * P.land;
     const abd = 0.12 + 0.10 * P.air + 0.05 * P.crouch;
     B[`upperArm.${s}`].quaternion.setFromEuler(eul.set(pitchA, 0, sx * abd)); B[`upperArm.${s}`].updateMatrixWorld(true);
@@ -214,6 +223,17 @@ function measure(M, body) {
       L.slide = d; L.wasPlant = true;
     } else L.wasPlant = false;
     L.prevToe = toeW.clone(); L.prevHeelPivot = heelPivot;
+    // 지지 구간 전체(W1.1, GPT 검토 2번): 한 번 디딘 동안 실제로 땅에 닿아 있어야 하는 점이 처음 닿은 자리에서 얼마나 벗어났는지(최대 이탈)와 얼마나 움직였는지(누적).
+    // 평평 = 발끝·뒤꿈치 둘 다, 뒤꿈치 듦 = 발끝, 발끝 듦 = 뒤꿈치. 처음 자리는 디딘 순간 그 점의 자리이고, 축이 바뀌어도(평평 → 뒤꿈치 듦) 같은 점은 같은 처음 자리와 견준다
+    { const F = B[`foot.${L.s}`], toeP = F.localToWorld(V(0, -(DIM.ankleY - 0.02), DIM.toeZ)), heelP = F.localToWorld(V(0, -(DIM.ankleY - 0.02), DIM.heelZ));
+      if (L.mode === 'plant') {
+        if (!L.stance) L.stance = { leg: L.s, t0: body.t, toe0: null, heel0: null, prevToe: toeP.clone(), prevHeel: heelP.clone(), maxDev: 0, path: 0, kinds: [], n: 0 }; // 처음 자리 = 그 점이 땅에 처음 닿은 순간(뒤꿈치로 먼저 디디면 발끝은 평평해질 때)
+        const S = L.stance, kind = L.heel > 1e-6 ? 'toe' : L.heel < -1e-6 ? 'heel' : 'flat'; if (S.kinds[S.kinds.length - 1] !== kind) S.kinds.push(kind); S.n++;
+        if (kind !== 'heel') { if (!S.toe0) S.toe0 = toeP.clone(); else { S.maxDev = Math.max(S.maxDev, toeP.distanceTo(S.toe0)); S.path += toeP.distanceTo(S.prevToe); } }
+        if (kind !== 'toe') { if (!S.heel0) S.heel0 = heelP.clone(); else { S.maxDev = Math.max(S.maxDev, heelP.distanceTo(S.heel0)); S.path += heelP.distanceTo(S.prevHeel); } }
+        S.prevToe.copy(toeP); S.prevHeel.copy(heelP);
+      } else if (L.stance) { const S = L.stance; st.stances.push({ leg: S.leg, t0: +S.t0.toFixed(3), dur: +(body.t - S.t0).toFixed(3), maxDev: S.maxDev, path: S.path, kinds: S.kinds.join('>') }); st.stanceMaxDev = Math.max(st.stanceMaxDev, S.maxDev); st.stanceMaxPath = Math.max(st.stanceMaxPath, S.path); L.stance = null; }
+    }
     st.maxRatio = Math.max(st.maxRatio, L.ik ? L.ik.ratio : 0);
     // 무릎: 엉덩이-발목 선보다 앞(발 방향)에 있어야 한다
     const hip = worldPos(B[`upLeg.${L.s}`]), knee = worldPos(B[`leg.${L.s}`]), mid = hip.clone().add(ankW).multiplyScalar(0.5), kf = knee.clone().sub(mid).dot(yawVec(L.yaw));

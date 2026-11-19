@@ -57,3 +57,19 @@ export function buildWorldMeshes(world, scene) {
   }
   const grid = new THREE.GridHelper(60, 120, 0x6f7766, 0x86907c); grid.position.y = 0.002; scene.add(grid);
 }
+
+// 선분(a → b)이 처음 닿는 상자까지의 비율(0~1). 닿지 않으면 1. 카메라가 벽을 지나가지 않게 쓴다
+export function rayHit(world, a, b, skipFloor = false) {
+  let best = 1; const d = new THREE.Vector3().subVectors(b, a);
+  for (const bx of world.boxes) {
+    if (skipFloor && bx.kind === 'floor') continue;
+    let t0 = 0, t1 = 1, ok = true;
+    for (const ax of ['x', 'y', 'z']) {
+      if (Math.abs(d[ax]) < 1e-9) { if (a[ax] < bx.min[ax] || a[ax] > bx.max[ax]) { ok = false; break; } continue; }
+      let u = (bx.min[ax] - a[ax]) / d[ax], v = (bx.max[ax] - a[ax]) / d[ax]; if (u > v) [u, v] = [v, u];
+      t0 = Math.max(t0, u); t1 = Math.min(t1, v); if (t0 > t1) { ok = false; break; }
+    }
+    if (ok && t0 > 0 && t0 < best) best = t0;
+  }
+  return best;
+}
