@@ -27,7 +27,7 @@ export function stepBody(b, input, world) {
   const turnK = b.onGround ? Math.max(0.03, THREE.MathUtils.clamp((Math.cos(yawErr) + 0.2) / 1.2, 0, 1) ** 2) : 1; // 뒤로 돌 때는 먼저 돌고 나서 속도를 낸다(사람처럼 돌며 걸음을 고쳐 디딘다)
   const tv = want.clone().multiplyScalar(top * turnK), hv = new THREE.Vector2(b.vel.x, b.vel.z);
   if (b.onGround) { const dv = tv.clone().sub(hv), acc = tv.lengthSq() > hv.lengthSq() ? P.ACC : P.DEC, m = Math.min(dv.length(), acc * dt); if (dv.lengthSq() > 1e-12) hv.add(dv.normalize().multiplyScalar(m)); }
-  else { const dv = tv.clone().sub(hv), m = Math.min(dv.length(), P.AIR_ACC * dt); if (dv.lengthSq() > 1e-12) hv.add(dv.normalize().multiplyScalar(m)); }
+  else if (want.lengthSq() > 0.01) { const dv = tv.clone().sub(hv), m = Math.min(dv.length(), P.AIR_ACC * dt); if (dv.lengthSq() > 1e-12) hv.add(dv.normalize().multiplyScalar(m)); } // 공중: 방향을 누를 때만 그쪽으로 조금 바꾼다. 누르지 않으면 수평 속도는 그대로(W2: 손을 놓거나 뛴 뒤 속도가 사라지지 않게. 전에는 입력이 없으면 1.5m/s²로 줄였다)
   b.vel.x = hv.x; b.vel.z = hv.y;
   // 몸의 방향: 움직이려는 쪽으로 돈다(땅에 있을 때)
   const hvNow = new THREE.Vector2(b.vel.x, b.vel.z), face = hvNow.length() > 0.35 && hvNow.dot(want) > 0 ? hvNow : want; // 몸은 실제로 움직이는 쪽을 본다(벽에 막혀 옆으로 미끄러질 때 벽을 보지 않게)
@@ -40,10 +40,13 @@ export function stepBody(b, input, world) {
   // 적분
   if (!b.onGround) { b.vel.y -= P.G * dt; b.airT += dt; }
   b.pos.addScaledVector(b.vel, dt);
-  const tuck = b.onGround ? 0 : P.TUCK * Math.min(1, b.airT / P.TUCK_T); b.tuck = tuck; // 공중: 발 높이 = 몸 자리 + 당긴 몫
-  const side = pushOut(world, b.pos, P.R, b.pos.y + tuck, b.pos.y + P.HEIGHT, P.STEP_UP);
+  if (b.onGround) b.noTuck = false; // 벽에서 놓고 떨어질 때는 다리를 당기지 않는다(당긴 발 높이로 옆의 발판 위에 올라서 버리지 않게)
+  const tuck = b.onGround || b.noTuck ? 0 : P.TUCK * Math.min(1, b.airT / P.TUCK_T); b.tuck = tuck; // 공중: 발 높이 = 몸 자리 + 당긴 몫
+  if (b.r !== undefined && (b.r += 0.4 * dt) >= P.R) b.r = undefined; // 벽에서 막 내려온 몸: 벽에 붙어 있던 만큼만 가깝다가 천천히 지상 반지름으로 돌아간다(한 걸음에 튀어나오지 않게)
+  const side = pushOut(world, b.pos, b.r ?? P.R, b.pos.y + tuck, b.pos.y + P.HEIGHT, P.STEP_UP);
   if (side) { const vn = b.vel.x * side.nx + b.vel.z * side.nz; if (vn < 0) { b.vel.x -= vn * side.nx; b.vel.z -= vn * side.nz; } }
-  const g = groundAt(world, b.pos.x, b.pos.z, b.pos.y + tuck, b.onGround ? P.STEP_UP : 0.02);
+  // 공중: 이번 걸음에 내려온 만큼은 지나친 면도 찾는다(다리를 당기지 않고 빠르게 떨어질 때 바닥을 지나쳐 버리지 않게)
+  const g = groundAt(world, b.pos.x, b.pos.z, b.pos.y + tuck, b.onGround ? P.STEP_UP : 0.02 + Math.max(0, -b.vel.y) * dt);
   if (b.onGround) {
     if (g.y > -Infinity && b.pos.y - g.y < 0.35) { if (g.y > b.pos.y + 0.01) b.stepT = b.t; b.pos.y = g.y; b.vel.y = 0; b.ground = g.y; }
     else { b.onGround = false; b.airT = 0; b.events.push({ type: 'walkoff', t: b.t }); }

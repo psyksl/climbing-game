@@ -5,13 +5,14 @@ import { buildCharacter } from './rig.js';
 import { makeWorld, buildWorldMeshes, rayHit } from './world.js';
 import { PHY } from './controller.js';
 import { makeSim } from './sim.js';
-import { BIND, conflicts, keyName, makeInput } from './input.js';
+import { BIND, conflicts, keyName, makeInput, setKeys, resetKeys, loadKeys } from './input.js';
+import { probeHand, probeFoot, limbState, CL } from './climb.js';
 import CLIPS from 'clip-data';
 import GALLERY from 'gallery-data'; // 동작 보기용 자료(받은 동작 전부를 이 뼈대로 옮긴 값. 있을 때만)
 import { poseRaw } from './clipmotion.js';
 import { buildProps, makeSwingRope, applyGrips } from './demo.js'; // 캡처 동작 자료(빌드할 때 assets_local/clips.json이 있으면 들어온다. 없으면 null)
 
-export const VERSION = 'p3d-0.4.1';
+export const VERSION = 'p3d-0.5.0';
 const params = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: params.has('test') });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = !params.has('noshadow');
@@ -24,8 +25,10 @@ const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(4, 8, 5)
 const world = makeWorld(); buildWorldMeshes(world, scene);
 const rig = buildCharacter(); scene.add(rig.root);
 const skel = new THREE.SkeletonHelper(rig.mesh); skel.visible = false; scene.add(skel);
-const sim = makeSim(rig, world, CLIPS); let body = sim.body, motion = sim.motion;
+const sim = makeSim(rig, world, CLIPS); let body = sim.body;
+loadKeys();
 const input = makeInput(renderer.domElement);
+const pending = []; // 다음 계산 걸음에 한 번만 들어갈 명령(손발 보내기·놓기)
 const cam = { yaw: Math.PI + 0.35, pitch: 0.28, dist: 4.2, target: new THREE.Vector3(0, 1.1, 2), eff: 4.2, follow: null, followOff: 0, blocked: false }; // eff = 벽에 막혀 줄인 실제 거리, follow = 영상용 따라가기(몸 방향 기준 각도)
 // 동작 보기: 받은 동작을 하나씩 이 캐릭터로 튼다(게임 계산은 멈춘다. 발 고정·IK 없이 옮긴 자세 그대로)
 const gal = { on: false, i: 0, t: 0, names: GALLERY ? Object.keys(GALLERY.clips) : [], origin: new THREE.Vector3(), yaw: 0 };
@@ -53,10 +56,28 @@ function readInput() {
   // 시점 기준 이동: 화면 위 = 시점이 보는 쪽
   const cy = cam.yaw + Math.PI, fx = Math.sin(cy), fz = Math.cos(cy), rx = -fz, rz = fx;
   let mx = fx * f + rx * r, mz = fz * f + rz * r; const l = Math.hypot(mx, mz); if (l > 1) { mx /= l; mz /= l; }
-  return { mx, mz, run: input.isDown('run'), crouch: input.isDown('crouch'), jump: input.isDown('jump') };
+  // 벽 문맥: 몸 옮기기(화면 기준 좌우·위아래). 문맥이 다르면 isDown이 거짓이라 0이다
+  return { mx, mz, run: input.isDown('run'), crouch: input.isDown('crouch'), jump: input.isDown('jump'), cx: (input.isDown('bodyR') ? 1 : 0) - (input.isDown('bodyL') ? 1 : 0), cy: (input.isDown('bodyU') ? 1 : 0) - (input.isDown('bodyD') ? 1 : 0) };
 }
-function physStep(inp) { sim.step(inp); }
-function reset(o) { sim.reset(o); body = sim.body; motion = sim.motion; }
+// 겨눈 곳: 마우스 자리에서 화면 안쪽으로 쏜 선이 지형에 처음 닿는 점(없으면 null)
+const ray = new THREE.Raycaster();
+function aimPoint() {
+  if (!input.st.has) return null;
+  ray.setFromCamera(new THREE.Vector2(input.st.mx / innerWidth * 2 - 1, -(input.st.my / innerHeight) * 2 + 1), camera);
+  const a = ray.ray.origin, b = a.clone().addScaledVector(ray.ray.direction, 40), t = rayHit(world, a, b);
+  return t < 1 ? a.clone().lerp(b, t) : null;
+}
+function screenOf(p) { const v = (p.isVector3 ? p.clone() : new THREE.Vector3(...p)).project(camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, front: v.z < 1 }; }
+// 손발 명령: 누른 순간 한 번, 겨눈 점과 함께 다음 계산 걸음으로 보낸다. 시점 조작 중에는 wasPressed가 거짓이라 새지 않는다
+function readCommands() {
+  const foot = input.isDown('footMod');
+  for (const [id, i] of [['limbL', 0], ['limbR', 1]]) if (input.wasPressed(id)) { const a = aimPoint(); pending.push({ type: foot ? 'foot' : 'hand', i, p: a ? a.toArray() : [0, -99, 0] }); }
+  for (const [id, i] of [['relL', 0], ['relR', 1]]) if (input.wasPressed(id)) pending.push({ type: 'release', limb: foot ? 'foot' : 'hand', i });
+}
+// 작은 벽 앞에서 시작(턱 A 아래, 벽을 보고 선다. 시점은 등 뒤)
+function wallStart() { if (gal.on) galOpen(false); reset({ pos: [-0.9, 0, -2.58], yaw: Math.PI }); cam.yaw = 0.25; cam.pitch = 0.12; cam.dist = cam.eff = 3.6; cam.follow = null; cam.dirEff = null; cam.target.set(-0.9, 1.3, -2.58); }
+function physStep(inp) { const c = pending.splice(0); sim.step(c.length ? { ...inp, cmd: (inp.cmd || []).concat(c) } : inp); }
+function reset(o) { sim.reset(o); body = sim.body; pending.length = 0; }
 
 function updateCamera(dt) {
   if (input.isDown('camRotate') || input.st.alt) { cam.yaw -= input.st.mdx * 0.005; cam.pitch = THREE.MathUtils.clamp(cam.pitch + input.st.mdy * 0.004, -0.2, 1.2); cam.follow = null; } // 시점만 돈다(손발·이동 명령으로 새지 않음)
@@ -81,24 +102,55 @@ function updateCamera(dt) {
 const hud = document.createElement('div'); hud.id = 'hud'; document.body.appendChild(hud);
 const banner = document.createElement('div'); banner.id = 'banner'; document.body.appendChild(banner); // 영상용 장면 이름(시험이 정한다)
 const help = document.createElement('div'); help.id = 'help'; document.body.appendChild(help);
-help.innerHTML = `<b>조작 (지상 이동)</b><br>` + BIND.map(b => `<span class=k>${b.keys.map(keyName).filter((v, i, a) => a.indexOf(v) === i).join(' / ')}</span> ${b.label}`).join('<br>') + (conflicts().length ? `<br><span class=warn>겹친 입력: ${conflicts().map(c => c.key).join(', ')}</span>` : '');
+const CTX_KO = { ground: '지상 조작', wall: '벽 등반', gallery: '동작 시연', any: '언제나' };
+let helpFor = '';
+function drawHelp() {
+  const m = input.st.mode, key = m + BIND.map(b => b.keys.join()).join('|'); if (key === helpFor) return; helpFor = key;
+  const row = b => `<span class=k>${b.keys.map(keyName).filter((v, i, a) => a.indexOf(v) === i).join(' / ')}</span> ${b.label}`;
+  const part = (c, on) => { const L = BIND.filter(b => b.ctx.includes(c)); return L.length ? `<div class=${on ? 'on' : 'off'}><b>${CTX_KO[c]}</b>${on && c !== 'any' ? ' ← 지금' : ''}<br>${L.map(row).join('<br>')}</div>` : ''; };
+  help.innerHTML = `<b>조작 (임시 배치)</b>` + part(m, true) + ['ground', 'wall'].filter(c => c !== m && m !== 'gallery').map(c => part(c, false)).join('') + part('any', true) + (conflicts().length ? `<span class=warn>겹친 입력: ${conflicts().map(c => keyName(c.key)).join(', ')}</span>` : '');
+}
+// 손발 이름표·미리보기(임시 표시. 모양·문구는 GPT 검토 대상). 색만이 아니라 글·기호로 상태를 구분한다
+const tags = [0, 1, 2, 3, 4].map(() => { const d = document.createElement('div'); d.className = 'tag'; document.body.appendChild(d); return d; });
+const mark = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), new THREE.MeshBasicMaterial({ color: '#ffffff', depthTest: false, transparent: true, opacity: 0.9 })); mark.renderOrder = 9; mark.visible = false; scene.add(mark);
+const LOADT = v => `${v.toFixed(1)}배`;
+function drawTags() {
+  const K = sim.climb, put = (d, p, html, cls) => { const s = screenOf(p); d.style.display = s.front ? 'block' : 'none'; d.style.left = `${s.x + 10}px`; d.style.top = `${s.y - 10}px`; d.className = `tag ${cls}`; d.innerHTML = html; };
+  tags.forEach(d => { d.style.display = 'none'; }); mark.visible = false;
+  if (gal.on) return;
+  K.hands.forEach((h, i) => { const n = i ? '오른손' : '왼손'; if (h.st === 'hold') put(tags[i], h.grip, `● ${n} 잡음 <i>${LOADT(h.loadS || 0)}</i>`, i ? 'R' : 'L'); else if (h.st === 'reach') put(tags[i], h.goal, `→ ${n} 보내는 중`, i ? 'R' : 'L'); });
+  K.feet.forEach((f, i) => { const n = i ? '오른발' : '왼발'; if (f.st === 'plant') put(tags[2 + i], f.p, (f.loadS || 0) > 0.05 ? `▲ ${n} 디딤 <i>${LOADT(f.loadS || 0)}</i>` : `△ ${n} 닿아만 있음`, i ? 'R' : 'L'); else if (f.st === 'move') put(tags[2 + i], f.p, `→ ${n} 보내는 중`, i ? 'R' : 'L'); });
+  // 미리보기: 겨눈 자리를 지금 자세에서 잡을(디딜) 수 있는지. 실제 판정과 같은 함수. 몸이 움직이는 중이면 확정처럼 보이지 않게 "?"를 붙인다
+  if (input.camNow() || input.st.alt) { if (input.st.has) { const d = tags[4]; d.style.display = 'block'; d.style.left = `${input.st.mx + 14}px`; d.style.top = `${input.st.my + 14}px`; d.className = 'tag pv'; d.innerHTML = '시점 조작 중 · 손발 명령 멈춤'; } return; }
+  const a = aimPoint(); if (!a) return;
+  const foot = input.isDown('footMod'), P = [0, 1].map(i => (foot ? probeFoot : probeHand)(sim, i, a)), g = P.find(x => x.grip);
+  if (!g && !foot) return; // 턱이 아닌 곳을 겨눌 때는 손 미리보기를 띄우지 않는다(눌렀을 때의 거부 까닭은 기록에 남는다)
+  if (g) { mark.position.set(...g.grip); mark.visible = true; mark.material.color.set(P.some(x => x.ok) ? '#7be08a' : '#ffb35c'); }
+  const line = (x, n) => `${x.ok ? '●' : x.short !== undefined ? '○' : '✕'} ${n} ${x.ok ? (foot ? '디딜 수 있음' : '닿음') : x.why}${x.sure === false ? ' <i>? 몸이 움직이는 중</i>' : ''}`;
+  const d = tags[4]; d.style.display = 'block'; d.style.left = `${input.st.mx + 14}px`; d.style.top = `${input.st.my + 14}px`; d.className = 'tag pv';
+  d.innerHTML = (g ? `<b>${g.name}</b>${g.kind ? (g.kind === 'top' ? ' 윗면' : ' 벽면') : ''}<br>` : '') + (P[0].why === P[1].why && !P[0].ok && !g ? `✕ ${P[0].why}` : line(P[0], foot ? '왼발' : '왼손') + '<br>' + line(P[1], foot ? '오른발' : '오른손'));
+}
 function stateName() {
+  if (sim.climb.on) { const K = sim.climb, h = K.hands.filter(x => x.st === 'hold').length, f = K.feet.filter(x => x.st === 'plant' && x.load > 0.05).length; return h === 2 ? (f ? '두 손 + 발' : '두 손 매달림') : h === 1 ? (f ? '한 손 + 발' : '한 손 매달림') : '손 없이 발로 섬'; }
   if (!body.onGround) return body.vel.y > 0 ? '공중(오름)' : '공중(내림)';
   if (body.push) return '밀기';
   if (body.charging) return `점프 준비 ${Math.round(body.charge / PHY.CHARGE_MAX * 100)}%`;
-  if (motion.prm.land > 0.25) return '착지';
+  if (sim.motion.prm.land > 0.25) return '착지';
   const v = Math.hypot(body.vel.x, body.vel.z);
-  if (motion.prm.crouch > 0.5) return v > 0.12 ? '웅크려 걷기' : '웅크림';
-  return v < 0.12 ? '대기' : motion.prm.runW > 0.5 ? '달리기' : '걷기';
+  if (sim.motion.prm.crouch > 0.5) return v > 0.12 ? '웅크려 걷기' : '웅크림';
+  return v < 0.12 ? '대기' : sim.motion.prm.runW > 0.5 ? '달리기' : '걷기';
 }
+const LOG_KO = { grab: '잡음', reject: '거부', release: '놓음', slip: '놓침', step: '디딤', lift: '발이 떨어짐', enter: '벽 등반 시작', exit: '벽 등반 끝', bump: '부딪힘' };
 function drawHud(fps) {
   if (gal.on) { const c = galClip(); hud.innerHTML = `<div class=ver>3D 모션 시제품 ${VERSION} · 임시 캐릭터(자작)</div><div><b>동작 보기</b> ${gal.i + 1} / ${gal.names.length} &nbsp; <b>${gal.names[gal.i]}</b></div><div><b>분류</b> ${c.cat} &nbsp; <b>지형</b> ${KIND_KO[c.kind] || '-'}${gal.props ? '' : '(숨김)'}${gal.built && gal.built.info.removed ? ` · 맞지 않아 뺀 조각 ${gal.built.info.removed}개` : c.kind !== 'ground' && gal.built && !gal.built.info.pieces ? ' · 조각 없음(손발 자리로는 지형을 정하지 못함)' : ''} &nbsp; <b>시각</b> ${Math.min(gal.t, c.dur).toFixed(2)} / ${c.dur.toFixed(2)}초</div><div class=slow>시연 · 물리 판정 없음</div><div class=dim>받은 동작을 이 캐릭터로 옮겨 지형에 맞춰 튼 것입니다. 잡을 수 있는지·버티는지는 따지지 않습니다(게임 계산은 멈춤).<br>지형은 이 동작에서 손발이 닿는 자리로 만든 임시 조각입니다. 점 = 닿아 있는 손발(붉은색 왼쪽, 푸른색 오른쪽)</div><div class=${slow ? 'slow' : 'real'}>${slow ? '느리게 ×0.25' : '실제 속도'}</div>`; return; }
-  const v = Math.hypot(body.vel.x, body.vel.z), st = motion.stats;
+  const v = Math.hypot(body.vel.x, body.vel.z), st = sim.motion.stats, K = sim.climb;
   const C = sim.clip, cap = C && C.w > 0.5, footName = (L, i) => cap ? (C.feet[i].step ? '고쳐 디딤' : C.feet[i].lock ? (C.feet[i].kind === 'heel' ? '디딤(뒤꿈치)' : '디딤(발끝)') : '옮기는 중') : L.mode === 'plant' ? (L.heel > 0 ? '디딤(뒤꿈치 듦)' : '디딤') : L.mode === 'swing' ? '옮기는 중' : '공중';
   hud.innerHTML = `<div class=ver>3D 모션 시제품 ${VERSION} · 임시 캐릭터(자작)</div>`
     + `<div><b>모션</b> ${!sim.clipSet ? '자작(코드로 만든 동작)' : sim.useClip ? `캡처 동작${cap ? '' : ' → 지금은 자작(웅크림·점프·착지)'}` : '자작(코드로 만든 동작)'}</div>`
-    + `<div><b>문맥</b> 지상 이동 &nbsp; <b>상태</b> ${stateName()} &nbsp; <b>속도</b> ${v.toFixed(2)} m/s</div>`
-    + `<div><b>발</b> ${motion.legs.map((L, i) => `${L.s === 'L' ? '왼발' : '오른발'} ${footName(L, i)}`).join(' · ')}</div>`
+    + `<div><b>문맥</b> <span class=ctx>${K.on ? '벽 등반' : '지상 조작'}</span>${input.camNow() ? ' <span class=slow>시점 조작 중 · 손발 명령 멈춤</span>' : ''} &nbsp; <b>상태</b> ${stateName()} &nbsp; <b>속도</b> ${(K.on ? body.vel.length() : v).toFixed(2)} m/s</div>`
+    + (K.on ? `<div><b>손</b> ${K.hands.map((h, i) => `${i ? '오른손' : '왼손'} ${h.st === 'hold' ? `잡음(${h.edge.box.name}, 몸무게의 ${LOADT(h.loadS || 0)})` : h.st === 'reach' ? '보내는 중' : '놓음'}`).join(' · ')}</div><div><b>발</b> ${K.feet.map((f, i) => `${i ? '오른발' : '왼발'} ${f.st === 'plant' ? ((f.loadS || 0) > 0.05 ? `디딤(${f.box.name}, ${LOADT(f.loadS || 0)})` : `닿아만 있음(${f.box.name})`) : f.st === 'move' ? '보내는 중' : '떠 있음'}`).join(' · ')}</div>`
+      : `<div><b>발</b> ${sim.motion.legs.map((L, i) => `${L.s === 'L' ? '왼발' : '오른발'} ${footName(L, i)}`).join(' · ')}</div>`)
+    + `<div class=log>${K.log.filter(e => e.type !== 'try' && !(e.box === '바닥' && e.auto) && !(e.type === 'lift' && /범위/.test(e.why))).slice(-5).map(e => `<span class=t>${e.t.toFixed(2)}초</span> ${LOG_KO[e.type] || e.type}${e.name ? ' ' + e.name : ''}${e.box ? ' · ' + e.box : ''}${e.why ? ' · ' + e.why : ''}`).join('<br>')}</div>`
     + `<div class=dim>지지 구간 최대 이탈 ${(st.stanceMaxDev * 1000).toFixed(2)} mm · 다리 뻗음 최대 ${(st.maxRatio * 100).toFixed(0)}% · ${fps.toFixed(0)} fps</div>`
     + `<div class=${slow ? 'slow' : 'real'}>${slow ? '느리게 ×0.25' : '실제 속도'}</div>`;
 }
@@ -114,13 +166,17 @@ function frameCore(dtR, inp, onTick) {
 }
 function frame(now) {
   const dtR = Math.min(0.1, (now - last) / 1000); last = now; fpsS += (1 / Math.max(dtR, 1e-3) - fpsS) * 0.05;
+  input.setMode(gal.on ? 'gallery' : sim.climb.on ? 'wall' : 'ground'); drawHelp();
   if (input.wasPressed('reset')) reset();
+  if (input.wasPressed('wallStart')) wallStart();
+  if (!gal.on && !paused) readCommands();
   if (input.wasPressed('bones')) { skel.visible = !skel.visible; rig.mesh.material.wireframe = skel.visible; }
   if (input.wasPressed('slow')) slow = !slow;
   if (input.wasPressed('motionMode') && sim.clipSet) sim.useClip = !sim.useClip;
   if (input.wasPressed('gallery') && GALLERY) galOpen(!gal.on);
   if (gal.on) { if (input.wasPressed('galNext')) galGo(1); if (input.wasPressed('galPrev')) galGo(-1); if (input.wasPressed('galCatNext')) galGo(1, true); if (input.wasPressed('galCatPrev')) galGo(-1, true); if (input.wasPressed('galProps')) gal.props = !gal.props; }
-  if (!paused) frameCore(dtR, readInput()); else renderer.render(scene, camera); // 시험이 걸음을 직접 진행하는 동안 화면 쪽 계산은 멈춘다
+  if (!paused) frameCore(dtR, readInput()); else renderer.render(scene, camera);
+  drawTags(); // 시험이 걸음을 직접 진행하는 동안 화면 쪽 계산은 멈춘다
   input.endFrame(); requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -130,9 +186,9 @@ addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); ca
 window.__p3 = {
   VERSION, BIND, conflicts, PHY,
   body: () => ({ pos: body.pos.toArray(), vel: body.vel.toArray(), yaw: body.yaw, onGround: body.onGround, charge: body.charge, t: body.t, events: body.events.slice() }),
-  state: stateName, stats: () => ({ ...motion.stats, stances: motion.stats.stances.slice() }), resetStats: () => { Object.assign(motion.stats, { maxSlide: 0, slideSum: 0, slideN: 0, maxRatio: 0, kneeFlip: 0, below: 0, stances: [], stanceMaxDev: 0, stanceMaxPath: 0 }); for (const L of motion.legs) L.stance = null; },
-  openStances: () => motion.legs.filter(L => L.stance).map(L => ({ leg: L.s, maxDev: L.stance.maxDev, path: L.stance.path, kinds: L.stance.kinds.join('>') })),
-  legs: () => motion.legs.map((L, i) => sim.clip && sim.clip.on ? { s: L.s, mode: sim.clip.feet[i].lock ? 'plant' : 'swing', heel: sim.clip.feet[i].kind === 'toe' ? 1 : -1, slide: L.slide, clip: true } : { s: L.s, mode: L.mode, heel: L.heel, slide: L.slide }), prm: () => ({ ...motion.prm, phase: motion.phase }),
+  state: stateName, stats: () => ({ ...sim.motion.stats, stances: sim.motion.stats.stances.slice() }), resetStats: () => { Object.assign(sim.motion.stats, { maxSlide: 0, slideSum: 0, slideN: 0, maxRatio: 0, kneeFlip: 0, below: 0, stances: [], stanceMaxDev: 0, stanceMaxPath: 0 }); for (const L of sim.motion.legs) L.stance = null; },
+  openStances: () => sim.motion.legs.filter(L => L.stance).map(L => ({ leg: L.s, maxDev: L.stance.maxDev, path: L.stance.path, kinds: L.stance.kinds.join('>') })),
+  legs: () => sim.motion.legs.map((L, i) => sim.clip && sim.clip.on ? { s: L.s, mode: sim.clip.feet[i].lock ? 'plant' : 'swing', heel: sim.clip.feet[i].kind === 'toe' ? 1 : -1, slide: L.slide, clip: true } : { s: L.s, mode: L.mode, heel: L.heel, slide: L.slide }), prm: () => ({ ...sim.motion.prm, phase: sim.motion.phase }),
   cam: () => ({ yaw: cam.yaw, pitch: cam.pitch, dist: cam.dist, eff: cam.eff, blocked: cam.blocked, target: cam.target.toArray(), pos: camera.position.toArray() }),
   setCam: o => { Object.assign(cam, o); if (o.dist) cam.eff = o.dist; cam.dirEff = null; }, // 영상용: { yaw, pitch, dist, follow: true/null, followOff }
   lineClear: (a, b) => rayHit(world, new THREE.Vector3(...a), new THREE.Vector3(...b)) >= 1 - 1e-6,
@@ -150,7 +206,7 @@ window.__p3 = {
   },
   // 화면 프레임 흉내: frameDts(초) 목록대로 실제 frameCore를 돌리고, 계산 걸음 every마다 뼈 자리·발 상태를 적는다(FPS별 비교용)
   simFrames(frameDts, inputs, every = 4) { const out = []; acc = 0; tickInput = k => inputs[Math.min(k, inputs.length - 1)];
-    const snap = () => { if (sim.tick % every) return; out.push({ k: sim.tick, pos: body.pos.toArray(), bones: rig.list.map(b => { b.updateWorldMatrix(true, false); return new THREE.Vector3().setFromMatrixPosition(b.matrixWorld).toArray(); }), modes: motion.legs.map(L => L.mode), plants: motion.legs.map(L => L.plant.toArray()) }); };
+    const snap = () => { if (sim.tick % every) return; out.push({ k: sim.tick, vel: body.vel.toArray(), climb: JSON.stringify(limbState(sim.climb)), pos: body.pos.toArray(), bones: rig.list.map(b => { b.updateWorldMatrix(true, false); return new THREE.Vector3().setFromMatrixPosition(b.matrixWorld).toArray(); }), modes: sim.motion.legs.map(L => L.mode), plants: sim.motion.legs.map(L => L.plant.toArray()) }); };
     try { for (const d of frameDts) { if (sim.tick >= inputs.length) break; frameCore(d, null, snap); } } finally { tickInput = null; acc = 0; } return out; },
   // 시험용 한 장: 시점을 몸 기준으로 바로 놓고 그린다(멈춘 채 찍을 때). off = 몸이 보는 쪽 기준 시점 각도
   shot(o = {}) { cam.yaw = body.yaw + (o.off ?? Math.PI / 2); cam.pitch = o.pitch ?? 0.1; cam.dist = cam.eff = o.dist ?? 3.2; cam.follow = null; cam.dirEff = null; cam.target.set(body.pos.x, body.pos.y + (o.h ?? 0.95), body.pos.z); updateCamera(0); renderer.render(scene, camera); drawHud(fpsS); },
@@ -159,6 +215,14 @@ window.__p3 = {
   galleryInfo: () => gal.built ? { ...gal.built.info, name: gal.names[gal.i], inside: (() => { stage.updateMatrixWorld(true); const h = rig.bones.hips.getWorldPosition(new THREE.Vector3()); let n = 0; stage.traverse(o => { if (o.isMesh && o.geometry.type === 'BoxGeometry' && new THREE.Box3().setFromObject(o).expandByScalar(-0.03).containsPoint(stage.worldToLocal(h.clone()).applyMatrix4(stage.matrixWorld))) n++; }); return n > 0; })(), grips: gal.built.holds.filter(h => h.grip).length, palmErr: ['L', 'R'].map((s, e) => { const h = gal.built.holds.find(h => h.e === e && h.grip && gal.t * gal.built.clip.fps >= h.f0 && gal.t * gal.built.clip.fps <= h.f1); return h ? rig.bones[`hand.${s}`].localToWorld(new THREE.Vector3(0, -0.08, 0)).distanceTo(galToWorld(h.grip)) : null; }) } : null,
   galleryProps: v => { gal.props = v; },
   gallery(name, t = 0, o = {}) { if (!GALLERY) return false; if (name === null) { galOpen(false); return true; } if (!gal.on) galOpen(true); gal.i = Math.max(0, gal.names.indexOf(name)); gal.t = t; galPose(); const h = rig.bones.hips.getWorldPosition(new THREE.Vector3()); cam.yaw = gal.yaw + (o.off ?? Math.PI / 2); cam.pitch = o.pitch ?? 0.1; cam.dist = cam.eff = o.dist ?? 3.4; cam.follow = null; cam.dirEff = null; cam.target.set(o.fixed ? gal.origin.x : h.x, (o.fixed ? gal.origin.y + 1.0 : h.y) + (o.up ?? 0.1), o.fixed ? gal.origin.z : h.z); const want = cam.target.clone(); updateCamera(0); cam.target.copy(want); camera.position.copy(cam.target).addScaledVector(cam.dirEff, cam.dist); camera.lookAt(cam.target); renderer.render(scene, camera); drawHud(fpsS); return true; },
+  // 벽 접촉(W2): 상태·기록·명령·미리보기. 시험은 cmd()로 명령을 넣거나 실제 마우스·키 입력을 쓴다
+  climb: () => ({ ...limbState(sim.climb), stats: { ...sim.climb.stats }, lean: { ...sim.climb.lean }, yaw: body.yaw }), climbLog: () => sim.climb.log.slice(), CL,
+  cmd: c => { pending.push(c); },
+  // 영상·시연용: 계산 걸음마다의 입력 목록을 지금부터 차례로 넣는다(실제 화면 루프로 돈다). 끝나면 저절로 풀린다. 스크립트 입력이며 사람 손이 아니다
+  script(inputs) { const k0 = sim.tick; tickInput = k => { const i = k - k0; if (i >= inputs.length - 1) tickInput = null; return inputs[Math.min(i, inputs.length - 1)]; }; }, scripting: () => !!tickInput, pending: () => pending.length, probe: (limb, i, p) => (limb === 'foot' ? probeFoot : probeHand)(sim, i, new THREE.Vector3(...p)),
+  screenOf: p => screenOf(p), aim: () => { const a = aimPoint(); return a ? a.toArray() : null; }, wallStart,
+  input: () => ({ mode: input.st.mode, cam: input.camNow(), down: [...input.down.keys()], read: (() => { const o = override; override = null; const r = readInput(); override = o; return r; })() }),
+  setKeys: (id, keys) => { const r = setKeys(id, keys); helpFor = ''; return r; }, resetKeys: () => { resetKeys(); helpFor = ''; }, tagsText: () => tags.map(d => (d.style.display === 'none' ? '' : d.innerText)),
   hasClips: () => !!sim.clipSet, setMode: m => { if (sim.clipSet) sim.useClip = m === 'clip'; return sim.useClip ? 'clip' : 'proc'; }, mode: () => (sim.useClip ? 'clip' : 'proc'),
   clip: () => sim.clip ? { w: sim.clip.w, on: sim.clip.on, phase: sim.clip.phase, wLoc: sim.clip.wLoc, r: sim.clip.r, stride: sim.clip.stride, feet: sim.clip.feet.map(f => ({ s: f.s, lock: !!f.lock, kind: f.kind, step: !!f.step, off: f.off.length() })) } : null,
   clipInfo: () => sim.clipSet ? Object.fromEntries(Object.entries(sim.clipSet.clips).map(([k, c]) => [k, { src: c.src, n: c.n, dur: c.dur, stride: c.stride, speed: c.speed, duty: c.duty, flight: c.flight }])) : null,

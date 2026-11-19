@@ -7,13 +7,28 @@ import { groundAt } from './world.js';
 import { makeBody, stepBody, PHY } from './controller.js';
 import { makeMotion, stepMotion, poseProc, measure } from './motion.js';
 import { makeClipSet, makeClipState, stepClip, poseClip } from './clipmotion.js';
+import { makeClimb, command, stepClimb, poseClimb, groundHands, outBlend, afterPose } from './climb.js';
 
 // clips = 캡처 동작 자료(없으면 null → 자작 모션만). S.useClip으로 두 모션을 바꾼다(자료가 있을 때만).
+// 벽 문맥(W2): 손이 턱을 잡으면 S.climb.on. 그동안은 지상 이동 대신 climb.js의 물리·자세가 돈다. 손을 다 놓으면 속도를 그대로 가지고 지상 이동으로 돌아온다.
+// inp.cmd = 이 걸음에 한 번만 들어오는 명령 목록({ type: 'hand'|'foot'|'release', limb, i, p }). inp.cx·cy = 벽에서 몸 옮기기(좌우·위아래)
 export function makeSim(rig, world, clips = null) {
-  const S = { rig, world, body: null, motion: null, clip: null, clipSet: clips ? makeClipSet(clips) : null, useClip: !!clips, tick: 0 };
-  const pose = dt => { poseProc(S.motion, S.body); if (S.clip) poseClip(S.clip, S.motion, S.body, world, groundAt, dt); measure(S.motion, S.body); };
-  S.reset = o => { S.body = o ? makeBody(new THREE.Vector3(...o.pos), o.yaw ?? 0) : makeBody(); S.motion = makeMotion(rig, S.body); S.clip = S.clipSet ? makeClipState(S.clipSet, rig, S.body) : null; S.tick = 0; if (S.clip && S.useClip) { S.clip.w = 1; S.clip.on = true; S.clip.init = true; } pose(0); };
-  S.step = inp => { stepBody(S.body, inp, world); stepMotion(S.motion, S.body, inp, world, groundAt, PHY.DT); if (S.clip) stepClip(S.clip, S.motion, S.body, inp, PHY.DT, S.useClip); pose(PHY.DT); S.tick++; };
+  const S = { rig, world, body: null, motion: null, clip: null, climb: null, clipSet: clips ? makeClipSet(clips) : null, useClip: !!clips, tick: 0 };
+  const ground = () => { S.motion = makeMotion(rig, S.body); S.clip = S.clipSet ? makeClipState(S.clipSet, rig, S.body) : null; if (S.clip && S.useClip) { S.clip.w = 1; S.clip.on = true; S.clip.init = true; } };
+  const pose = dt => {
+    const K = S.climb;
+    if (K.on) poseClimb(S);
+    else { poseProc(S.motion, S.body); if (S.clip) poseClip(S.clip, S.motion, S.body, world, groundAt, dt); outBlend(S, dt); groundHands(S, dt); measure(S.motion, S.body); }
+    afterPose(S);
+  };
+  S.reset = o => { S.body = o ? makeBody(new THREE.Vector3(...o.pos), o.yaw ?? 0) : makeBody(); S.climb = makeClimb(); ground(); S.tick = 0; pose(0); };
+  S.step = inp => {
+    const K = S.climb; K.events.length = 0; K.tick = S.tick; K.exited = false;
+    for (const c of inp.cmd || []) command(S, c);
+    if (K.on) { stepClimb(S, inp, PHY.DT); if (K.exited) ground(); }
+    else { stepBody(S.body, inp, world); stepMotion(S.motion, S.body, inp, world, groundAt, PHY.DT); if (S.clip) stepClip(S.clip, S.motion, S.body, inp, PHY.DT, S.useClip); }
+    pose(PHY.DT); S.tick++;
+  };
   S.reset();
   return S;
 }

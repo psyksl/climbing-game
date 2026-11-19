@@ -14,7 +14,9 @@ const css = `html,body{margin:0;height:100%;overflow:hidden;background:#cfd6dc;f
 #hud .ver{font-size:11px;color:#bbc4b2}#hud .dim{font-size:11.5px;color:#bbc4b2}
 #help{position:fixed;right:10px;top:8px;background:rgba(28,35,29,.80);color:#f3ecd6;padding:7px 10px;border-radius:7px;font-size:12px;line-height:1.6;pointer-events:none}
 #help .k{display:inline-block;min-width:54px;padding:0 5px;margin-right:4px;border-radius:4px;background:#e9e3cf;color:#1c231d;font-weight:700;font-size:11px;text-align:center}
-#help .warn{color:#ff9c8a}
+#help .warn{color:#ff9c8a}#help .on{margin-top:4px}#help .off{margin-top:4px;opacity:.45}
+#hud .ctx{display:inline-block;padding:0 7px;border-radius:4px;background:#f3ecd6;color:#1c231d;font-weight:800}#hud .log{margin-top:3px;font-size:11.5px;color:#dfe6d6;min-height:1.5em}#hud .log .t{color:#9fb0a0}
+.tag{display:none;position:fixed;pointer-events:none;background:rgba(28,35,29,.88);color:#f3ecd6;padding:2px 7px;border-radius:5px;font-size:12px;line-height:1.5;white-space:nowrap;border-left:4px solid #bbb}.tag.L{border-left-color:#e0705c}.tag.R{border-left-color:#4f9be0}.tag.pv{border-left-color:#f3ecd6}.tag i{font-style:normal;color:#bbc4b2}
 #hud .slow{display:inline-block;margin-top:3px;padding:1px 7px;border-radius:4px;background:#ffd166;color:#1c231d;font-weight:800}#hud .real{display:inline-block;margin-top:3px;padding:1px 7px;border-radius:4px;background:#3c4a3e;color:#f3ecd6;font-size:11.5px}
 #banner{display:none;position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:rgba(28,35,29,.86);color:#f3ecd6;padding:5px 14px;border-radius:7px;font-size:15px;font-weight:700;pointer-events:none}`;
 const page = js => `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>등반 3D 모션 시제품</title><style>${css}</style></head><body><script>/* three.js ${three} (MIT) 포함 */\n${js}</script></body></html>`;
