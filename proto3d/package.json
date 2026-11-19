@@ -1,0 +1,9 @@
+{
+  "name": "climb-proto3d",
+  "private": true,
+  "version": "0.1.0",
+  "description": "등반 게임 3D 모션 시제품 (Three.js)",
+  "scripts": { "build": "node build.js" },
+  "dependencies": { "three": "0.187.0" },
+  "devDependencies": { "esbuild": "0.25.0" }
+}
