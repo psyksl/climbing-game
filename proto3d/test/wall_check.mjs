@@ -10,7 +10,7 @@ const { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world
 const CLP = path.resolve(HERE, '../assets_local/clips.json'), useClip = process.env.MODE === 'clip';
 if (useClip && !fs.existsSync(CLP)) { console.log('clips.json 없음 → 건너뜀'); process.exit(0); }
 const clips = useClip ? JSON.parse(fs.readFileSync(CLP, 'utf8')) : null, rig = buildCharacter(), DT = PHY.DT, G = PHY.G;
-globalThis.KDBG = !!process.env.KDBG; let sim, rec, fails = 0; const jk = { prev: null, sim: null, d: [], max: 0, what: '', n: 0 };
+globalThis.KDBG = !!process.env.KDBG; let sim, rec, fails = 0; const jk = { prev: null, sim: null, d: [], max: 0, what: '', n: 0, minY: 9, minAt: '' };
 const out = { note: '스크립트 입력(사람 손 아님). 모션 = ' + (useClip ? '캡처' : '자작'), checks: [], cases: {} };
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${detail}`); out.checks.push({ name, ok, detail }); if (!ok) fails++; };
 const start = (pos, yaw = Math.PI, extra = []) => { const w = makeWorld(); for (const [name, min, max] of extra) w.boxes.push({ name, min: new THREE.Vector3(...min), max: new THREE.Vector3(...max), kind: 'block' }); sim = makeSim(rig, w, clips); sim.reset({ pos, yaw }); rec = []; run(30); };
@@ -21,6 +21,7 @@ function run(n, inp = {}, cmd = null) {
     rec.push({ k: sim.tick, pos: sim.body.pos.clone(), vel: sim.body.vel.clone(), dv: sim.body.vel.clone().sub(v0), on: sim.climb.on, on0, ev: sim.climb.events.slice(), bev: sim.body.events.map(e => e.type) });
     if (process.env.TRACE) for (const e of sim.climb.events) if (e.type !== 'try') console.log(`      ${e.t.toFixed(2)}초 ${e.type} ${e.name} ${e.box || ''} ${e.why}`);
     if (!rig.list.every(b => Number.isFinite(b.quaternion.x) && Number.isFinite(b.position.y))) throw new Error('자세 값이 깨짐 @' + sim.tick);
+    if (sim.body.pos.y < jk.minY) { jk.minY = sim.body.pos.y; jk.minAt = `#${out.checks.length} @${sim.tick}`; }
     // 한 걸음 회전 튐(지상의 motion_check와 같은 재는 법): 뼈의 제자리 회전이 한 걸음에 바뀐 양이 바로 앞 걸음과 얼마나 다른가. 벽에 붙어 있거나 막 나온 걸음만 센다(지상 구간은 motion_check가 본다)
     { const cur = rig.list.map(b => b.quaternion.clone()); if (jk.prev && jk.sim === sim) rig.list.forEach((b, k) => { const d = jk.prev[k].angleTo(cur[k]) * 180 / Math.PI, j = jk.d[k] === undefined ? 0 : Math.abs(d - jk.d[k]); jk.d[k] = d; if ((sim.climb.on || on0) && j > jk.max) { jk.max = j; jk.what = `${b.name} @${sim.tick} ${sim.climb.events.filter(e => e.type !== 'try').map(e => e.type + (e.name ? ' ' + e.name : '')).join(',')}`; } if ((sim.climb.on || on0) && j > 12) { jk.n++; if (process.env.JK) console.log(`      튐 ${j.toFixed(0)}° ${b.name} @${sim.tick} #${out.checks.length} [${sim.climb.hands.map(h => h.st[0]).join("")}${sim.climb.feet.map(f => f.st[0]).join("")}${sim.climb.push ? "P" : ""}] ${sim.climb.on ? '벽' : '나옴'} ${sim.climb.events.filter(e => e.type !== 'try').map(e => e.type + (e.name ? ' ' + e.name : '') + (e.why ? '(' + e.why + ')' : '')).join(',')}`); } }); else jk.d = []; jk.prev = cur; jk.sim = sim; }
   }
@@ -249,6 +250,7 @@ console.log(`실패 ${fails}`);
   check('턱 A → 턱 F: 바닥에 선 채로는(W를 눌러도), 왼발을 넓은 발판에 올려도 닿지 않는다', !R['두 발 바닥 · W 없음'].잡음 && !R['두 발 바닥 · W 2초'].잡음 && !R['왼발을 넓은 발판에 · W 2초'].잡음, `바닥 ${R['두 발 바닥 · W 2초'].끔 || R['두 발 바닥 · W 2초'].끝} · 넓은 발판 ${R['왼발을 넓은 발판에 · W 2초'].끝}`);
   check('턱 A → 턱 F: 오른발을 낮은 발판에 올리고 W로 올라서면 닿는다(두 손으로 잡은 채 끝남). 발이 받친 채 다리가 펴지며 오른다', ok.잡음 && ok.디딘_발_하중_몸무게배 > 0.2 && ok.손을_보낼_때 > ok.디딘_다리_길이비_처음 + 0.05, `오른 높이 ${ok.오른_높이_cm}cm · 옆으로 ${ok.옆으로_간_거리_cm}cm · 다리 길이비 ${ok.디딘_다리_길이비_처음} → ${ok.손을_보낼_때}(손을 보낼 때) → ${ok.잡을_때_다리_길이비}(잡을 때) · 발 하중 ${ok.디딘_발_하중_몸무게배}배 · 손 보내고 ${ok.손을_보낸_뒤_잡기까지_초}초 뒤 잡음`);
   console.log('      (자료) ' + Object.entries(R).map(([k, v]) => `${k}: ${v.잡음 ? '잡음' : '못 잡음'}(오른 높이 ${v.오른_높이_cm}cm)`).join(' · ')); }
+check('위의 모든 장면에서 몸이 바닥 아래로 떨어지지 않는다(몸 자리의 가장 낮은 높이가 −0.6m 위. 웅크려 매달리면 조금 음수가 된다)', jk.minY > -0.6, `가장 낮은 높이 ${jk.minY.toFixed(2)}m (${jk.minAt})`);
 check('벽 동작 전체(위의 모든 장면): 뼈의 한 걸음 회전량이 바로 앞 걸음보다 12° 넘게 달라지지 않는다(지상 동작과 같은 기준)', jk.max <= 12, `가장 큰 튐 ${jk.max.toFixed(1)}° (${jk.what}) · 12° 넘은 횟수 ${jk.n}`); out.cases['벽 동작의 한 걸음 회전 튐'] = { 최대_도: +jk.max.toFixed(1), 어디: jk.what, '12도_넘은_횟수': jk.n };
 if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify(out, null, 1));
 process.exit(fails ? 1 : 0);

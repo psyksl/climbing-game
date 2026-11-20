@@ -89,10 +89,11 @@ function stepLeg(M, L, body, world, groundAt, g) {
   if (L.mode === 'air') { // 공중: 몸 기준 자리(웅크려 당긴 다리)
     const tuck = clamp((body.t - M.takeoffT) * 2.5, 0, 1) * (1 - 0.5 * smooth(clamp((-body.vel.y - 0.5) / 1.5, 0, 1))); // 내려오면서 다리를 조금씩 편다(한 번에 바꾸지 않음)
     const p = neutralFoot(body, L, (L.s === 'L' ? 0.06 : -0.06) * (0.5 + speed * 0.2)); let g = groundY(world, groundAt, p.x, p.z, body.pos.y);
-    // 몸은 발판의 가장자리 밖에서도 그 면에 받쳐질 수 있는데(몸의 반지름) 발은 제 자리 바로 아래의 면만 봤다 → 가장자리에 내려설 때 발이 낮은 바닥을 기준으로 당겨져 있다가 다리가 한 걸음에 크게 튀었다(p3d-0.8.0).
-    // 내려오는 중에 몸을 받칠 면이 발 아래의 면보다 높으면 발을 그 면 위(가장자리 안쪽 3cm)로 모은다
-    { const sb = groundAt(world, body.pos.x, body.pos.z, body.pos.y + 0.35, 0.0); const on = !!sb.box && body.vel.y <= 0 && g < sb.y - 0.05 && body.pos.y - sb.y < 0.6;
-      L.gather = clamp((L.gather || 0) + (on ? 1 : -1) * dt / 0.04, 0, 1); if (on) L.gbox = sb.box;
+    // 몸은 발판의 가장자리에서 12cm 밖까지 그 면에 받쳐지는데(몸의 반지름) 발은 제 자리 바로 아래의 면만 봤다 → 가장자리에 내려설 때 발이 낮은 바닥을 기준으로 당겨져 있다가 내려서는 걸음에 다리가 크게 튀었다(발끝이 한 걸음에 25cm).
+    // 내려오는 길을 0.4초 앞까지 미리 따라가 몸이 내려설 면을 찾고(물리와 같은 조회), 그 면이 발 아래의 면보다 높으면 내려서기 전에 발을 그 면 위(가장자리 안쪽 3cm)로 모아 둔다(p3d-0.8.1)
+    { let LB = null, tL = 0; if (body.vel.y <= 0.5) for (let t = 0.02; t <= 0.4; t += 0.02) { const y = body.pos.y + body.vel.y * t - 4.905 * t * t, q = groundAt(world, body.pos.x + body.vel.x * t, body.pos.z + body.vel.z * t, y + 0.02, 0.03); if (q.box && y <= q.y + 0.01) { LB = q; tL = t; break; } }
+      const on = !!LB && g < LB.y - 0.05; if (on) L.gbox = LB.box;
+      L.gather = clamp((L.gather || 0) + (on ? dt / Math.max(0.03, tL * 0.7) : -dt / 0.15), 0, 1);
       if (L.gather > 0 && L.gbox) { const B = L.gbox; p.x = lerp(p.x, clamp(p.x, B.min.x + 0.03, B.max.x - 0.03), L.gather); p.z = lerp(p.z, clamp(p.z, B.min.z + 0.03, B.max.z - 0.03), L.gather); g = Math.max(g, groundY(world, groundAt, p.x, p.z, body.pos.y)); } }
     const h = body.pos.y - g;
     const tuckVis = 0.10 + 0.18 * tuck, up = body.vel.y > 0 ? tuckVis : Math.min(tuckVis, Math.max(0, h)); // 내려올 때는 땅까지 남은 높이만큼만 당겨 둔다 → 닿는 순간 발이 이미 땅에 있다

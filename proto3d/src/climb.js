@@ -560,6 +560,8 @@ export function stepClimb(S, inp, dt) {
     if (pl.length) { if (g.box && pl.every(f => f.box === g.box) && pl.some(f => f.load > 0.2) && b.vel.length() < 0.5) exit(S, true, g); }
     else {
       // 빠르게 내려오는 중이면 "선 것"으로 넘기지 않는다. 지상 쪽이 그 속도로 착지시킨다(착지 동작과 발 디딤이 그쪽에서 일어난다)
+      // 벽 문맥의 몸 자리(엉덩이 − 선 키)는 웅크려 매달리면 바닥보다 낮을 수 있다. 그 채로 지상에 넘기면 바닥을 찾지 못해 끝없이 떨어진다(p3d-0.8.1에서 찾음: 위로 튕긴 걸음에 손을 놓칠 때) → 넘기기 전에 바닥 위로 올린다
+      if (g.box && b.pos.y < g.y + 1e-4) b.pos.y = g.y + 1e-4;
       const low = !!g.box && b.pos.y <= g.y + 0.01 && b.vel.y <= 0, slow = b.vel.length() < 0.5;
       if (low && !slow) b.pos.y = g.y + 1e-4;
       exit(S, low && slow, g);
