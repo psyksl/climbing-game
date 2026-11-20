@@ -85,7 +85,10 @@ function screenOf(p) { const v = (p.isVector3 ? p.clone() : new THREE.Vector3(..
 //   왼손 = 누르는 순간. 오른손 = 벽에서는 누르는 순간, 지상에서는 짧게 눌렀다 뗄 때(지상의 우클릭 끌기는 시점이다).
 //   손 조작 2번(누르는 동안 뻗기)은 벽 문맥의 두 손과 지상의 왼손에 쓴다. 발은 언제나 눌러 보내기.
 function readCommands() {
-  const ground = input.st.mode === 'ground', foot = input.isDown('footMod') || (ground && input.isDown('run')), p = () => (aim.world ? aim.world.toArray() : [0, -99, 0]);
+  // 발 지정(B1, p3d-0.8.0): 벽에서는 발 조종 키. 지상에서는 달리기 키를 겸하되 "땅에 서 있고 이동 키를 누르지 않을 때"만 발이다.
+  // 달리며 뛴 뒤 달리기 키를 누른 채 클릭하면 손이다(떠 있는 동안은 언제나 손). 임시 배치 — GPT 기획 결정 대기
+  const ground = input.st.mode === 'ground', moving = ['moveF', 'moveB', 'moveL', 'moveR'].some(id => input.isDown(id));
+  const foot = input.isDown('footMod') || (ground && body.onGround && !moving && input.isDown('run')), p = () => (aim.world ? aim.world.toArray() : [0, -99, 0]);
   for (const [id, i] of [['limbL', 0], ['limbR', 1]]) {
     // 지상에서 떠 있는 동안(뛰거나 벽에서 놓고 떨어지는 중)은 우클릭도 누르는 순간 오른손(그동안 시점 돌리기는 쉰다)
     const tapOnly = ground && body.onGround && i === 1, hold = OPT.handMode === 2 && !foot && !tapOnly;
@@ -96,6 +99,10 @@ function readCommands() {
 }
 // 작은 벽 앞에서 시작(턱 A 아래, 벽을 보고 선다. 시점은 등 뒤)
 function wallStart() { if (gal.on) galOpen(false); reset({ pos: [-0.9, 0, -2.58], yaw: Math.PI }); cam.yaw = 0.25; cam.pitch = 0.12; cam.dist = cam.eff = 3.6; cam.follow = null; cam.dirEff = null; cam.target.set(-0.9, 1.3, -2.58); }
+// 누르는 동안 뻗던 손을 거둔다(B2): 시점 보기 전환·손 조작 방식 바꾸기·창이 가려지거나 포커스를 잃음. 새로 잡지 않고 다른 접촉은 그대로 둔다
+function cancelHolds() { for (const i of [0, 1]) if (aim.held[i]) { aim.held[i] = null; pending.push({ type: 'handCancel', i }); } }
+let lostFocus = false;
+addEventListener('blur', () => { lostFocus = true; }); document.addEventListener('visibilitychange', () => { if (document.hidden) lostFocus = true; });
 function physStep(inp) { const c = pending.splice(0); sim.step(c.length ? { ...inp, cmd: (inp.cmd || []).concat(c) } : inp); }
 function reset(o) { sim.reset(o); sim.opt.footAssist = OPT.footAssist; body = sim.body; pending.length = 0; aim.held[0] = aim.held[1] = null; }
 
@@ -203,11 +210,12 @@ function frameCore(dtR, inp, onTick) {
 }
 function frame(now) {
   const dtR = Math.min(0.1, (now - last) / 1000); last = now; fpsS += (1 / Math.max(dtR, 1e-3) - fpsS) * 0.05;
-  if (input.wasPressed('viewMode')) { viewMode = !viewMode; aim.held[0] = aim.held[1] = null; }
+  if (lostFocus) { lostFocus = false; cancelHolds(); }
+  if (input.wasPressed('viewMode')) { viewMode = !viewMode; cancelHolds(); }
   input.setMode(gal.on ? 'gallery' : viewMode ? 'view' : sim.climb.on ? 'wall' : 'ground'); drawHelp();
   if (input.wasPressed('reset')) reset();
   if (input.wasPressed('wallStart')) wallStart();
-  if (input.wasPressed('handMode')) { OPT.handMode = OPT.handMode === 2 ? 1 : 2; saveOpt(); }
+  if (input.wasPressed('handMode')) { cancelHolds(); OPT.handMode = OPT.handMode === 2 ? 1 : 2; saveOpt(); }
   if (input.wasPressed('footAssist')) { OPT.footAssist = !OPT.footAssist; sim.opt.footAssist = OPT.footAssist; saveOpt(); }
   if (input.wasPressed('diag')) { OPT.diag = !OPT.diag; saveOpt(); }
   if (input.wasPressed('helpAll')) { OPT.helpAll = !OPT.helpAll; saveOpt(); }

@@ -207,10 +207,12 @@ export function command(S, c) {
     H.from.copy(H.w); H.goal.copy(goal); H.grip.copy(g.p); H.n.copy(g.n);
   }
   // 누르던 단추를 뗌: 그때 겨눈 곳이 턱이면 잡으러 가고(짧게), 아니면 헛손질
+  // 뻗던 손을 거둠(B2): 잡으러 가지 않고 그 손만 놓인 채로 돌아간다. 이미 붙은 다른 접촉은 건드리지 않는다
+  if (c.type === 'handCancel') { const H = K.hands[c.i]; if (H.st === 'reach' && H.drag) { H.rel.copy(H.w).sub(joints(S).sh[H.i]); H.st = 'free'; H.drag = false; H.why = '뻗기를 거둠'; note(S, 'cancel', 'hand', c.i, '뻗기를 거둠'); } return; }
   if (c.type === 'handUp') { const H = K.hands[c.i]; if (H.st === 'reach' && H.drag) { H.drag = false; H.t = 0; H.wait = CL.TRY_T - 0.12; if (!H.edge) reject(S, H, 'hand', '헛손질(잡을 곳이 아님)'); } return; }
   if (c.type === 'foot') {
     const F = K.feet[c.i];
-    if (!c.auto) note(S, 'try', 'foot', c.i, '', { p: c.p });
+    if (!c.auto) { note(S, 'try', 'foot', c.i, '', { p: c.p }); F.userOff = false; F.offBox = null; }
     const g = resolveFoot(S.world, pt, S.body.yaw);
     if (!g) { deny(S, F, 'foot', '디딜 수 있는 면이 아님'); return; }
     if (!K.on && !S.body.onGround) { deny(S, F, 'foot', '공중에서는 발을 보낼 수 없음'); return; }
@@ -240,7 +242,7 @@ function deny(S, L, limb, why) { L.why = why; note(S, 'reject', limb, L.i, why, 
 // 실패: 옮기기 시작한 손발이 닿지 못했다(그 손발은 놓인 채 남는다. 전 자리로 되돌려 붙이지 않는다)
 function reject(S, L, limb, why) { const J = joints(S), K = S.climb; L.why = why; if (limb === 'hand') { L.rel.copy(L.w).sub(J.sh[L.i]); L.st = 'free'; L.drag = false; } else { L.rel.copy(L.a).sub(J.hj[L.i]); L.st = 'free'; L.cool = 0.3; if (L.byAssist) K.assistBad = { p: L.p.clone(), k: K.tick }; } note(S, 'reject', limb, L.i, why, L.byAssist && limb === 'foot' ? { auto: true } : {}); }
 function releaseHand(S, i, why, type = 'release') { const K = S.climb, H = K.hands[i]; if (H.st === 'free') return; const was = H.st; H.st = 'free'; H.F = null; H.rel.copy(H.w).sub(joints(S).sh[i]); H.load = 0; H.bad = 0; H.why = why; if (was === 'hold') note(S, type, 'hand', i, why, { vel: S.body.vel.toArray() }); }
-function liftFoot(S, i, why, type = 'lift') { const K = S.climb, F = K.feet[i]; if (F.st === 'free') return; const was = F.st; F.st = 'free'; F.F = null; F.cool = 0.22; if (why === '뗌') F.noAssist = 1.5; F.rel.copy(F.a).sub(joints(S).hj[i]); F.load = 0; F.ok = false; F.why = why; if (was === 'plant') note(S, type, 'foot', i, why); }
+function liftFoot(S, i, why, type = 'lift') { const K = S.climb, F = K.feet[i]; if (F.st === 'free') return; const was = F.st; F.st = 'free'; F.F = null; F.cool = 0.22; if (why === '뗌') { F.userOff = true; F.offBox = F.box; } F.rel.copy(F.a).sub(joints(S).hj[i]); F.load = 0; F.ok = false; F.why = why; if (was === 'plant') note(S, type, 'foot', i, why); }
 
 // 보내는 손발을 한 걸음 옮긴다. 어깨·고관절에서 닿는 데까지만 간다(늘어나지 않는다). 다 가서 닿았으면 잡고, 닿지 않으면 잠깐 더 뻗어 보다가 거부한다
 function limbsStep(S, dt) {
@@ -283,7 +285,7 @@ function limbsStep(S, dt) {
     } else if (F.st === 'free') {
       // 늘어뜨린 발: 고관절 아래의 쉬는 자리로 돌아가고, 윗면에 닿으면 저절로 디딘다(닿은 것은 접촉이다. 붙이는 것이 아니다)
       // 막 뗀 발은 잠깐(0.22초) 다시 디디지 않고 쉬는 자리로 옮겨 간다(끌려가며 디뎠다 뗐다 하지 않게)
-      F.cool = Math.max(0, (F.cool || 0) - dt); F.noAssist = Math.max(0, (F.noAssist || 0) - dt);
+      F.cool = Math.max(0, (F.cool || 0) - dt);
       const rest = V((F.i ? -1 : 1) * 0.02, -CL.DANGLE + (F.cool > 0 ? 0.05 * Math.sin(Math.PI * F.cool / 0.22) : 0), -0.06).applyAxisAngle(UP, S.body.yaw);
       F.rel.lerp(rest, 1 - Math.exp(-(F.cool > 0 ? 18 : 10) * dt)); F.a.copy(hj).add(F.rel);
       // 늘어뜨린 발·발끝이 벽·턱 옆면에 들어가면 들어가지 않을 때까지 벽에서 뗀다
@@ -294,7 +296,7 @@ function limbsStep(S, dt) {
         // 닿은 발: 다리가 닿는 자리이고 몸이 올라가는 중이 아니면 디딘다. 아니면 발끝만 닿은 채 둔다(면 아래로 들어가지 않게 올려 둔다)
         const yaw = S.body.yaw, fwd = V(Math.sin(yaw), 0, Math.cos(yaw)), p = V(F.a.x, g.y, F.a.z).addScaledVector(fwd, DIM.ballZ), q = Q().setFromAxisAngle(UP, yaw), G = footGeom(p, UP, q);
         F.a.y = g.y + DIM.ankleY; F.rel.copy(F.a).sub(hj);
-        if (!(F.cool > 0) && S.body.vel.y <= 0.05 && hj.distanceTo(G.ank) <= DIM.leg * 0.995 && hj.y - g.y >= CL.LEG_MIN_H) {
+        if (!(F.cool > 0) && !(F.userOff && F.offBox === g.box) && S.body.vel.y <= 0.05 && hj.distanceTo(G.ank) <= DIM.leg * 0.995 && hj.y - g.y >= CL.LEG_MIN_H) {
           Object.assign(F, { st: 'plant', kind: 'top', box: g.box, patch: patchOf(p, fwd, g.box), auto: true, load: 0, why: '' });
           F.p.copy(p); F.ball.copy(G.ball); F.ank.copy(G.ank); F.a.copy(G.ank); F.q.copy(q); F.n.copy(UP);
           note(S, 'step', 'foot', F.i, '닿아서 디딤', { box: g.box.name, auto: true });
@@ -306,6 +308,8 @@ function limbsStep(S, dt) {
 function grab(S, H) {
   const K = S.climb; H.st = 'hold'; H.drag = false; H.w.copy(H.goal); H.load = 0; H.bad = 0; H.jam = 0; H.why = ''; H.F = null;
   note(S, 'grab', 'hand', H.i, '', { box: H.edge.box.name, grip: H.grip.toArray() });
+  // 직접 뗀 발은 사용자가 그 발을 다시 보내거나 손을 새로 잡을 때까지 보조가 다시 보내지 않는다(전에는 1.5초 뒤 다시 보냈다)
+  for (const F of K.feet) { F.userOff = false; F.offBox = null; }
   if (!K.on) enter(S, S.body.onGround ? '서서 잡음' : '공중에서 잡음');
 }
 // 벽 문맥으로 들어간다(첫 손이 잡힌 순간). 몸의 속도는 그대로. 땅에 서 있었으면 두 발은 지금 디딘 자리의 접촉이 된다
@@ -522,7 +526,7 @@ function assistFeet(S, dt) {
   if (!held.length || K.assistT > 0 || K.feet.some(f => f.st === 'move') || b.vel.length() > 0.8) return;
   const fwd = V(Math.sin(b.yaw), 0, Math.cos(b.yaw));
   for (const F of K.feet) {
-    if (F.st !== 'free' || F.cool > 0 || F.noAssist > 0) continue;
+    if (F.st !== 'free' || F.cool > 0 || F.userOff) continue;
     const hj = K.T.hj[F.i], other = K.feet[1 - F.i]; let best = null;
     for (const x of S.world.boxes) {
       // 손으로 잡은 턱에는 발을 올리지 않는다(2D에서 정한 원칙). 고관절에서 38~82cm 아래의 윗면만 본다
