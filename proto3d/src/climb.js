@@ -709,9 +709,7 @@ export function afterPose(S) {
   for (const H of K.hands) { const w = worldPos(B[`hand.${H.s}`]); if (H.st === 'hold') st.palmErr = Math.max(st.palmErr, B[`hand.${H.s}`].localToWorld(V(0, -CL.PALM, 0)).distanceTo(H.grip)); else if (H.st === 'free' && !K.on) H.w.copy(w); }
   for (const F of K.feet) { if (F.st === 'plant') st.footErr = Math.max(st.footErr, worldPos(B[`toe.${F.s}`]).distanceTo(F.ball)); else if (!K.on) F.a.copy(worldPos(B[`foot.${F.s}`])); }
   for (const H of K.hands) if (H.st === 'hold') { const sh = worldPos(B[`upperArm.${H.s}`]), c = armCheck(S, H.i, sh, H.goal); if (c && c !== '어깨가 돌아가지 않는 방향(등 뒤)') { st.selfPen++; st.penWhat = `${c} @${K.tick}`; } }
-  if (K.on) for (const n of ['hand.L', 'hand.R', 'foreArm.L', 'foreArm.R', 'leg.L', 'leg.R', 'foot.L', 'foot.R', 'toe.L', 'toe.R', 'chest', 'head', 'hips']) { const p = worldPos(B[n]), x = S.world.boxes.find(x => p.x > x.min.x + 0.01 && p.x < x.max.x - 0.01 && p.y > x.min.y + 0.01 && p.y < x.max.y - 0.01 && p.z > x.min.z + 0.01 && p.z < x.max.z - 0.01); const C = K.penCarry || (K.penCarry = new Set()); if (K.tick === K.enterTick) C.clear();
-    // 잡는 순간의 지상 자세가 이미 벽·턱 안에 있던 부위는 따로 센다(penEnter). 그 부위가 빠져나올 때까지 이어진 걸음도 여기에 센다(p3d-0.8.0: 팔다리를 한 걸음에 빼내지 않고 이어서 돌려 빼기 때문에 몇 걸음 걸린다)
-    if (x) { if (K.tick === K.enterTick || C.has(n)) { C.add(n); st.penEnter = (st.penEnter || 0) + 1; st.penEnterWhat = `${n} → ${x.name}`; } else { st.pen++; st.penWhat = `${n} → ${x.name} @${K.tick}`; } } else C.delete(n); }
+  if (K.on) for (const n of ['hand.L', 'hand.R', 'foreArm.L', 'foreArm.R', 'leg.L', 'leg.R', 'foot.L', 'foot.R', 'toe.L', 'toe.R', 'chest', 'head', 'hips']) { const p = worldPos(B[n]), x = S.world.boxes.find(x => p.x > x.min.x + 0.01 && p.x < x.max.x - 0.01 && p.y > x.min.y + 0.01 && p.y < x.max.y - 0.01 && p.z > x.min.z + 0.01 && p.z < x.max.z - 0.01); if (x) { if (K.tick === K.enterTick) { st.penEnter = (st.penEnter || 0) + 1; st.penEnterWhat = `${n} → ${x.name}`; } else { st.pen++; st.penWhat = `${n} → ${x.name} @${K.tick}`; } } }
 }
 export const limbState = K => ({
   on: K.on,
