@@ -15,7 +15,7 @@ const DEFAULT = [
   { id: 'moveR', ctx: ['ground'], keys: ['KeyD'], label: '오른쪽' },
   { id: 'run', ctx: ['ground'], keys: ['ShiftLeft'], label: '달리기(누른 채). 누른 채 클릭 = 발 보내기' },
   { id: 'crouch', ctx: ['ground'], keys: ['KeyC'], label: '웅크리기(누른 채)' },
-  { id: 'jump', ctx: ['ground'], keys: ['Space'], label: '점프(오래 누르면 높이)' },
+  { id: 'jump', ctx: ['ground', 'wall'], keys: ['Space'], label: '점프(오래 누르면 높이). 벽에서는 A/D·W·S로 방향' },
   { id: 'limbL', ctx: ['ground', 'wall'], keys: ['Mouse0'], contact: true, label: '왼손 보내기(겨눈 턱으로)' },
   { id: 'limbR', ctx: ['ground', 'wall'], keys: ['Mouse2'], contact: true, label: '오른손 보내기(지상에서는 짧게 누르기)' },
   { id: 'relL', ctx: ['ground', 'wall'], keys: ['KeyQ'], contact: true, label: '왼손 놓기' },

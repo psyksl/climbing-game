@@ -107,7 +107,8 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
 
   // ── ④ 화면: 뛰어오른 동안 화면을 멈춰 둔다 ──
   await wallStart(); await P(() => __p3.setCam({ yaw: 0, pitch: 0.12, dist: 3.6 })); await pg.keyboard.down('KeyS'); await wait(700); await pg.keyboard.up('KeyS'); await still(); await wait(1200);
-  { const t0 = (await st()).cam.target; await pg.keyboard.down('Space'); await until(() => !__p3.body().onGround, 2000); let maxD = 0, peak = 0; for (let i = 0; i < 12; i++) { const s = await st(); if (s.b.onGround) break; maxD = Math.max(maxD, Math.hypot(...s.cam.target.map((v, k) => v - t0[k]))); peak = Math.max(peak, s.b.pos[1]); await wait(40); } await pg.keyboard.up('Space'); await until(() => __p3.body().onGround); await wait(1500); const t1 = (await st()).cam.target;
+  // 기준 = 발이 땅을 떠난 순간의 화면(누르고 뜨기까지 0.08초 동안은 땅에 있어 따라간다)
+  { await pg.keyboard.down('Space'); await until(() => !__p3.body().onGround, 2000); const t0 = (await st()).cam.target; let maxD = 0, peak = 0; for (let i = 0; i < 12; i++) { const s = await st(); if (s.b.onGround) break; maxD = Math.max(maxD, Math.hypot(...s.cam.target.map((v, k) => v - t0[k]))); peak = Math.max(peak, s.b.pos[1]); await wait(40); } await pg.keyboard.up('Space'); await until(() => __p3.body().onGround); await wait(1500); const t1 = (await st()).cam.target;
     check('점프: 누르면 바로 뜨고(0.4m 넘게), 떠 있는 동안 화면은 움직이지 않는다(따라가는 점이 2cm 안)', peak > 0.4 && maxD < 0.02, `가장 높이 +${(peak * 100).toFixed(0)}cm · 떠 있는 동안 화면의 움직임 ${(maxD * 100).toFixed(1)}cm · 내려선 뒤 ${(Math.hypot(...t1.map((v, k) => v - t0[k])) * 100).toFixed(1)}cm`); }
 
   // ── ⑤ 화면 빠르기별 비교: 뛰어 잡기 → 매달림 → 한 손 놓기 → 다시 잡기 → 두 손 놓기 → 착지 ──

@@ -12,7 +12,7 @@ import GALLERY from 'gallery-data'; // 동작 보기용 자료(받은 동작 전
 import { poseRaw } from './clipmotion.js';
 import { buildProps, makeSwingRope, applyGrips } from './demo.js'; // 캡처 동작 자료(빌드할 때 assets_local/clips.json이 있으면 들어온다. 없으면 null)
 
-export const VERSION = 'p3d-0.6.0';
+export const VERSION = 'p3d-0.7.0';
 const params = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: params.has('test') });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = !params.has('noshadow');
@@ -87,7 +87,8 @@ function screenOf(p) { const v = (p.isVector3 ? p.clone() : new THREE.Vector3(..
 function readCommands() {
   const ground = input.st.mode === 'ground', foot = input.isDown('footMod') || (ground && input.isDown('run')), p = () => (aim.world ? aim.world.toArray() : [0, -99, 0]);
   for (const [id, i] of [['limbL', 0], ['limbR', 1]]) {
-    const tapOnly = ground && i === 1, hold = OPT.handMode === 2 && !foot && !tapOnly;
+    // 지상에서 떠 있는 동안(뛰거나 벽에서 놓고 떨어지는 중)은 우클릭도 누르는 순간 오른손(그동안 시점 돌리기는 쉰다)
+    const tapOnly = ground && body.onGround && i === 1, hold = OPT.handMode === 2 && !foot && !tapOnly;
     if (tapOnly ? input.tapped(id) : input.wasPressed(id)) { pending.push({ type: foot ? 'foot' : 'hand', i, p: p(), hold }); aim.held[i] = hold; }
     if (aim.held[i] && (input.wasReleased(id) || !input.isDown(id))) { aim.held[i] = null; pending.push({ type: 'handUp', i }); }
   }
@@ -101,7 +102,7 @@ function reset(o) { sim.reset(o); sim.opt.footAssist = OPT.footAssist; body = si
 const CAM = { AIR_BOX: 0.9, WALL_DEAD: 0.12, WALL_RATE: 2.5, LAND_T: 0.8 }, lerpN = (a, b, t) => a + (b - a) * t;
 function updateCamera(dt) {
   // 시점 돌리기: 우클릭을 누른 채 끌기(지상, 시점 보기 모드). 시점만 돈다
-  if (input.dragging('camDrag')) { cam.yaw -= input.st.mdx * 0.005; cam.pitch = THREE.MathUtils.clamp(cam.pitch + input.st.mdy * 0.004, -0.2, 1.2); cam.follow = null; aim.resync = true; }
+  if (input.dragging('camDrag') && (viewMode || body.onGround)) { cam.yaw -= input.st.mdx * 0.005; cam.pitch = THREE.MathUtils.clamp(cam.pitch + input.st.mdy * 0.004, -0.2, 1.2); cam.follow = null; aim.resync = true; }
   if (input.st.wheel) { cam.dist = THREE.MathUtils.clamp(cam.dist * (1 + input.st.wheel * 0.1), 1.2, 12); aim.resync = true; }
   if (cam.follow !== null) { let d = body.yaw + cam.followOff - cam.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); cam.yaw += d * (1 - Math.exp(-6 * dt)); }
   const hw = gal.on ? rig.bones.hips.getWorldPosition(new THREE.Vector3()) : null, want = gal.on ? new THREE.Vector3(hw.x, hw.y + 0.25, hw.z) : new THREE.Vector3(body.pos.x, rig.bones.hips.position.y + 0.25, body.pos.z);

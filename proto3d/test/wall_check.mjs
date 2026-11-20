@@ -184,6 +184,34 @@ check('올렸던 발을 떼면 두 발이 바닥에 닿아 지상 문맥으로 �
 { const shift = sign => { start([-0.9, 0, -2.58]); run(150, {}, [hand(0, A.L)]); run(150, {}, [hand(1, A.R)]); const x0 = sim.body.pos.x; run(60, { cx: 1, cxSign: sign }); return sim.body.pos.x - x0; }, a = shift(1), b = shift(-1);
   check('"몸 오른쪽" 입력: 시점이 몸 뒤에 있으면 +x(화면 오른쪽), 시점이 반대편이면 -x(그때의 화면 오른쪽)로 간다', a > 0.03 && b < -0.03, `뒤에서 볼 때 ${cm(a)} · 반대편에서 볼 때 ${cm(b)}`); }
 
+// ── 13. 반동(흔들기): 손으로만 매달려 A/D. 흔들리는 쪽과 같은 때에 넣으면 커지고, 반대로 넣으면 줄고, 안 넣으면 그대로(조금씩 줄어듦) ──
+const hangB = () => { start([0.7, 0, -2.65]); jumpGrab(0, 400); };
+const pump = (n, mode) => { for (let k = 0; k < n; k++) { const vx = sim.body.vel.x; run(1, { cxSign: 1, cx: mode === 'in' ? (vx > 0.003 ? 1 : vx < -0.003 ? -1 : 1) : mode === 'anti' ? (vx > 0 ? -1 : 1) : mode === 'hold' ? 1 : 0 }); } };
+const amp = n => { const xs = []; for (let k = 0; k < n; k++) { run(1, { cxSign: 1 }); xs.push(sim.body.pos.x); } return (Math.max(...xs) - Math.min(...xs)) / 2; };
+{ hangB(); pump(4 * 120, 'in'); const a1 = amp(225); hangB(); pump(2 * 120, 'in'); const a20 = amp(225); hangB(); pump(2 * 120, 'in'); pump(2 * 120, 'anti'); const a2 = amp(225); hangB(); pump(4 * 120, 'none'); const a3 = amp(225); hangB(); pump(2 * 120, 'in'); pump(3 * 120, 'none'); const a4 = amp(225);
+  out.cases['13 반동'] = { '제때 4초 → 진폭_cm': +(a1 * 100).toFixed(1), '제때 2초': +(a20 * 100).toFixed(1), '제때 2초 + 반대로 2초': +(a2 * 100).toFixed(1), '아무것도 안 함': +(a3 * 100).toFixed(1), '제때 2초 + 3초 쉼': +(a4 * 100).toFixed(1) };
+  check('반동: 흔들리는 쪽과 같은 때에 A/D를 넣으면 커지고(4초에 25cm 넘게), 반대로 넣으면 2초에 3분의 1 아래로 줄고, 안 넣으면 조금씩 줄어든다', a1 > 0.25 && a2 < a20 / 3 && a3 < 0.01 && a4 > 0.05 && a4 < a1 && hold(0) && hold(1), `진폭(가운데에서 한쪽 끝까지): 제때 4초 ${cm(a1)} · 제때 2초 ${cm(a20)} → 이어서 반대로 2초 ${cm(a2)} · 안 함 ${cm(a3)} · 제때 2초 뒤 3초 쉼 ${cm(a4)}`); }
+// ── 14. 벽에서 뛰기 ──
+{ hangB(); const y0 = sim.body.pos.y; let p = y0, k0 = rec.length; for (let k = 0; k < 150; k++) { run(1, { jump: true }); p = Math.max(p, sim.body.pos.y); } run(240);
+  const e = evs(k0).filter(x => x.type !== 'try').map(x => `${x.type}${x.why ? '(' + x.why + ')' : ''}`);
+  check('매달린 채 뛰기(Space): 팔로 끌어 올려 몸이 15cm 넘게 오르고, 손을 보내지 않으면 다시 매달린다(놓치지 않음)', p - y0 > 0.15 && hold(0) && hold(1) && !e.some(x => /^slip/.test(x)), `+${cm(p - y0)} · ${e.join(' → ')}`); }
+start([-0.9, 0, -2.58]); run(150, {}, [hand(0, A.L)]); run(150, {}, [hand(1, A.R)]); run(200, {}, [foot(1, [-0.30, 0.5, -2.93])]); run(240);
+{ const y0 = sim.body.pos.y; let p = y0; for (let k = 0; k < 150; k++) { run(1, { jump: true }); p = Math.max(p, sim.body.pos.y); }
+  check('발판을 디딘 채 뛰기: 다리가 밀어 매달려 뛸 때보다 더 높이 오른다(40cm 넘게)', p - y0 > 0.40, `+${cm(p - y0)}`); out.cases['14 벽에서 뛰기'] = { 발판에서_오른_높이_cm: +((p - y0) * 100).toFixed(1) }; }
+// B → D(위): 뛰고 나서 손을 보내야 닿는다. 너무 일찍 보내면 그 손이 끌어 주지 못해 낮게 뛴다
+{ const rows = []; for (const t of [0, 6, 12, 18, 24, 36, 48]) { hangB(); run(1, { jump: true }); run(t, { jump: true }); run(1, { jump: true }, [hand(1, [1.0, 2.48, -2.86])]); run(150); rows.push({ t: +(t / 120).toFixed(3), ok: evs().some(x => x.type === 'grab' && x.box === '턱 D') }); }
+  hangB(); run(1, {}, [hand(1, [1.0, 2.48, -2.86])]); run(150); const noJump = evs().some(x => x.type === 'grab' && x.box === '턱 D');
+  hangB(); run(60, { cy: 1 }); run(1, { cy: 1 }, [hand(1, [1.0, 2.48, -2.86])]); run(150, { cy: 1 }); const pull = evs().some(x => x.type === 'grab' && x.box === '턱 D');
+  out.cases['14b 턱 B → 턱 D(위로 뛰어 잡기)'] = { 뛰기를_누른_뒤_손을_보낸_시각: rows, 뛰지_않고: noJump, 당겨_오른_뒤: pull };
+  const okT = rows.filter(r => r.ok).map(r => r.t);
+  check('턱 B → 턱 D(26cm 위): 뛰지 않거나 당겨 오르기만 해서는 못 잡고, 뛰고 나서 손을 보내면 잡는다(너무 일찍 보내면 못 잡음)', !noJump && !pull && okT.length >= 3 && !rows[0].ok, `뛰기를 누른 뒤 ${rows.map(r => `${r.t}초 ${r.ok ? '잡음' : '못 잡음'}`).join(' · ')} · 뛰지 않고 ${noJump ? '잡음' : '못 잡음'} · 당겨 오른 뒤 ${pull ? '잡음' : '못 잡음'}`); }
+// B → E(옆): 흔들지 않으면 못 잡고, 흔들어 오른쪽으로 가는 중에 뛰면 잡는다. 늦게 뛰면 못 잡는다
+{ const tryE = (swing, d) => { hangB(); if (swing) { pump(3 * 112, 'in'); let last = sim.body.vel.x, k = 0; while (k++ < 400) { run(1, { cxSign: 1, cx: sim.body.vel.x > 0 ? 1 : -1 }); const v = sim.body.vel.x; if (last < 0 && v >= 0) break; last = v; } run(d, { cxSign: 1, cx: 1 }); }
+    run(24, { jump: true, cx: 1, cxSign: 1 }); run(1, { jump: true, cx: 1, cxSign: 1 }, [hand(1, [1.8, 1.90, -2.86]), rel('hand', 0)]); run(150); return evs().some(x => x.type === 'grab' && x.box === '턱 E'); };
+  const no = tryE(false), rows = [20, 30, 40, 50, 60, 70, 80].map(d => ({ 왼쪽_끝_뒤_초: +(d / 120).toFixed(2), ok: tryE(true, d) }));
+  out.cases['14c 턱 B → 턱 E(흔들어 옆으로 뛰어 잡기)'] = { 흔들지_않고: no, 흔들고: rows };
+  check('턱 B → 턱 E(옆으로 0.9m): 흔들지 않으면 못 잡고, 흔들어 오른쪽으로 가는 중에 뛰면 잡고, 늦게(되돌아올 때) 뛰면 못 잡는다', !no && rows.filter(r => r.ok).length >= 3 && !rows[rows.length - 1].ok, `흔들지 않고 ${no ? '잡음' : '못 잡음'} · 흔들어 왼쪽 끝을 지난 뒤 ${rows.map(r => `${r.왼쪽_끝_뒤_초}초 ${r.ok ? '잡음' : '못 잡음'}`).join(' · ')}`); }
+
 console.log(`실패 ${fails}`);
 if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify(out, null, 1));
 process.exit(fails ? 1 : 0);

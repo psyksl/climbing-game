@@ -1,11 +1,26 @@
-# 등반 게임 3D 모션 시제품 (proto3d) — p3d-0.6.0: 조작 고치기 (앞 판 p3d-0.5.0, p3d-0.4.1, p3d-0.4.0, p3d-0.3.0, p3d-0.2.0, p3d-0.1.1, p3d-0.1.0)
+# 등반 게임 3D 모션 시제품 (proto3d) — p3d-0.7.0: 벽에서 반동·뛰기 (앞 판 p3d-0.6.0, p3d-0.5.0, p3d-0.4.1, p3d-0.4.0, p3d-0.3.0, p3d-0.2.0, p3d-0.1.1, p3d-0.1.0)
 
 통합 지시서 `Climb_Combined_Work_Order_v0.16.1_to_3D_v1` 2장의 작은 빌드입니다. 2D 기준판(`../lab/baseline/climb_lab_v0.16.4.html`)은 건드리지 않았습니다.
 
 - 실행: `climb3d.html`을 브라우저로 엽니다(한 파일, 인터넷 없이 열림). **T** = 작은 벽 앞에서 시작.
 - 빌드: `npm install` → `node build.js`
-- 점검: `node test/wall_check.mjs`, `node test/wall_browser.js`, `node test/motion_check.js`, `node test/fps_check.js`, 영상 `node test/record_w2.js <폴더>`
-- **이번 판에 없는 것**: 벽에서 뛰기·반동 조작, 손으로 눌러 올라서기(맨틀), 코스, 키 설정 화면.
+- 점검: `node test/wall_check.mjs`, `node test/wall_browser.js`, `node test/motion_check.js`, `node test/fps_check.js`, 영상 `node test/record_w2.js <폴더>`, `node test/record_w3.mjs <폴더>`
+- **이번 판에 없는 것**: 코스(시작·도착·두 경로), 손으로 눌러 올라서기(맨틀), 키 설정 화면.
+
+## p3d-0.7.0: 벽에서 반동(흔들기)·뛰기·공중 재잡기 (2026-11-20)
+
+자세한 것은 **`docs/반동_뛰기_p3d-0.7.0.md`**. 스크립트 입력의 자동 측정이며 사람이 해 본 결과는 없습니다. 입력은 임시입니다(GPT 답을 받기 전).
+
+- 손으로만 매달려 **A/D = 흔들기**(흔들리는 쪽과 같은 때에 누르면 커지고 반대로 누르면 줄어듦). 4초에 진폭 약 30cm, 주기 1.87초.
+- 벽에서 **Space = 뛰기**(누르는 순간 0.2초 밀기). 손발이 낼 수 있는 힘만큼만 난다: 매달린 채 +24cm, 발판을 디딘 채 +56cm. 흔들던 속도가 이어진다.
+- 공중에서 클릭으로 다시 잡기. 확인용 턱 D(위)·E(옆)를 놓았다: 턱 D는 뛰고 나서 손을 보내야, 턱 E는 흔들어 그쪽으로 가는 중에 뛰어야 닿는다.
+
+| | 자작 | 캡처(로컬) |
+|---|---|---|
+| `wall_check.mjs` | 46/46 | 46/46 |
+| `wall_browser.js` | 31/31 | 31/31 |
+| `motion_check.js` · `fps_check.js` · `camera_check.js` | 27 · 4 · 17 통과 | 27 · 4 · 17 통과 |
+| `demo_check.js` | — | 13/16(전과 같음) |
 
 ## p3d-0.6.0: 조작 고치기 (2026-11-20)
 
