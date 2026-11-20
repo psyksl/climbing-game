@@ -118,11 +118,12 @@ export function stepClip(C, M, body, input, dt, enabled) {
     C.stride = lerp(C.stride, W.sneak.stride * Math.max(0.25, C.wLocC), C.cw);
     // 점프 층: 물리 상태(모으기·밀기·공중·착지)를 점프 동작의 시각으로 옮긴다
     const a = C.act, m = W.jump.marks, ev = t => body.events.find(e => e.type === t);
-    if (ev('takeoff')) { a.v0 = ev('takeoff').vy; a.hs = gs; } if (ev('walkoff')) { a.v0 = 0; a.hs = gs; }
-    const J = W.jump; if (ev('push')) a.tt0 = a.kind === 'charge' ? a.tt : 0;
+    if (ev('takeoff')) { a.v0 = ev('takeoff').vy; a.hs = gs; a.y0 = body.pos.y; a.apex = body.pos.y; } if (ev('walkoff')) { a.v0 = 0; a.hs = gs; }
+    if (!body.onGround) a.apex = Math.max(a.apex ?? body.pos.y, body.pos.y);
+    const J = W.jump; if (ev('push')) a.tt0 = C.cw > 0.15 ? J.timeFor(J.hipAt(m.G) - 0.30 * C.cw, 0, m.A) : 0;
     const pushD = k => (2.0 + 1.1 * k) * (0.14 + 0.10 * k) / 2; // 미는 동안 엉덩이가 올라가야 하는 거리 = 뛰는 속도 × 미는 시간 / 2(고르게 빨라질 때). controller.js의 JUMP_V0·V1, PUSH_T0·T1과 같은 값
     if (ev('land')) { a.kind = 'land'; a.tt = m.LD; a.landK = clamp(ev('land').impact / CLIP.LAND_V, 0.3, 1); a.rate = clamp(ev('land').impact / (a.landK * 4 * m.rise / (m.LD - m.G)), 0.6, 1.6); } // 착지 동작의 빠르기: 동작 속 점프(오른 높이 rise)의 내려앉는 빠르기 = 4·rise/공중 시간. 물리의 내려앉는 빠르기가 그보다 느리면 그만큼 느리게 튼다(엉덩이 빠르기가 이어지게)
-    else if (!body.onGround) { a.kind = 'air'; a.u = a.v0 > 0.3 ? (a.v0 - body.vel.y) / (2 * a.v0) : 1 + body.airT / 0.25; a.tt = lerp(m.G, m.LD, Math.min(a.u, 1)); a.fallW = clamp((a.u - 1) / 0.35, 0, 1); }
+    else if (!body.onGround) { a.kind = 'air'; a.u = a.v0 > 0.3 ? (body.vel.y > 0 ? 0.5 * (1 - body.vel.y / a.v0) : 0.5 + 0.5 * -body.vel.y / Math.sqrt(2 * 9.81 * Math.max(0.02, a.apex - a.y0))) : 1 + body.airT / 0.25; a.tt = lerp(m.G, m.LD, Math.min(a.u, 1)); a.fallW = clamp((a.u - 1) / 0.35, 0, 1); }
     else if (body.push) { a.kind = 'push'; const pu = clamp((body.push.t + dt) / body.push.dur, 0, 1), h0 = J.hipAt(a.tt0); a.tt = J.timeFor(h0 + (J.hipAt(m.G) - h0) * pu * pu, m.A, m.G); a.xf = smooth(clamp(pu / 0.35, 0, 1)); a.pu = pu; }
     // ↑ 엉덩이가 고르게 빨라지며 올라가 뜨는 순간 뛰는 속도가 된다. 동작의 "올라가는 쪽"(가장 낮은 장면 뒤)에서 같은 높이를 찾아 쓰고, 모으던 자세(내려가는 쪽, tt0)에서 그쪽으로 미는 시간의 첫 35% 동안 넘어간다
     else if (body.charging) { a.kind = 'charge'; const k = clamp(body.charge / 0.6, 0, 1); a.tt = J.timeFor(J.hipAt(m.G) - pushD(k), 0, m.A); } // 모은 만큼만 웅크린다: 그 깊이에서 밀면 뜨는 순간의 빠르기가 물리의 뛰는 속도와 맞는다(동작의 가장 낮은 장면까지 가지 않는다)
@@ -131,7 +132,7 @@ export function stepClip(C, M, body, input, dt, enabled) {
     a.runW += ((a.kind === 'air' && W.runJump ? clamp((a.hs - CLIP.RUNJUMP_V0) / (CLIP.RUNJUMP_V1 - CLIP.RUNJUMP_V0), 0, 1) : 0) - a.runW) * (1 - Math.exp(-12 * dt));
     const moveK = 1 - 0.85 * clamp((gs - 0.5) / 2.5, 0, 1); // 달리는 중에 모으거나 밀 때는 걷기·달리기 자세를 그만큼 남긴다(발은 계속 걷는다). 속도가 줄수록 웅크린 자세가 들어온다
     const wT = a.kind === 'none' ? 0 : a.kind === 'land' ? a.landK * moveK * (1 - smooth(clamp((a.tt - m.B) / Math.max(0.05, W.jump.dur - 0.05 - m.B), 0, 1))) : a.kind === 'air' ? 1 : moveK; // 착지: 가장 낮은 장면을 지나면 걷기·서 있기 쪽으로 풀린다
-    a.w += (wT - a.w) * (1 - Math.exp(-(wT > a.w ? (a.kind === 'air' ? 10 : lerp(18, 3, C.cw)) : 9) * dt)); // 공중 자세로는 조금 천천히(달리다 뜨면 달리는 자세에서 넘어가야 해서 한 걸음에 많이 바뀐다)
+    a.w += (wT - a.w) * (1 - Math.exp(-(wT > a.w ? (a.kind === 'air' ? 10 : a.kind === 'push' ? 8 : lerp(18, 3, C.cw)) : 9) * dt)); // 공중 자세로는 조금 천천히(달리다 뜨면 달리는 자세에서 넘어가야 해서 한 걸음에 많이 바뀐다)
     if (a.w < 1e-3) a.w = 0; // 깊이 웅크린 채 모으기 시작하면 천천히 올라온다(엉덩이가 한 번에 솟지 않게)
   }
   if (body.onGround && gs > 0.02) { const p = C.phase + gs * dt / C.stride; if (p >= 1) C.turns = (C.turns + 1) % 2; C.phase = p % 1; } // turns = 지금이 짝수 번째 주기인지 홀수 번째인지(두 주기짜리 동작용)

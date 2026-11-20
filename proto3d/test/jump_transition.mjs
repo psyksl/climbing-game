@@ -10,14 +10,15 @@ const CL = process.env.CLIPS || path.resolve(HERE, '../assets_local/clips.json')
 if (!fs.existsSync(CL)) { console.log('clips.json 없음 → 건너뜀'); process.exit(0); }
 const imp = f => import(pathToFileURL(path.join(SRC, f)).href);
 const { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js');
+// p3d-0.6.0: 점프가 "누르면 바로 뛰기"가 됐다(모으기 없음). 누르고 있는 시간으로 높이가 달라진다. 옛 경우 이름(약한/중간/최대 모으기)을 누른 시간으로 바꿨다
 const CASES = {
-  '약한 모으기(0.05초)': [[60, {}], [6, { jump: 1 }], [200, {}]],
-  '중간 모으기(0.3초)': [[60, {}], [36, { jump: 1 }], [220, {}]],
-  '최대 모으기(0.6초)': [[60, {}], [72, { jump: 1 }], [240, {}]],
-  '웅크림에서 최대 모으기': [[120, { crouch: 1 }], [72, { jump: 1 }], [240, {}]],
+  '짧게 누름(0.05초)': [[60, {}], [6, { jump: 1 }], [200, {}]],
+  '중간(0.15초)': [[60, {}], [18, { jump: 1 }], [220, {}]],
+  '길게 누름(0.6초)': [[60, {}], [72, { jump: 1 }], [240, {}]],
+  '웅크림에서 길게': [[120, { crouch: 1 }], [72, { jump: 1 }], [240, {}]],
   '걷다가 짧게': [[240, { f: 1 }], [6, { f: 1, jump: 1 }], [200, { f: 1 }]],
   '달리다가 짧게': [[240, { f: 1, run: 1 }], [6, { f: 1, run: 1, jump: 1 }], [200, { f: 1, run: 1 }]],
-  '달리다가 최대 모으기': [[240, { f: 1, run: 1 }], [72, { f: 1, run: 1, jump: 1 }], [240, { f: 1, run: 1 }]],
+  '달리다가 길게': [[240, { f: 1, run: 1 }], [72, { f: 1, run: 1, jump: 1 }], [240, { f: 1, run: 1 }]],
 };
 const rig = buildCharacter(), sim = makeSim(rig, makeWorld(), JSON.parse(fs.readFileSync(CL, 'utf8'))), out = {};
 sim.useClip = true;

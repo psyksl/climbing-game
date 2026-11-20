@@ -69,7 +69,7 @@ export function stepMotion(M, body, input, world, groundAt, dt) {
   if (body.onGround && M.wasGround) M.hipOff -= body.pos.y - M.lastY; // 디딘 채 몸 자리가 오르내리면(계단) 그만큼 높이 차로 옮긴다
   const w = body.onGround ? 20 : 26;
   for (const e of body.events) if (e.type === 'takeoff') M.offV = 0; // 땅을 떠나는 순간 다리 펴기를 멈춘다(그 뒤로는 몸 전체가 뛰는 속도로 오른다)
-  if (body.push) { if (M.pushOff0 === undefined) M.pushOff0 = M.hipOff; const h2 = lerp(M.pushOff0, DIM.hipY - 0.025 + 0.07, pu * pu); M.offV = (h2 - M.hipOff) / dt; M.hipOff = h2; } // 밀기: 지금 높이에서 발끝으로 선 높이까지, 점점 빨라지며 편다
+  if (body.push) { if (M.pushOff0 === undefined) M.pushOff0 = M.hipOff; const h2 = lerp(M.pushOff0, DIM.hipY - 0.025 + 0.07, pu * pu) - 0.045 * Math.sin(Math.PI * pu); M.offV = (h2 - M.hipOff) / dt; M.hipOff = h2; } // 밀기: 지금 높이에서 발끝으로 선 높이까지, 점점 빨라지며 편다
   else { M.pushOff0 = undefined; M.offV += (w * w * (hip - M.hipOff) - 2 * w * M.offV) * dt; M.hipOff += M.offV * dt; }
   for (const e of body.events) if (e.type === 'land') M.offV -= e.impact; // 착지: 다음 걸음부터 엉덩이가 내려오던 속도로 이어 내려간다
   M.lastY = body.pos.y; M.wasGround = body.onGround;

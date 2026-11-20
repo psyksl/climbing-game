@@ -13,7 +13,8 @@ import { makeClimb, command, stepClimb, poseClimb, groundHands, outBlend, afterP
 // 벽 문맥(W2): 손이 턱을 잡으면 S.climb.on. 그동안은 지상 이동 대신 climb.js의 물리·자세가 돈다. 손을 다 놓으면 속도를 그대로 가지고 지상 이동으로 돌아온다.
 // inp.cmd = 이 걸음에 한 번만 들어오는 명령 목록({ type: 'hand'|'foot'|'release', limb, i, p }). inp.cx·cy = 벽에서 몸 옮기기(좌우·위아래)
 export function makeSim(rig, world, clips = null) {
-  const S = { rig, world, body: null, motion: null, clip: null, climb: null, clipSet: clips ? makeClipSet(clips) : null, useClip: !!clips, tick: 0 };
+  // opt.footAssist = 발 보조(간편 조작). 시험의 기본값은 끔(직접 보낸 발만) — 화면 쪽이 켠다
+  const S = { rig, world, opt: { footAssist: false }, inp: null, body: null, motion: null, clip: null, climb: null, clipSet: clips ? makeClipSet(clips) : null, useClip: !!clips, tick: 0 };
   const ground = () => { S.motion = makeMotion(rig, S.body); S.clip = S.clipSet ? makeClipState(S.clipSet, rig, S.body) : null; if (S.clip && S.useClip) { S.clip.w = 1; S.clip.on = true; S.clip.init = true; } };
   const pose = dt => {
     const K = S.climb;
@@ -23,7 +24,7 @@ export function makeSim(rig, world, clips = null) {
   };
   S.reset = o => { S.body = o ? makeBody(new THREE.Vector3(...o.pos), o.yaw ?? 0) : makeBody(); S.climb = makeClimb(); ground(); S.tick = 0; pose(0); };
   S.step = inp => {
-    const K = S.climb; K.events.length = 0; K.tick = S.tick; K.exited = false;
+    const K = S.climb; K.events.length = 0; K.tick = S.tick; K.exited = false; S.inp = inp;
     for (const c of inp.cmd || []) command(S, c);
     if (K.on) { stepClimb(S, inp, PHY.DT); if (K.exited) ground(); }
     else { stepBody(S.body, inp, world); stepMotion(S.motion, S.body, inp, world, groundAt, PHY.DT); if (S.clip) stepClip(S.clip, S.motion, S.body, inp, PHY.DT, S.useClip); }
