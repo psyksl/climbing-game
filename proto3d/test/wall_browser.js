@@ -12,7 +12,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   const pg = await b.newPage({ viewport: { width: 1280, height: 720 } }), errs = []; pg.on('pageerror', e => errs.push(e.message));
   await pg.goto(url); await pg.waitForTimeout(1000);
   // 기준 설정으로 고정: 손 조작 1번(눌러 보내기), 발 보조 끔. 보조·2번은 아래에서 따로 켠다
-  await pg.evaluate(m => { __p3.resetKeys(); __p3.opt({ handMode: 1, footAssist: false, diag: true, helpAll: false }); if (m) __p3.setMode(m); }, process.env.MODE || '');
+  await pg.evaluate(m => { __p3.resetKeys(); __p3.opt({ handMode: 1, footAssist: false, wallRest: false, diag: true, helpAll: false }); if (m) __p3.setMode(m); }, process.env.MODE || '');
   const P = f => pg.evaluate(f), wait = ms => pg.waitForTimeout(ms), shot = async n => { if (shots) await pg.screenshot({ path: path.join(shots, n + '.png') }); };
   const scr = p => pg.evaluate(p => __p3.screenOf(p), p);
   const at = async p => { const s = await scr(p); if (!(s.x > 2 && s.x < 1278 && s.y > 2 && s.y < 718)) throw new Error('겨눌 점이 화면 밖: ' + JSON.stringify(p)); await pg.mouse.move(s.x, s.y); await wait(60); return s; };
@@ -103,6 +103,13 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   { const n0 = (await log()).length; await at([-1.1, 1.45, -3.0]); await pg.mouse.down({ button: 'left' }); await wait(500); const mid = await st(); await pg.mouse.up({ button: 'left' }); await wait(300); const s = await st(), l = (await log()).slice(n0);
     check('손 조작 2번: 잡고 있던 손으로 누르면 그 손을 놓고 뻗는다(의도적인 놓기). 턱이 아닌 곳에서 떼면 헛손질이고 다른 손은 그대로', mid.c.hands[0].st === 'reach' && s.c.hands[0].st === 'free' && s.c.hands[1].st === 'hold' && l.some(x => /뻗으려고 놓음/.test(x)) && l.some(x => /헛손질/.test(x)), l.filter(x => !/^try/.test(x)).join(' → ')); }
   await P(() => __p3.opt({ handMode: 1 }));
+  { // 화면 기본 설정(손 조작 1 · 발 보조 켬 · 벽 딛기 켬)으로 실제 키·마우스: 뛰어 턱 B를 두 손으로 잡으면 발이 벽을 디디고, Space로 뛰어 오르고, 왼발 떼기 키를 누르면 그 발은 다시 대지 않는다
+    await P(() => __p3.opt({ handMode: 1, footAssist: true, wallRest: true })); await P(() => { __p3.setView(false); __p3.reset({ pos: [0.7, 0, -2.65], yaw: Math.PI }); __p3.setCam({ yaw: 0, pitch: 0.12, dist: 3.6 }); }); await wait(400);
+    const Bp = { L: [0.5, 2.3, -2.86], R: [0.9, 2.3, -2.86] }; await at(Bp.L); await pg.keyboard.down('Space'); await until(() => !__p3.body().onGround, 2000); await pg.mouse.down({ button: 'left' }); await wait(30); await pg.mouse.up({ button: 'left' });
+    await at(Bp.R); await pg.mouse.down({ button: 'right' }); await wait(30); await pg.mouse.up({ button: 'right' }); await wait(300); await pg.keyboard.up('Space');
+    const both = await until(() => __p3.climb().hands.every(h => h.st === 'hold'), 3000), braced = await until(() => __p3.climb().feet.every(f => f.st === 'plant' && f.kind === 'smear' && f.loadS > 0.1), 8000), s = await st();
+    check('기본 설정 · 실제 입력: 뛰어 턱 B를 두 손으로 잡으면 두 발이 벽면을 디딘다(벽 딛기)', both && braced, `손 ${s.c.hands.map(h => h.st).join('/')} · 발 ${s.c.feet.map(f => f.st + ' ' + f.kind + ' ' + f.loadS.toFixed(2)).join(' / ')}`);
+    if (shots) await shot('braced_default'); await P(() => __p3.opt({ footAssist: false, wallRest: false })); }
   // ── ③-2 입력 결함 B1·B2(GPT의 p3d-0.7.0 검토). 실제 키·마우스 이벤트로 본다(명령을 직접 넣는 시험은 이 경로를 지나지 않는다) ──
   { // B2: 손 조작 2번으로 오른손을 뻗는 중에 시점 보기(V)로 바꾼 뒤 단추를 뗀다 → 그 손은 거둬진다(뻗은 채 남지 않고, 새로 잡지도 않는다). 왼손은 그대로
     await P(() => __p3.opt({ handMode: 2 })); await wallStart(); await click(A.L); await handIs(0, 'hold'); await still();
@@ -121,7 +128,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await pg.mouse.down({ button: 'left' }); await wait(40); await pg.mouse.up({ button: 'left' }); await wait(700);
     await pg.keyboard.up('Space'); await pg.keyboard.up('KeyW'); await pg.keyboard.up('ShiftLeft'); await wait(300);
     const L = (await log()).slice(n0);
-    check('B1: 달리기 키를 누른 채 뛰어 왼쪽 단추 → 왼손 명령(발 명령이 아님)', L.some(x => /^try 왼손/.test(x)) && !L.some(x => /왼발/.test(x)), L.filter(x => /^(try|grab|reject)/.test(x)).join(' | ').slice(0, 200));
+    check('B1: 달리기 키를 누른 채 뛰어 왼쪽 단추 → 왼손 명령(발 명령이 아님)', L.some(x => /^try 왼손/.test(x)) && !L.some(x => /^(try|reject) 왼발/.test(x)), L.filter(x => /^(try|grab|reject)/.test(x)).join(' | ').slice(0, 200));
     // 서서(이동 키 없이) 달리기 키 + 단추는 전처럼 발이다(발부터 올리기)
     await wallStart(); const n1 = (await log()).length; await pg.keyboard.down('ShiftLeft'); await wait(60); await click([-0.35, 0.5, -2.93]); await wait(500); await pg.keyboard.up('ShiftLeft');
     const L3 = (await log()).slice(n1);

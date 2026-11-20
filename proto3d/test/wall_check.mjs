@@ -215,6 +215,22 @@ start([-0.9, 0, -2.58]); run(150, {}, [hand(0, A.L)]); run(150, {}, [hand(1, A.R
   check('턱 B → 턱 E(옆으로 0.9m): 흔들지 않으면 못 잡고, 흔들어 오른쪽으로 가는 중에 뛰면 잡고, 늦게(되돌아올 때) 뛰면 못 잡는다', !no && rows.filter(r => r.ok).length >= 3 && !rows[rows.length - 1].ok, `흔들지 않고 ${no ? '잡음' : '못 잡음'} · 흔들어 왼쪽 끝을 지난 뒤 ${rows.map(r => `${r.왼쪽_끝_뒤_초}초 ${r.ok ? '잡음' : '못 잡음'}`).join(' · ')}`); }
 
 console.log(`실패 ${fails}`);
+// ── 15. 벽 딛기(p3d-0.8.0, 옵션): 손으로 매달리면 놓인 발을 앞의 벽면에 댄다. 발은 누르기만 한다(손이 당겨 주는 동안만 버틴다) ──
+{ const hangR = () => { hangB(); sim.opt.wallRest = true; run(480); };
+  hangR(); const f = L().feet, h = L().hands, gap = sim.body.pos.z + 2.86;
+  check('벽 딛기: 두 손으로 매달리면 두 발이 벽면을 디디고(하중을 나눠 받음), 엉덩이가 벽에서 떨어지고, 가만히 버틴다', f.every(x => x.st === 'plant' && x.kind === 'smear' && x.loadS > 0.1) && h.every(x => x.st === 'hold') && gap > 0.22 && speed() < 0.05, `발 ${f.map(x => x.kind + ' ' + x.loadS.toFixed(2)).join(' / ')} · 손 ${h.map(x => x.loadS.toFixed(2)).join(' / ')} · 엉덩이–벽 ${cm(gap)} · 속도 ${speed().toFixed(3)}`);
+  { const y0 = sim.body.pos.y; let p = y0; for (let k = 0; k < 150; k++) { run(1, { jump: true }); p = Math.max(p, sim.body.pos.y); }
+    hangB(); const y1 = sim.body.pos.y; let q = y1; for (let k = 0; k < 150; k++) { run(1, { jump: true }); q = Math.max(q, sim.body.pos.y); }
+    check('벽 딛기: 벽을 디딘 채 뛰면 다리가 밀어 매달려 뛸 때보다 높이 오른다', p - y0 > q - y1 + 0.10, `디딘 채 +${cm(p - y0)} · 매달려 +${cm(q - y1)}`); out.cases['15 벽 딛기'] = { 디딘_채_뛴_높이_cm: +((p - y0) * 100).toFixed(1), 매달려_뛴_높이_cm: +((q - y1) * 100).toFixed(1) }; }
+  // 손을 다 놓으면 벽면의 발은 버티지 못한다(붙지 않는다)
+  hangR(); const k1 = rec.length; run(1, {}, [rel('hand', 0), rel('hand', 1)]); run(14);
+  check('벽 딛기: 두 손을 놓으면 벽면의 발은 버티지 못하고 떨어진다(발이 벽에 붙지 않는다)', !sim.climb.on && sim.body.vel.y < -0.6 && evs(k1).filter(x => x.type === 'lift' && /벽면의 발/.test(x.why)).length === 2, `0.12초 뒤 세로 속도 ${sim.body.vel.y.toFixed(2)}m/s · ${evs(k1).filter(x => x.type !== 'try').map(x => x.type + (x.why ? '(' + x.why + ')' : '')).join(' → ').slice(0, 120)}`);
+  // 직접 뗀 발은 다시 대지 않는다. 손을 새로 잡으면 다시 댄다
+  hangR(); run(1, {}, [rel('foot', 0)]); run(360); const off = L().feet[0].st;
+  check('벽 딛기: 직접 뗀 발은 저절로 다시 대지 않는다(3초 뒤에도 놓여 있음)', off === 'free' && L().feet[1].st === 'plant', `왼발 ${off} · 오른발 ${L().feet[1].st}`);
+  // 흔드는 입력(A/D)을 넣고 있으면 발을 대지 않는다(반동을 덮어쓰지 않는다)
+  hangB(); sim.opt.wallRest = true; pump(3 * 120, 'in'); const sw = L().feet.every(x => x.st === 'free'), a = amp(225);
+  check('벽 딛기: 매달려 흔드는 동안에는 발을 대지 않는다(반동이 그대로 커진다)', sw && a > 0.15, `흔드는 동안 발 ${sw ? '놓임' : '디딤'} · 진폭 ${cm(a)}`); }
 check('벽 동작 전체(위의 모든 장면): 뼈의 한 걸음 회전량이 바로 앞 걸음보다 12° 넘게 달라지지 않는다(지상 동작과 같은 기준)', jk.max <= 12, `가장 큰 튐 ${jk.max.toFixed(1)}° (${jk.what}) · 12° 넘은 횟수 ${jk.n}`); out.cases['벽 동작의 한 걸음 회전 튐'] = { 최대_도: +jk.max.toFixed(1), 어디: jk.what, '12도_넘은_횟수': jk.n };
 if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify(out, null, 1));
 process.exit(fails ? 1 : 0);
