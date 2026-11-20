@@ -303,9 +303,9 @@ function limbsStep(S, dt) {
       // p3d-0.8.0: 쉬는 자리로 딱 맞춰 가지 않고 덜 감쇠된 스프링으로 뒤따른다(몸이 움직이면 관성으로 늦게 따라오다 지나친다 = 진자. 두 다리의 빠르기를 조금 다르게 해 한 덩어리로 움직이지 않게 한다).
       //   흔들기(A/D)를 넣으면 다리가 그쪽으로 먼저 간다(가는 쪽 다리가 더 크게, 무릎을 조금 접어) — 옆으로 미는 힘(SWING_A)의 원인을 몸이 보여 준다. 벽에서 뛰는 동안에는 무릎을 접어 올렸다가 편다
       { const Kc = S.climb, yaw = S.body.yaw, sd = Kc.sideIn || 0, tk = clamp(Kc.pz.tuck, 0, 1), sx = F.i ? -1 : 1, lead = sd * sx > 0;
-        // 손으로 매달려 가만히 있을 때는 무릎을 조금 굽혀 발끝이 벽 가까이 온다(닿지 않는다 — 하중을 받는 접촉이 아니다. 벽에 대고 버티는 것은 "벽 딛기 실험" 옵션이나 사용자가 직접 보낸 발의 일이다. p3d-0.8.1, GPT 결정)
+        // 손으로 매달려 가만히 있을 때는 무릎을 아주 조금 굽혀 발이 엉덩이 바로 아래로 온다(벽에 닿지 않는다. 발을 벽 쪽으로 더 내밀면 한 손 매달림에서 무릎이 벽에 들어갔다 — 실제 입력 시험에서 31걸음 — 하중을 받는 접촉이 아니다. 벽에 대고 버티는 것은 "벽 딛기 실험" 옵션이나 사용자가 직접 보낸 발의 일이다. p3d-0.8.1, GPT 결정)
         const near = Kc.hands.some(h => h.st === 'hold') && !sd && !(F.cool > 0) ? 1 - tk : 0;
-        const rest = V(sx * (0.02 + 0.07 * near), -CL.DANGLE + (F.cool > 0 ? 0.05 * Math.sin(Math.PI * F.cool / 0.22) : 0) + 0.07 * near + 0.36 * tk + (lead ? 0.10 : 0.04) * Math.abs(sd), -0.06 + 0.15 * near - 0.30 * tk).applyAxisAngle(UP, yaw).addScaledVector(V(Math.cos(yaw), 0, -Math.sin(yaw)), sd * (lead ? 0.30 : 0.15));
+        const rest = V(sx * (0.02 + 0.07 * near), -CL.DANGLE + (F.cool > 0 ? 0.05 * Math.sin(Math.PI * F.cool / 0.22) : 0) + 0.05 * near + 0.36 * tk + (lead ? 0.10 : 0.04) * Math.abs(sd), -0.06 + 0.05 * near - 0.30 * tk).applyAxisAngle(UP, yaw).addScaledVector(V(Math.cos(yaw), 0, -Math.sin(yaw)), sd * (lead ? 0.30 : 0.15));
         // 한 발만 디디고 있으면 놓인 다리는 디딘 발의 반대쪽으로 뻗어 둔다(실제 영상에서 되풀이해 보이는 모양 — 품질 검토 13절). 지금 몸 모델에서는 균형에 효과가 없는 "모양"이다(연출 후보라고 적어 둔다)
         { const O = Kc.feet[1 - F.i], wf = O.st === 'plant' && Kc.hands.some(h => h.st === 'hold') ? clamp(((O.loadS || 0) - 0.05) / 0.15, 0, 1) : 0; if (wf > 0) { const lf = V(Math.cos(yaw), 0, -Math.sin(yaw)), dd = hj.clone().sub(O.p).dot(lf), sg = Math.abs(dd) < 0.06 ? sx : dd > 0 ? 1 : -1; rest.addScaledVector(lf, sg * 0.26 * wf); rest.y += 0.05 * wf; } }
         const w = F.cool > 0 ? 16 : (F.i ? 6.4 : 5.6) + 5 * tk + 3 * Math.abs(sd), zeta = F.cool > 0 ? 1 : 0.55; F.relV = F.relV || V();
