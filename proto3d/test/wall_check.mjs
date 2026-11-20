@@ -235,6 +235,20 @@ console.log(`실패 ${fails}`);
   // 흔드는 입력(A/D)을 넣고 있으면 발을 대지 않는다(반동을 덮어쓰지 않는다)
   hangB(); sim.opt.wallRest = true; pump(3 * 120, 'in'); const sw = L().feet.every(x => x.st === 'free'), a = amp(225);
   check('벽 딛기: 매달려 흔드는 동안에는 발을 대지 않는다(반동이 그대로 커진다)', sw && a > 0.15, `흔드는 동안 발 ${sw ? '놓임' : '디딤'} · 진폭 ${cm(a)}`); }
+// ── 16. 발 선택이 결과를 가르는 장면(p3d-0.8.1, GPT의 첫 몸 동작 비교): 턱 A를 두 손으로 잡은 채 오른손을 턱 F(23cm 위, 오른쪽)로 ──
+// 같은 손 배치에서 발만 다르게 고른다. 발은 사용자가 고르고(발 보조·벽 딛기 끔) W는 "지금 붙은 손발로 위로"의 뜻이다. 발을 바꿨다고 주는 보너스는 없다 — 닿고 못 닿고는 디딘 자리와 다리 길이에서 나온다
+{ const F = [-0.3, 2.15, -2.86], knee = i => { const h = sim.climb.T.hj[i], f = sim.climb.feet[i]; return f.st === 'plant' ? h.distanceTo(f.ank) / (CL.LEG / 0.999) : NaN; };
+  const go = (feetCmd, wT, rock = true) => { start([-0.9, 0, -2.58]); sim.opt.rockOver = rock; run(150, {}, [hand(0, A.L)]); run(150, {}, [hand(1, A.R)]); for (const c of feetCmd) run(260, {}, [c]);
+    const y0 = sim.body.pos.y, x0 = sim.body.pos.x, i = feetCmd.length ? feetCmd[0].i : 1, k0 = knee(i); if (wT) run(wT, { cy: 1 });
+    const o = { 오른_높이_cm: +((sim.body.pos.y - y0) * 100).toFixed(1), 옆으로_간_거리_cm: +((sim.body.pos.x - x0) * 100).toFixed(1), 디딘_다리_길이비_처음: +k0.toFixed(2), 손을_보낼_때: +knee(i).toFixed(2), 디딘_발_하중_몸무게배: +(L().feet[i].loadS).toFixed(2) }; const k1 = rec.length;
+    run(1, wT ? { cy: 1 } : {}, [hand(1, F)]); run(220, wT ? { cy: 1 } : {}); run(150);
+    const g = evs(k1).find(x => x.type === 'grab' && x.box === '턱 F'), tr = evs(k1).find(x => x.type === 'try');
+    return { ...o, 잡음: !!g && hold(0) && hold(1) && L().hands[1].box === '턱 F', 손을_보낸_뒤_잡기까지_초: g && tr ? +(g.t - tr.t).toFixed(2) : null, 잡을_때_다리_길이비: g ? +knee(i).toFixed(2) : null, 끝: evs(k1).filter(x => /grab|reject|slip/.test(x.type)).map(x => x.type + (x.why ? '(' + x.why + ')' : '')).join(' → ').slice(0, 80) }; };
+  const R = { '두 발 바닥 · W 없음': go([], 0), '두 발 바닥 · W 2초': go([], 240), '왼발을 넓은 발판에 · W 2초': go([foot(0, [-1.32, 0.3, -2.75])], 240), '오른발을 낮은 발판에 · W 없음': go([foot(1, [-0.3, 0.5, -2.93])], 0), '오른발을 낮은 발판에 · W 2초': go([foot(1, [-0.3, 0.5, -2.93])], 240), '오른발을 낮은 발판에 · W 1초': go([foot(1, [-0.3, 0.5, -2.93])], 120), '(비교) 오른발을 낮은 발판에 · W 2초 · 엉덩이 옮기기 끔': go([foot(1, [-0.3, 0.5, -2.93])], 240, false) };
+  out.cases['16 발 선택이 결과를 가르는 장면(턱 A → 턱 F)'] = R; const ok = R['오른발을 낮은 발판에 · W 2초'];
+  check('턱 A → 턱 F: 바닥에 선 채로는(W를 눌러도), 왼발을 넓은 발판에 올려도 닿지 않는다', !R['두 발 바닥 · W 없음'].잡음 && !R['두 발 바닥 · W 2초'].잡음 && !R['왼발을 넓은 발판에 · W 2초'].잡음, `바닥 ${R['두 발 바닥 · W 2초'].끔 || R['두 발 바닥 · W 2초'].끝} · 넓은 발판 ${R['왼발을 넓은 발판에 · W 2초'].끝}`);
+  check('턱 A → 턱 F: 오른발을 낮은 발판에 올리고 W로 올라서면 닿는다(두 손으로 잡은 채 끝남). 발이 받친 채 다리가 펴지며 오른다', ok.잡음 && ok.디딘_발_하중_몸무게배 > 0.2 && ok.손을_보낼_때 > ok.디딘_다리_길이비_처음 + 0.05, `오른 높이 ${ok.오른_높이_cm}cm · 옆으로 ${ok.옆으로_간_거리_cm}cm · 다리 길이비 ${ok.디딘_다리_길이비_처음} → ${ok.손을_보낼_때}(손을 보낼 때) → ${ok.잡을_때_다리_길이비}(잡을 때) · 발 하중 ${ok.디딘_발_하중_몸무게배}배 · 손 보내고 ${ok.손을_보낸_뒤_잡기까지_초}초 뒤 잡음`);
+  console.log('      (자료) ' + Object.entries(R).map(([k, v]) => `${k}: ${v.잡음 ? '잡음' : '못 잡음'}(오른 높이 ${v.오른_높이_cm}cm)`).join(' · ')); }
 check('벽 동작 전체(위의 모든 장면): 뼈의 한 걸음 회전량이 바로 앞 걸음보다 12° 넘게 달라지지 않는다(지상 동작과 같은 기준)', jk.max <= 12, `가장 큰 튐 ${jk.max.toFixed(1)}° (${jk.what}) · 12° 넘은 횟수 ${jk.n}`); out.cases['벽 동작의 한 걸음 회전 튐'] = { 최대_도: +jk.max.toFixed(1), 어디: jk.what, '12도_넘은_횟수': jk.n };
 if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify(out, null, 1));
 process.exit(fails ? 1 : 0);

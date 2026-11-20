@@ -110,6 +110,21 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     const both = await until(() => __p3.climb().hands.every(h => h.st === 'hold'), 3000), braced = await until(() => __p3.climb().feet.every(f => f.st === 'plant' && f.kind === 'smear' && f.loadS > 0.1), 8000), s = await st();
     check('기본 설정 · 실제 입력: 뛰어 턱 B를 두 손으로 잡으면 두 발이 벽면을 디딘다(벽 딛기)', both && braced, `손 ${s.c.hands.map(h => h.st).join('/')} · 발 ${s.c.feet.map(f => f.st + ' ' + f.kind + ' ' + f.loadS.toFixed(2)).join(' / ')}`);
     if (shots) await shot('braced_default'); await P(() => __p3.opt({ footAssist: false, wallRest: false })); }
+  { // 발 선택이 결과를 가르는 장면을 실제 키·마우스로(수동 발: 발 보조·벽 딛기 끔): 턱 A를 두 손으로 → Shift + 오른쪽 단추로 오른발을 낮은 발판에 → W를 누른 채 올라서고 → 오른쪽 단추로 턱 F
+    await P(() => __p3.opt({ handMode: 1, footAssist: false, wallRest: false })); await wallStart(); const F = [-0.3, 2.13, -2.86];
+    await click(A.L); await handIs(0, 'hold'); await click(A.R, 'right'); await handIs(1, 'hold'); await still();
+    await pg.keyboard.down('ShiftLeft'); await wait(60); await click([-0.3, 0.5, -2.93], 'right'); await wait(80); await pg.keyboard.up('ShiftLeft');
+    const stepped = await until(() => { const f = __p3.climb().feet[1]; return f.st === 'plant' && f.box === '낮은 발판'; }, 6000); await still();
+    const y0 = (await st()).b.pos[1]; await at(F); await pg.keyboard.down('KeyW'); await until(() => __p3.body().pos[1] > 0.18, 5000); const y1 = (await st()).b.pos[1], load = (await st()).c.feet[1].loadS;
+    await pg.mouse.down({ button: 'right' }); await wait(40); await pg.mouse.up({ button: 'right' }); const got = await until(() => { const h = __p3.climb().hands; return h[1].st === 'hold' && h[1].box === '턱 F' && h[0].st === 'hold'; }, 5000); await pg.keyboard.up('KeyW');
+    const s = await st();
+    check('실제 입력 · 수동 발: 오른발을 낮은 발판에 올리고(Shift + 단추) W로 올라서서 오른손으로 턱 F를 잡는다(왼손 유지, 발이 받친 채)', stepped && got && load > 0.2, `발 디딤 ${stepped} · 오른 높이 ${((y1 - y0) * 100).toFixed(0)}cm · 발 하중 ${load.toFixed(2)}배 · 오른손 ${s.c.hands[1].st}(${s.c.hands[1].box}) 왼손 ${s.c.hands[0].st}`);
+    if (shots) await shot('standup_F');
+    // 같은 손 배치에서 발을 고르지 않으면(두 발 바닥) 같은 입력으로 닿지 않는다
+    await wallStart(); await click(A.L); await handIs(0, 'hold'); await click(A.R, 'right'); await handIs(1, 'hold'); await still(); const n0 = (await log()).length;
+    await at(F); await pg.keyboard.down('KeyW'); await wait(1800); await pg.mouse.down({ button: 'right' }); await wait(40); await pg.mouse.up({ button: 'right' }); await wait(1500); await pg.keyboard.up('KeyW'); await wait(400);
+    const s2 = await st(), L2 = (await log()).slice(n0);
+    check('실제 입력 · 수동 발: 발을 고르지 않으면(두 발 바닥) 같은 입력으로 턱 F에 닿지 않는다', !(s2.c.hands[1].st === 'hold' && s2.c.hands[1].box === '턱 F'), L2.filter(x => /^(grab|reject|slip)/.test(x)).join(' | ').slice(0, 140)); }
   // ── ③-2 입력 결함 B1·B2(GPT의 p3d-0.7.0 검토). 실제 키·마우스 이벤트로 본다(명령을 직접 넣는 시험은 이 경로를 지나지 않는다) ──
   { // B2: 손 조작 2번으로 오른손을 뻗는 중에 시점 보기(V)로 바꾼 뒤 단추를 뗀다 → 그 손은 거둬진다(뻗은 채 남지 않고, 새로 잡지도 않는다). 왼손은 그대로
     await P(() => __p3.opt({ handMode: 2 })); await wallStart(); await click(A.L); await handIs(0, 'hold'); await still();
