@@ -45,7 +45,7 @@ export function stepMotion(M, body, input, world, groundAt, dt) {
   P.speed = follow(P.speed, body.onGround ? speed : P.speed, 12, dt);
   P.runW = follow(P.runW, GAIT.runW(speed), 6, dt);
   P.crouch = follow(P.crouch, input.crouch && body.onGround ? 1 : 0, 7, dt);
-  const pu = body.push ? clamp(body.push.t / body.push.dur, 0, 1) : 0; M.pushHeel = body.push ? 0.75 * pu * pu : 0; // 밀기 끝에는 발끝으로 선다(뒤꿈치 듦 → 다리가 길어진 채 땅을 떠난다)
+  const pu = body.push ? clamp(body.push.t / body.push.dur, 0, 1) : 0; M.pushHeel = body.push ? (0.75 - 0.35 * clamp(P.crouch, 0, 1)) * pu * pu : 0; // 밀기 끝에는 발끝으로 선다(뒤꿈치 듦 → 다리가 길어진 채 땅을 떠난다)
   if (body.push) P.charge = (1 - pu * pu) * (M.pushFrom ?? P.charge); else { P.charge = follow(P.charge, body.charging ? body.charge / 0.6 : 0, body.charging ? 10 : 18, dt); M.pushFrom = P.charge; } // 밀기: 웅크린 깊이에서 다 편 자세로(발은 디딘 채)
   P.air = follow(P.air, body.onGround ? 0 : 1, body.onGround ? 10 : 6, dt);
   P.land = follow(P.land, body.landImpact, body.landImpact > P.land ? 30 : 6, dt); // 착지 충격도 한 번에 넣지 않는다
@@ -69,8 +69,9 @@ export function stepMotion(M, body, input, world, groundAt, dt) {
   if (body.onGround && M.wasGround) M.hipOff -= body.pos.y - M.lastY; // 디딘 채 몸 자리가 오르내리면(계단) 그만큼 높이 차로 옮긴다
   const w = body.onGround ? 20 : 26;
   for (const e of body.events) if (e.type === 'takeoff') M.offV = 0; // 땅을 떠나는 순간 다리 펴기를 멈춘다(그 뒤로는 몸 전체가 뛰는 속도로 오른다)
-  if (body.push) { if (M.pushOff0 === undefined) M.pushOff0 = M.hipOff; const h2 = lerp(M.pushOff0, DIM.hipY - 0.025 + 0.07, pu * pu) - 0.045 * Math.sin(Math.PI * pu); M.offV = (h2 - M.hipOff) / dt; M.hipOff = h2; } // 밀기: 지금 높이에서 발끝으로 선 높이까지, 점점 빨라지며 편다
-  else { M.pushOff0 = undefined; M.offV += (w * w * (hip - M.hipOff) - 2 * w * M.offV) * dt; M.hipOff += M.offV * dt; }
+  if (body.push) { if (M.pushOff0 === undefined) M.pushOff0 = M.hipOff; const top = DIM.hipY - 0.025 + 0.07, cap = top - M.pushOff0 > 0.125, rise = cap ? 0.125 : top - M.pushOff0, h2 = M.pushOff0 + rise * pu * pu - (cap ? 0 : 0.045 * Math.sin(Math.PI * pu)); M.offV = (h2 - M.hipOff) / dt; M.hipOff = h2; } // 밀기: 지금 높이에서 발끝으로 선 높이까지, 점점 빨라지며 편다
+  // 웅크린 채 뛰면(p3d-0.8.0: 웅크려도 0.08초에 뜬다) 미는 동안 다리를 다 펴지 못한 채 뜬다 → 남은 만큼은 공중에서 편다. 엉덩이가 몸의 속도보다 훨씬 빨리 솟지 않게 그 빠르기를 누른다(뛰는 속도 + 이것이 초속 3.5m를 넘지 않게)
+  else { M.pushOff0 = undefined; M.offV += (w * w * (hip - M.hipOff) - 2 * w * M.offV) * dt; if (!body.onGround) M.offV = Math.min(M.offV, Math.max(0.3, 3.5 - Math.max(0, body.vel.y))); M.hipOff += M.offV * dt; }
   for (const e of body.events) if (e.type === 'land') M.offV -= e.impact; // 착지: 다음 걸음부터 엉덩이가 내려오던 속도로 이어 내려간다
   M.lastY = body.pos.y; M.wasGround = body.onGround;
   P.hipY = body.pos.y + M.hipOff;

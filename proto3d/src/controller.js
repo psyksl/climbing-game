@@ -37,7 +37,7 @@ export function stepBody(b, input, world) {
   b.charging = false; b.charge = 0;
   // 웅크린 채 누르면 다리를 펴는 데 시간이 더 걸린다(깊이 웅크렸으면 0.30초). 서 있을 때는 0.08초
   b.crouchK = (b.crouchK || 0) + ((input.crouch && b.onGround ? 1 : 0) - (b.crouchK || 0)) * (1 - Math.exp(-7 * dt));
-  if (pressed && b.onGround && !b.push) { b.push = { t: 0, k: 1, dur: P.PUSH_T + (0.30 - P.PUSH_T) * b.crouchK, held: true }; b.events.push({ type: 'push', k: 1, t: b.t }); }
+  if (pressed && b.onGround && !b.push) { b.push = { t: 0, k: 1, dur: P.PUSH_T + (b.slowCrouch ? (0.30 - P.PUSH_T) * b.crouchK : 0), held: true }; b.events.push({ type: 'push', k: 1, t: b.t }); }
   else if (b.push && b.onGround) {
     if (!input.jump) b.push.held = false;
     if ((b.push.t += dt) >= b.push.dur) { const k = b.push.held ? 1 : 0; b.push = null; b.vel.y = P.JUMP_V1; b.jumpRise = true; if (want.lengthSq() > 0.01) { const d = want.clone().normalize(), along = b.vel.x * d.x + b.vel.z * d.y, need = P.JUMP_H0 + P.JUMP_H1 * k; if (along < need) { b.vel.x += d.x * (need - along); b.vel.z += d.y * (need - along); } } b.onGround = false; b.airT = 0; b.events.push({ type: 'takeoff', k, vy: b.vel.y, t: b.t }); }
