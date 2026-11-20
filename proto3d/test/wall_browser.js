@@ -103,12 +103,13 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   { const n0 = (await log()).length; await at([-1.1, 1.45, -3.0]); await pg.mouse.down({ button: 'left' }); await wait(500); const mid = await st(); await pg.mouse.up({ button: 'left' }); await wait(300); const s = await st(), l = (await log()).slice(n0);
     check('손 조작 2번: 잡고 있던 손으로 누르면 그 손을 놓고 뻗는다(의도적인 놓기). 턱이 아닌 곳에서 떼면 헛손질이고 다른 손은 그대로', mid.c.hands[0].st === 'reach' && s.c.hands[0].st === 'free' && s.c.hands[1].st === 'hold' && l.some(x => /뻗으려고 놓음/.test(x)) && l.some(x => /헛손질/.test(x)), l.filter(x => !/^try/.test(x)).join(' → ')); }
   await P(() => __p3.opt({ handMode: 1 }));
-  { // 화면 기본 설정(손 조작 1 · 발 보조 켬 · 벽 딛기 켬)으로 실제 키·마우스: 뛰어 턱 B를 두 손으로 잡으면 발이 벽을 디디고, Space로 뛰어 오르고, 왼발 떼기 키를 누르면 그 발은 다시 대지 않는다
+  { // 벽 딛기 실험을 켠 설정(손 조작 1 · 발 보조 켬 · 벽 딛기 켬. 기본값은 끔)으로 실제 키·마우스: 뛰어 턱 B를 두 손으로 잡으면 발이 벽을 디디고, Space로 뛰어 오르고, 왼발 떼기 키를 누르면 그 발은 다시 대지 않는다
     await P(() => __p3.opt({ handMode: 1, footAssist: true, wallRest: true })); await P(() => { __p3.setView(false); __p3.reset({ pos: [0.7, 0, -2.65], yaw: Math.PI }); __p3.setCam({ yaw: 0, pitch: 0.12, dist: 3.6 }); }); await wait(400);
+    // (뛰는 0.5초 안에 마우스를 두 번 옮겨 누르면 화면이 느릴 때 놓친다 → 뛰어 왼손으로 잡은 다음, 매달린 채 오른손을 보낸다)
     const Bp = { L: [0.5, 2.3, -2.86], R: [0.9, 2.3, -2.86] }; await at(Bp.L); await pg.keyboard.down('Space'); await until(() => !__p3.body().onGround, 2000); await pg.mouse.down({ button: 'left' }); await wait(30); await pg.mouse.up({ button: 'left' });
-    await at(Bp.R); await pg.mouse.down({ button: 'right' }); await wait(30); await pg.mouse.up({ button: 'right' }); await wait(300); await pg.keyboard.up('Space');
+    await handIs(0, 'hold'); await pg.keyboard.up('Space'); await at(Bp.R); await pg.mouse.down({ button: 'right' }); await wait(30); await pg.mouse.up({ button: 'right' }); await wait(300);
     const both = await until(() => __p3.climb().hands.every(h => h.st === 'hold'), 3000), braced = await until(() => __p3.climb().feet.every(f => f.st === 'plant' && f.kind === 'smear' && f.loadS > 0.1), 8000), s = await st();
-    check('기본 설정 · 실제 입력: 뛰어 턱 B를 두 손으로 잡으면 두 발이 벽면을 디딘다(벽 딛기)', both && braced, `손 ${s.c.hands.map(h => h.st).join('/')} · 발 ${s.c.feet.map(f => f.st + ' ' + f.kind + ' ' + f.loadS.toFixed(2)).join(' / ')}`);
+    check('벽 딛기 실험을 켠 설정 · 실제 입력: 뛰어 턱 B를 잡고 두 손으로 매달리면 두 발이 벽면을 디딘다', both && braced, `손 ${s.c.hands.map(h => h.st).join('/')} · 발 ${s.c.feet.map(f => f.st + ' ' + f.kind + ' ' + f.loadS.toFixed(2)).join(' / ')}`);
     if (shots) await shot('braced_default'); await P(() => __p3.opt({ footAssist: false, wallRest: false })); }
   { // 발 선택이 결과를 가르는 장면을 실제 키·마우스로(수동 발: 발 보조·벽 딛기 끔): 턱 A를 두 손으로 → Shift + 오른쪽 단추로 오른발을 낮은 발판에 → W를 누른 채 올라서고 → 오른쪽 단추로 턱 F
     await P(() => __p3.opt({ handMode: 1, footAssist: false, wallRest: false })); await wallStart(); const F = [-0.3, 2.13, -2.86];
