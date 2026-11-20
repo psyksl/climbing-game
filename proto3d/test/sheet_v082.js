@@ -3,7 +3,7 @@
 // 캡처 빌드로 찍은 그림은 저장소·전달 묶음에 넣지 않는다.
 'use strict';
 const { chromium } = require('playwright'), path = require('path'), fs = require('fs');
-const file = path.resolve(__dirname, '..', process.env.BUILD || 'climb3d.html'), dir = process.argv[2], label = process.env.LABEL || 'p3d-0.8.2', mode = process.env.MODE || '';
+const file = path.resolve(__dirname, '..', process.env.BUILD || 'climb3d.html'), dir = process.argv[2], label = process.env.LABEL || 'p3d-0.8.3', mode = process.env.MODE || '';
 if (!dir) { console.log('사용: node test/sheet_v082.js <폴더>'); process.exit(1); }
 (async () => {
   const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
