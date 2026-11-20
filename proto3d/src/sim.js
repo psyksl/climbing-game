@@ -22,7 +22,7 @@ export function makeSim(rig, world, clips = null) {
     else { poseProc(S.motion, S.body); if (S.clip) poseClip(S.clip, S.motion, S.body, world, groundAt, dt); outBlend(S, dt); groundHands(S, dt); measure(S.motion, S.body); }
     afterPose(S);
   };
-  S.reset = o => { S.body = o ? makeBody(new THREE.Vector3(...o.pos), o.yaw ?? 0) : makeBody(); S.climb = makeClimb(); ground(); S.tick = 0; pose(0); };
+  S.reset = o => { S.body = o ? makeBody(new THREE.Vector3(...o.pos), o.yaw ?? 0) : makeBody(); S.climb = makeClimb(); ground(); S.tick = 0; S.pw = null; S.poleS = null; pose(0); };
   S.step = inp => {
     const K = S.climb; K.events.length = 0; K.tick = S.tick; K.exited = false; S.inp = inp;
     for (const c of inp.cmd || []) command(S, c);
