@@ -9,7 +9,7 @@ if (!dir) { console.log('사용: node test/sheet_v082.js <폴더>'); process.exi
   const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const pg = await b.newPage({ viewport: { width: 420, height: 480 } }), errs = []; pg.on('pageerror', e => errs.push(e.message));
   await pg.goto('file://' + file + '?test&noshadow'); await pg.waitForTimeout(1800);
-  await pg.evaluate(m => { __p3.pause(true); if (m) __p3.setMode(m); document.getElementById('help').style.display = 'none'; document.getElementById('hud').style.display = 'none';
+  await pg.evaluate(m => { __p3.pause(true); if (m) __p3.setMode(m); document.getElementById('help').style.display = 'none'; document.getElementById('hud').style.display = 'none'; const st = document.createElement('style'); st.textContent = '.tag{display:none!important}'; document.head.appendChild(st);
     const A = { L: [-1.1, 1.92, -2.84], R: [-0.7, 1.92, -2.84] }, h = (i, p) => ({ type: 'hand', i, p });
     window.T = { run: (n, inp = {}) => __p3.run(n, { mx: 0, mz: 0, ...inp }), k: 0,
       up() { __p3.reset({ pos: [-0.9, 0, -2.58], yaw: Math.PI }); T.run(30); __p3.cmd(h(0, A.L)); T.run(150); __p3.cmd(h(1, A.R)); T.run(150); T.run(150, { cy: 1 }); T.k = 0; },
@@ -17,13 +17,13 @@ if (!dir) { console.log('사용: node test/sheet_v082.js <폴더>'); process.exi
   // [파일 이름, 제목, 시점, 준비, 장면 사이에 할 일, 따라가는 높이]
   const SC = [
     ['crouch_jump_side', '웅크린 채 점프: 누른 순간부터 0.05초 간격 · 옆에서', Math.PI / 2, '__p3.reset({ pos: [0, 0, 8], yaw: Math.PI }); T.run(30); T.run(150, { crouch: true });', 'T.run(6, { jump: true })', 0.9],
-    ['reach_up_side', '당겨 올라간 자세에서 오른손을 턱 아래 → 위 → 아래 → 위로(누르는 동안 뻗기, 0.125초 간격) · 옆에서(오른쪽)', -Math.PI / 2, 'T.up(); T.reach(40);', 'T.reach(15)', 1.25],
-    ['reach_up_back', '같은 뻗기 · 뒤에서', Math.PI, 'T.up(); T.reach(40);', 'T.reach(15)', 1.25],
+    ['reach_up_side', '당겨 올라간 자세에서 뻗는 오른손의 겨눈 곳을 턱 아래 왼쪽 → 턱 위 오른쪽으로 바꾼 직후(0.025초 간격, 가까이서) · 옆에서(오른쪽)', -Math.PI / 2, 'T.up(); T.reach(196);', 'T.reach(3)', 1.55, 1.5],
+    ['reach_up_back', '같은 순간 · 뒤에서', Math.PI, 'T.up(); T.reach(196);', 'T.reach(3)', 1.55, 1.5],
   ];
   fs.mkdirSync(dir, { recursive: true }); const sheet = await b.newPage({ viewport: { width: 1240, height: 330 } }), N = 8;
-  for (const [id, title, off, setup, stepJs, hh] of SC) { const cells = []; await pg.evaluate(s => { __p3.opt({ wallRest: false, footAssist: false, handMode: 2 }); (0, eval)(s); }, setup);
+  for (const [id, title, off, setup, stepJs, hh, dist = 3.2] of SC) { const cells = []; await pg.evaluate(s => { __p3.opt({ wallRest: false, footAssist: false, handMode: 2 }); (0, eval)(s); }, setup);
     for (let i = 0; i < N; i++) { if (i) await pg.evaluate(s => { (0, eval)(s); }, stepJs);
-      await pg.evaluate(([off, hh]) => __p3.shot({ off, dist: 3.2, pitch: 0.05, h: hh }), [off, hh]); await pg.waitForTimeout(120);
+      await pg.evaluate(([off, hh, dist]) => __p3.shot({ off, dist, pitch: 0.05, h: hh }), [off, hh, dist]); await pg.waitForTimeout(120);
       cells.push((await pg.screenshot({ type: 'jpeg', quality: 80, clip: { x: 110, y: 60, width: 200, height: 380 } })).toString('base64')); }
     await sheet.setContent(`<body style="margin:4px;background:#fff"><div style="font:700 14px sans-serif">${label}${mode === 'clip' ? ' · 캡처 모션' : ' · 자작 모션'} — ${title} (스크립트 입력)</div><div style="display:flex">${cells.map(im => `<img src="data:image/jpeg;base64,${im}" width=152>`).join('')}</div></body>`);
     await sheet.screenshot({ path: path.join(dir, id + '.png'), clip: { x: 0, y: 0, width: 1228, height: 312 } }); }

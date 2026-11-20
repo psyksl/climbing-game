@@ -32,13 +32,13 @@ let fail = 0, pass = 0; const check = (name, ok, detail = '') => { console.log(`
     const down = await raf(() => { const b = __p3.body(); return !b.onGround && b.vel[1] < 0 && b.pos[1] < 0.25; }, 3000); await pg.mouse.down({ button: 'right' });
     const landed = await raf(() => __p3.body().onGround, 1500); await pg.mouse.up({ button: 'right' }); await pg.keyboard.up('Space'); await wait(350); const L = (await log()).slice(n0);
     check('착지: 공중에서 우클릭을 누르고 내려선 뒤 뗌 → 오른손 명령 1번(두 번 나가지 않는다)', down && landed && n(L, /^try 오른손/) === 1, `공중에서 누름 ${down} · 착지 ${landed} · 오른손 시도 ${n(L, /^try 오른손/)}번 · ${show(L)}`); }
-  { // ③ 벽 진입: 달리기 키를 누른 채 뛰어 왼손으로 턱 A를 잡는다 → 벽 문맥. 달리기 키(벽에서는 발 지정과 같은 키)를 떼지 않은 채 다른 손을 보내면 손 명령이어야 한다(다시 눌러야 발 지정)
-    await wallStart(); await at(A.L); await pg.keyboard.down('ShiftLeft'); await wait(60); await pg.keyboard.down('Space'); await raf(() => !__p3.body().onGround, 1500);
-    await pg.mouse.down({ button: 'left' }); await wait(40); await pg.mouse.up({ button: 'left' }); await pg.keyboard.up('Space');
-    const held = await until(() => __p3.climb().hands[0].st === 'hold', 4000); await until(() => Math.hypot(...__p3.body().vel) < 0.3, 4000);
-    await until(() => __p3.input().mode === 'wall', 3000); const n0 = (await log()).length, mode = (await P(() => __p3.input())).mode; await at(A.R); await wait(200); const tag = (await P(() => __p3.tagsText())).join(' | ');
+  { // ③ 벽 진입: 달리기 키를 누른 채 왼손으로 턱 A를 잡는다 → 벽 문맥. 달리기 키(벽에서는 발 지정과 같은 키)를 떼지 않은 채 다른 손을 보내면 손 명령이어야 한다(다시 눌러야 발 지정)
+    // 처음에는 뛰어 잡는 장면으로 만들었으나, 한 손으로 떨어지며 잡으면 충격으로 놓치는 잡기 규칙에 좌우돼 흔들렸다(입력과 무관) → 서서 잡는다
+    await wallStart(); await pg.keyboard.down('ShiftLeft'); await wait(80); await at(A.L); await pg.mouse.down({ button: 'left' }); await wait(40); await pg.mouse.up({ button: 'left' });
+    const held = await until(() => __p3.climb().hands[0].st === 'hold', 5000); await until(() => __p3.input().mode === 'wall', 3000); await until(() => Math.hypot(...__p3.body().vel) < 0.3, 4000);
+    const n0 = (await log()).length, mode = (await P(() => __p3.input())).mode; await at(A.R); await wait(200); const tag = (await P(() => __p3.tagsText())).join(' | ');
     await pg.mouse.down({ button: 'right' }); await wait(40); await pg.mouse.up({ button: 'right' }); await wait(500); const L = (await log()).slice(n0);
-    check('벽 진입: 달리기 키를 누른 채 뛰어 잡은 뒤, 그 키를 떼지 않고 우클릭 → 오른손 명령(발 명령이 아님). 미리보기도 손 기준', held && mode === 'wall' && n(L, /^try 오른손/) === 1 && n(L, /^(try|reject|deny) 오른발/) === 0 && !/발/.test(tag.split('|').pop()), `잡음 ${held} · 문맥 ${mode} · ${show(L)} · 미리보기 "${tag.slice(-50)}"`);
+    check('벽 진입: 달리기 키를 누른 채 잡아 벽 문맥이 된 뒤, 그 키를 떼지 않고 우클릭 → 오른손 명령(발 명령이 아님). 미리보기도 손 기준', held && mode === 'wall' && n(L, /^try 오른손/) === 1 && n(L, /^(try|reject|deny) 오른발/) === 0 && !/발/.test(tag.split('|').pop()), `잡음 ${held} · 문맥 ${mode} · ${show(L)} · 미리보기 "${tag.replace(/\s+/g, ' ').slice(-50)}"`);
     // 같은 키를 뗐다가 다시 누르면 발 지정이다
     await pg.keyboard.up('ShiftLeft'); await wait(80); await until(() => __p3.climb().hands[1].st !== 'reach', 3000); const n1 = (await log()).length; await pg.keyboard.down('ShiftLeft'); await wait(80); await at([-0.9, 0.9, -3.0]).catch(() => null); await pg.mouse.down({ button: 'left' }); await wait(40); await pg.mouse.up({ button: 'left' }); await wait(400); await pg.keyboard.up('ShiftLeft'); const L1 = (await log()).slice(n1);
     check('벽 진입 뒤: 그 키를 뗐다가 다시 누른 채 좌클릭 → 왼발 명령', n(L1, /^(try|reject|deny|step) 왼발/) >= 1 && n(L1, /^try 왼손/) === 0, show(L1));

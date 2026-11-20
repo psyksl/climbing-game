@@ -159,10 +159,10 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await wallStart(); const n2 = (await log()).length; await pg.keyboard.down('ShiftLeft'); await wait(60); await click(A.L); await wait(600); await pg.keyboard.up('ShiftLeft');
     const L4 = (await log()).slice(n2);
     check('B1: 땅에 서서 달리기 키 + 왼쪽 단추 → 손 명령(달리기는 발 지정을 겸하지 않는다)', L4.some(x => /^try 왼손/.test(x)) && !L4.some(x => /^(try|reject) 왼발/.test(x)), L4.filter(x => /^(try|grab|reject)/.test(x)).join(' | ').slice(0, 160));
-    // 미리보기도 같은 판단을 쓴다: 달리기 키를 누른 채 턱을 겨누면 손 미리보기(왼손·오른손 이름)가 뜬다
+    // 미리보기도 같은 판단을 쓴다: 달리기 키를 누른 채 턱을 겨누면 손 미리보기(왼손·오른손 이름)가 뜬다. 문구의 거리 숫자는 서 있는 몸의 작은 움직임으로 1cm쯤 달라질 수 있어 숫자를 뺀 글로 견준다(캡처 모션에서 46cm와 45cm로 갈려 거짓 실패가 났다)
     const pv = async k => { await wallStart(); if (k) await pg.keyboard.down(k); await at([-0.35, 0.5, -2.93]); await wait(300); const t = (await P(() => __p3.tagsText())).join(' | '); if (k) await pg.keyboard.up(k); return t; };
     const tNone = await pv(null), tRun = await pv('ShiftLeft'), tFoot = await pv('KeyX');
-    check('B1: 미리보기도 같은 판단을 쓴다 — 달리기 키를 누른 채 겨누면 아무것도 누르지 않았을 때와 같고(손 기준), 발 지정 키를 누르면 발 미리보기로 바뀐다', tRun === tNone && tFoot !== tNone && /발/.test(tFoot), `누르지 않음 "${tNone.slice(-40)}" · 달리기 "${tRun.slice(-40)}" · 발 지정 "${tFoot.slice(-60)}"`); }
+    check('B1: 미리보기도 같은 판단을 쓴다 — 달리기 키를 누른 채 겨누면 아무것도 누르지 않았을 때와 같고(손 기준), 발 지정 키를 누르면 발 미리보기로 바뀐다', tRun.replace(/\d+/g, '#') === tNone.replace(/\d+/g, '#') && tFoot !== tNone && /발/.test(tFoot), `누르지 않음 "${tNone.slice(-40)}" · 달리기 "${tRun.slice(-40)}" · 발 지정 "${tFoot.slice(-60)}"`); }
   await key('KeyE'); await until(() => __p3.body().onGround && !__p3.climb().on); await wait(300);
 
   // ── ④ 화면: 뛰어오른 동안 화면을 멈춰 둔다 ──
