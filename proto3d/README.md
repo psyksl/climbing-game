@@ -7,6 +7,8 @@
 - 점검: `node test/wall_check.mjs`, `node test/wall_browser.js`, `node test/motion_check.js`, `node test/fps_check.js`, 영상 `node test/record_w2.js <폴더>`, `node test/record_w3.mjs <폴더>`
 - **이번 판에 없는 것**: 코스(시작·도착·두 경로), 손으로 눌러 올라서기(맨틀), 키 설정 화면.
 
+> 2026-11-20: GPT의 p3d-0.7.0 품질 검토를 확인하고 다른 게임·문헌·기법을 조사했다 → `docs/품질_검토_p3d-0.7.0.md`. 게임 코드는 바뀌지 않았다(진단 도구 `test/pose_freeze.mjs`만 더함).
+
 ## p3d-0.7.0: 벽에서 반동(흔들기)·뛰기·공중 재잡기 (2026-11-20)
 
 자세한 것은 **`docs/반동_뛰기_p3d-0.7.0.md`**. 스크립트 입력의 자동 측정이며 사람이 해 본 결과는 없습니다. 입력은 임시입니다(GPT 답을 받기 전).
