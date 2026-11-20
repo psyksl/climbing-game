@@ -129,6 +129,8 @@ export function stepClip(C, M, body, input, dt, enabled) {
     else if (body.charging) { a.kind = 'charge'; const k = clamp(body.charge / 0.6, 0, 1); a.tt = J.timeFor(J.hipAt(m.G) - pushD(k), 0, m.A); } // 모은 만큼만 웅크린다: 그 깊이에서 밀면 뜨는 순간의 빠르기가 물리의 뛰는 속도와 맞는다(동작의 가장 낮은 장면까지 가지 않는다)
     else if (a.kind === 'land') { a.tt += dt * a.rate; if (a.tt >= W.jump.dur - 0.05 || (gs > 1.0 && a.tt > m.LD + 0.15)) a.kind = 'none'; } // 움직이고 있으면 착지를 일찍 마친다(동작을 빨리 감지 않는다. 빨리 감으면 엉덩이가 내려앉는 빠르기가 물리보다 커진다)
     else a.kind = 'none';
+    // 떨어지던 자세는 내려선 뒤에도 0.2초에 걸쳐 빠진다(p3d-0.8.0). 전에는 내려서는 걸음에 한 번에 빠져, 벽에서 놓고 떨어질 때마다 골반 28°·가슴 50°가 한 걸음에 튀었다
+    if (a.kind !== 'air') a.fallW = Math.max(0, a.fallW - dt / 0.20);
     a.runW += ((a.kind === 'air' && W.runJump ? clamp((a.hs - CLIP.RUNJUMP_V0) / (CLIP.RUNJUMP_V1 - CLIP.RUNJUMP_V0), 0, 1) : 0) - a.runW) * (1 - Math.exp(-12 * dt));
     const moveK = 1 - 0.85 * clamp((gs - 0.5) / 2.5, 0, 1); // 달리는 중에 모으거나 밀 때는 걷기·달리기 자세를 그만큼 남긴다(발은 계속 걷는다). 속도가 줄수록 웅크린 자세가 들어온다
     const wT = a.kind === 'none' ? 0 : a.kind === 'land' ? a.landK * moveK * (1 - smooth(clamp((a.tt - m.B) / Math.max(0.05, W.jump.dur - 0.05 - m.B), 0, 1))) : a.kind === 'air' ? 1 : moveK; // 착지: 가장 낮은 장면을 지나면 걷기·서 있기 쪽으로 풀린다
@@ -167,7 +169,7 @@ export function poseClip(C, M, body, world, groundAt, dt) {
       sampleAt(W.jump, lerp(m.A, m.G, act.pu), C.Cp); UPPER(C.set.names).forEach(i => C.Bp.q[i].copy(C.Cp.q[i]));
       if (act.xf < 1) { sampleAt(W.jump, act.tt0, C.Dp); mix(C.Dp, C.Bp, act.xf, C.Bp); } }
     if (act.kind === 'air' || act.runW > 1e-3 || act.fallW > 1e-3) { if (act.runW > 1e-3) { const mr = W.runJump.marks; sampleAt(W.runJump, lerp(mr.TO, mr.LD, clamp((act.tt - m.G) / (m.LD - m.G), 0, 1)), C.Cp); mix(C.Bp, C.Cp, act.runW, C.Bp); }
-      if (act.kind === 'air' && act.fallW > 1e-3) { sample(W.fall, C.idleT / W.fall.dur, C.Cp); C.Cp.hip.y = C.Bp.hip.y; mix(C.Bp, C.Cp, smooth(act.fallW), C.Bp); } }
+      if (act.fallW > 1e-3) { sample(W.fall, C.idleT / W.fall.dur, C.Cp); C.Cp.hip.y = C.Bp.hip.y; mix(C.Bp, C.Cp, smooth(act.fallW), C.Bp); } }
     mix(A, C.Bp, smooth(act.w), A);
   }
   qYaw.setFromAxisAngle(UP, body.yaw);

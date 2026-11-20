@@ -25,7 +25,7 @@ if (!dir) { console.log('사용: node test/wall_sheet.js <폴더>'); process.exi
     ['ours_footjump_side', '우리: 발판을 디디고 뛰기 · 옆에서', Math.PI / 2, 'T.onA(true);', 'T.run(13, { jump: true })', false],
     ['ours_shift_back', '우리: 두 발 바닥·두 손 턱에서 몸 왼쪽 1초 → 오른쪽 1초 · 뒤에서', Math.PI, 'T.onA(false);', null, false],
     ['ours_reach_back', '우리: 벽을 디딘 채 오른손을 25cm 오른쪽으로 옮겨 잡기(0.075초 간격) · 뒤에서 · 벽 딛기 켬', Math.PI, 'T.hangB(); __p3.cmd({ type: "hand", i: 1, p: [1.17, 2.32, -2.86] });', 'T.run(9)', true],
-    ['ours_fall_side', '우리: 두 손을 놓고 떨어져 내려섬 · 옆에서', Math.PI / 2, 'T.hangB(); __p3.cmd({ type: "release", limb: "hand", i: 0 }); __p3.cmd({ type: "release", limb: "hand", i: 1 });', 'T.run(15)', false],
+    ['ours_fall_side', '우리: 두 손을 놓고 떨어져 내려섬(0.125초 간격) · 옆에서(반대쪽)', -Math.PI / 2, 'T.hangB(); __p3.cmd({ type: "release", limb: "hand", i: 0 }); __p3.cmd({ type: "release", limb: "hand", i: 1 });', 'T.run(15)', false],
   ];
   fs.mkdirSync(dir, { recursive: true }); const sheet = await b.newPage({ viewport: { width: 1240, height: 330 } }), N = 8;
   for (const [id, title, off, setup, stepJs, rest] of SC) { const cells = []; await pg.evaluate(([s, rest]) => { __p3.opt({ wallRest: rest, footAssist: false, handMode: 1 }); (0, eval)(s); }, [setup, rest]);

@@ -266,6 +266,8 @@ function limbsStep(S, dt) {
     const dv = aim.sub(H.w), dl = dv.length(); H.sp = Math.min(CL.HAND_V, (H.sp || 0) + CL.HAND_ACC * dt);
     if (dl > 1e-6) H.w.addScaledVector(dv, Math.min(1, H.sp * dt / dl));
     const d = H.w.clone().sub(sh); if (d.length() > CL.ARM) H.w.copy(sh).addScaledVector(d.normalize(), CL.ARM);
+    // B4(p3d-0.8.0): 뻗는 손이 벽·턱 속으로 들어가지 않는다. 들어간 만큼 가장 얕은 쪽으로 빼낸다(손목 둘레 1.5cm. 잡을 자리는 턱에서 2cm 앞이라 막히지 않는다). 손은 겉면을 따라 미끄러져 간다
+    for (const x of S.world.boxes) { const m = 0.015, q = H.w, e = [[q.x - x.min.x + m, -1, 0, 0], [x.max.x + m - q.x, 1, 0, 0], [q.y - x.min.y + m, 0, -1, 0], [x.max.y + m - q.y, 0, 1, 0], [q.z - x.min.z + m, 0, 0, -1], [x.max.z + m - q.z, 0, 0, 1]]; if (e.some(v => v[0] <= 0)) continue; const o = e.sort((u, v) => u[0] - v[0])[0]; q.x += o[1] * o[0]; q.y += o[2] * o[0]; q.z += o[3] * o[0]; H.thru = (H.thru || 0) + 1; }
     // 누르고 있는 동안에는 잡지 않는다(떼는 순간에 잡는다)
     if (H.drag) continue;
     const miss = H.w.distanceTo(H.goal), far = sh.distanceTo(H.goal) - CL.ARM;
@@ -681,6 +683,23 @@ export function outBlend(S, dt) {
   S.rig.list.forEach((x, i) => { x.quaternion.copy(O.q[i].clone().slerp(x.quaternion, /Arm|hand|shoulder/.test(x.name) ? kA : k)); });
   B.hips.updateMatrixWorld(true);
   if (O.t >= 0.5) K.out = null;
+}
+// 지상 자세의 윗몸이 벽·턱 속으로 들어가지 않게 한다(p3d-0.8.0): 벽 바로 앞에 내려서 웅크리면 앞으로 숙인 가슴·머리가 벽을 뚫었다(벽에서 놓고 떨어질 때마다).
+// 머리·가슴이 들어간 만큼 척추를 뒤로 세운다(가장 얕은 수평 방향으로). 세우는 각도는 정해진 빠르기로만 바뀐다(튀지 않게). 몸의 자리·속도·접촉은 건드리지 않는다(자세만)
+export function torsoClear(S, dt) {
+  const B = S.rig.bones, st = S.tc || (S.tc = { a: 0, ax: V(1, 0, 0) }), hip = worldPos(B.hips); let want = 0, dir = null;
+  for (const n of ['head', 'chest']) {
+    const p = worldPos(B[n]), r = 0.12; if (n === 'head') p.y += 0.08;
+    for (const x of S.world.boxes) {
+      if (x.kind === 'floor' || p.y < x.min.y - r || p.y > x.max.y + r) continue;
+      const e = [[p.x - x.min.x + r, -1, 0], [x.max.x + r - p.x, 1, 0], [p.z - x.min.z + r, 0, -1], [x.max.z + r - p.z, 0, 1]]; if (e.some(v => v[0] <= 0)) continue;
+      const o = e.sort((u, v) => u[0] - v[0])[0], ang = Math.asin(Math.min(0.9, o[0] / Math.max(0.25, p.distanceTo(hip))));
+      if (ang > want) { want = ang; dir = V(o[1], 0, o[2]); }
+    }
+  }
+  if (dir) st.ax.copy(UP).cross(dir).normalize();
+  st.a += clamp(want - st.a, -5 * dt, 5 * dt);
+  if (st.a > 1e-3) setWorldQuat(B.spine, Q().setFromAxisAngle(st.ax, st.a).multiply(B.spine.getWorldQuaternion(Q())));
 }
 // 자세가 확정된 뒤: 놓여 있는 손발의 지금 자리를 적어 두고(다음 명령의 출발점), 접촉 오차와 관통을 잰다
 export function afterPose(S) {
