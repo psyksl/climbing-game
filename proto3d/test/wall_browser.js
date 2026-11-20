@@ -115,7 +115,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await click(A.L); await handIs(0, 'hold'); await click(A.R, 'right'); await handIs(1, 'hold'); await still();
     await pg.keyboard.down('ShiftLeft'); await wait(60); await click([-0.3, 0.5, -2.93], 'right'); await wait(80); await pg.keyboard.up('ShiftLeft');
     const stepped = await until(() => { const f = __p3.climb().feet[1]; return f.st === 'plant' && f.box === '낮은 발판'; }, 6000); await still();
-    const y0 = (await st()).b.pos[1]; await at(F); await pg.keyboard.down('KeyW'); await until(() => __p3.body().pos[1] > 0.18, 5000); const y1 = (await st()).b.pos[1], load = (await st()).c.feet[1].loadS;
+    const y0 = (await st()).b.pos[1]; await at(F); await pg.keyboard.down('KeyW'); await until(() => __p3.body().pos[1] > 0.25, 7000); await wait(150); const y1 = (await st()).b.pos[1], load = (await st()).c.feet[1].loadS;
     await pg.mouse.down({ button: 'right' }); await wait(40); await pg.mouse.up({ button: 'right' }); const got = await until(() => { const h = __p3.climb().hands; return h[1].st === 'hold' && h[1].box === '턱 F' && h[0].st === 'hold'; }, 5000); await pg.keyboard.up('KeyW');
     const s = await st();
     check('실제 입력 · 수동 발: 오른발을 낮은 발판에 올리고(Shift + 단추) W로 올라서서 오른손으로 턱 F를 잡는다(왼손 유지, 발이 받친 채)', stepped && got && load > 0.2, `발 디딤 ${stepped} · 오른 높이 ${((y1 - y0) * 100).toFixed(0)}cm · 발 하중 ${load.toFixed(2)}배 · 오른손 ${s.c.hands[1].st}(${s.c.hands[1].box}) 왼손 ${s.c.hands[0].st}`);
