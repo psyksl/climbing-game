@@ -1,5 +1,6 @@
 // B4 확인: 뻗는 손·팔이 벽·턱을 지나가지 않는가(스크립트 입력, 사람 손 아님). 손 조작 2(누르는 동안 뻗기)와 1(눌러 보내기)을 여러 자세·움직이는 몸에서 본다.
-// 재는 것(대리 형상): 손목 = 반지름 1.5cm 공, 팔뚝 = 팔꿈치~손목의 다섯 점(반지름 3cm, 손목 바로 옆의 한 점만 1.8cm — 손목 공 1.5cm와 잇는다), 위팔 = 어깨~팔꿈치의 팔꿈치 쪽 세 점(반지름 3cm — 어깨 쪽은 몸통과 같이 벽 앞에 있다).
+// 재는 것(대리 형상. p3d-0.8.3: 그려지는 팔의 굵기로 — 팔뚝 4.5 → 3.6cm, 위팔 5.5 → 4.5cm. 모서리는 둥글게 잰다): 손목 = 가운데 점, 팔뚝 = 팔꿈치~손목의 여섯 점, 위팔 = 팔꿈치 쪽 세 점.
+//   **실제 표면은 test/arm_mesh.mjs가 메시 정점으로 잰다.** 이 시험은 빠른 대리 검사다.
 //   그림의 뼈 자리로 잰다(물리의 손목 자리와 그림이 어긋나면 그것도 잡힌다).
 //   지형 안에 들어가 있던 걸음 수와 가장 깊이, 한 걸음 사이에 손목이 지형을 건너뛴 횟수. 잡은 손의 손목은 턱에 닿아 있으므로 뻗는 손(reach)만 잰다.
 // 사용: node test/reach_sweep.mjs [src가 있는 폴더(기본 = 이 저장소의 proto3d)]   고치기 전과 견줄 때 옛 src 폴더를 준다
@@ -11,14 +12,16 @@ const { buildCharacter } = await imp('rig.js'), { makeWorld, rayHit } = await im
 const rig = buildCharacter(); let sim, W, fail = 0, pass = 0;
 const start = () => { sim = makeSim(rig, makeWorld(), null); W = sim.world; sim.reset({ pos: [-0.9, 0, -2.58], yaw: Math.PI }); };
 const run = (n, inp = {}, cmd = null) => { for (let i = 0; i < n; i++) sim.step({ mx: 0, mz: 0, ...inp, cmd: i === 0 && cmd ? cmd : [] }); };
-const depth = (q, r) => { let d = 0; for (const x of W.boxes) { if (x.kind === 'floor') continue; const m = Math.min(q.x - x.min.x, x.max.x - q.x, q.y - x.min.y, x.max.y - q.y, q.z - x.min.z, x.max.z - q.z) + r; if (m > d) d = m; } return d; };
+// 공(반지름 r)이 상자에 겹친 깊이. 모서리는 둥글게 잰다(게임의 sphereBox와 같은 식)
+const depth = (q, r) => { let d = 0; for (const x of W.boxes) { if (x.kind === 'floor') continue; const cx = Math.min(Math.max(q.x, x.min.x), x.max.x), cy = Math.min(Math.max(q.y, x.min.y), x.max.y), cz = Math.min(Math.max(q.z, x.min.z), x.max.z), o = Math.hypot(q.x - cx, q.y - cy, q.z - cz);
+  const m = o > 1e-9 ? r - o : Math.min(q.x - x.min.x, x.max.x - q.x, q.y - x.min.y, x.max.y - q.y, q.z - x.min.z, x.max.z - q.z) + r; if (m > d) d = m; } return d; };
 const wp = n => rig.bones[n].getWorldPosition(new THREE.Vector3());
 // 한 장면: setup() 뒤 steps걸음 동안 매 걸음 step(k)가 입력을 주고, 뻗는 손(들)을 잰다
 function scene(name, setup, step, steps, need = 0.5) {
   start(); setup(); const M = { n: 0, wrist: 0, fore: 0, upper: 0, dW: 0, dF: 0, dU: 0, tunnel: 0 }, prev = [null, null];
   for (let k = 0; k < steps; k++) { const s = step(k) || {}; run(1, s.inp || {}, s.cmd || null);
     sim.climb.hands.forEach((h, i) => { if (h.st !== 'reach') { prev[i] = null; return; } M.n++; const sd = i ? 'R' : 'L', sh = wp('upperArm.' + sd), e = wp('foreArm.' + sd), w = wp('hand.' + sd);
-      const dw = depth(h.w, 0), df = Math.max(...[[0.15, 0.03], [0.35, 0.03], [0.55, 0.03], [0.75, 0.03], [0.9, 0.018]].map(([t, r]) => depth(e.clone().lerp(w, t), r)), depth(w, 0)), du = Math.max(...[0.5, 0.7, 0.9].map(t => depth(sh.clone().lerp(e, t), 0.03)));
+      const dw = depth(h.w, 0), df = Math.max(...[0.1, 0.25, 0.4, 0.55, 0.7, 0.85].map(t => depth(e.clone().lerp(w, t), 0.045 - 0.009 * t)), depth(w, 0)), du = Math.max(...[0.5, 0.7, 0.9].map(t => depth(sh.clone().lerp(e, t), 0.055 - 0.01 * t)));
       if (dw > 0.002) { M.wrist++; M.dW = Math.max(M.dW, dw); } if (df > 0.002) { M.fore++; M.dF = Math.max(M.dF, df); } if (du > 0.002) { M.upper++; M.dU = Math.max(M.dU, du); }
       if (prev[i] && rayHit(W, prev[i], h.w) < 1 && depth(prev[i], 0) <= 0.002 && dw <= 0.002) M.tunnel++; prev[i] = h.w.clone(); }); }
   const ok = M.n >= steps * need && M.wrist === 0 && M.fore === 0 && M.upper === 0 && M.tunnel === 0; if (ok) pass++; else fail++;

@@ -46,7 +46,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   // 벽: 우클릭은 누르는 순간 오른손
   await click(A.R, 'right'); await handIs(1, 'hold');
   { const s = await st(); check('벽 문맥: 우클릭 = 오른손(누르는 순간)', s.c.hands[1].st === 'hold'); await shot('1_두손_잡음'); }
-  { await wait(300); const t = (await P(() => __p3.tagsText())).join(' | '); check('진단 표시(임시): 잡은 손의 이름표에 하중과 그 손의 한계가 함께 나온다(둘 다 몸무게의 배수)', /잡음 [0-9.]+배 \/ 한계 0\.65배/.test(t.replace(/\s+/g, ' ')), t.replace(/\s+/g, ' ').slice(0, 120)); }
+  { await wait(300); const t = (await P(() => __p3.tagsText())).join(' | '); check('진단 표시(임시): 잡은 손의 이름표에 하중과 그 손의 한계가 함께 나온다(둘 다 몸무게의 배수)', /잡음 하중 [0-9.]+ \/ 한계 0\.65/.test(t.replace(/\s+/g, ' ')), t.replace(/\s+/g, ' ').slice(0, 120)); }
   // 시점 보기 모드: 조작이 모두 멈추고 우클릭 끌기로 시점만 돈다
   await key('KeyV', 80); await wait(100);
   { const n0 = await tries(), s0 = await st(); await pg.keyboard.down('Space'); await pg.keyboard.down('KeyQ'); await pg.keyboard.down('KeyW'); await wait(150); const mid = await st(); await pg.keyboard.up('Space'); await pg.keyboard.up('KeyQ'); await pg.keyboard.up('KeyW');
@@ -144,6 +144,12 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
       const s9 = await st(), L9 = (await log()).slice(n9);
       check(`B2: 뻗는 중에 ${nm} → 오른손은 거둬지고(새로 잡지 않음) 왼손은 그대로. 그 손 자리에 잠깐 "보내기 취소"가 보인다(임시 표시)`, r0 && s9.c.hands[1].st === 'free' && s9.c.hands[0].st === 'hold' && L9.some(x => /^cancel 오른손/.test(x)) && !L9.some(x => /^grab 오른손/.test(x)) && /오른손 보내기 취소/.test(tg9), `오른손 ${s9.c.hands[1].st} · 왼손 ${s9.c.hands[0].st} · ${L9.join(' | ').slice(0, 90)}`); }
     await P(() => __p3.opt({ handMode: 1 })); }
+  { // 팔 경로 막힘 표시(임시 모양, GPT 답): 손 조작 2로 오른손을 턱 A 바로 위 벽면으로 뻗으면 팔뚝이 턱에 걸린다 → 그 손 이름표에 "팔 경로 막힘"이 뜬다(그냥 멈춘 것처럼 보이지 않게)
+    await P(() => __p3.opt({ handMode: 2 })); await wallStart(); await click(A.L); await handIs(0, 'hold'); await still();
+    await at([-0.95, 2.05, -3.0]); await pg.mouse.down({ button: 'right' }); await handIs(1, 'reach'); const seen = await until(() => __p3.tagsText().some(t => /팔 경로 막힘/.test(t)), 4000), blk = await P(() => __p3.climb().hands[1].armBlock);
+    await pg.mouse.up({ button: 'right' }); await wait(600); const L = await log();
+    check('팔 경로 막힘: 턱 바로 위 벽면으로 뻗어 팔뚝이 턱에 걸리면 그 손 이름표에 "팔 경로 막힘"이 보이고, 떼면 헛손질로 끝난다(왼손은 그대로)', seen && blk && (await st()).c.hands[0].st === 'hold', `표시 ${seen} · 상태 ${blk} · ${L.slice(-2).join(' | ')}`);
+    await P(() => __p3.opt({ handMode: 1 })); await key('KeyQ'); await until(() => __p3.body().onGround && !__p3.climb().on); await wait(300); }
   { // B1: 달리기 키(와 앞으로)를 누른 채 뛰고, 달리기 키를 떼지 않은 채 왼쪽 단추 → 손 명령이어야 한다(전에는 발 명령이 나가 "공중에서는 발을 보낼 수 없음"으로 거부됐다)
     await wallStart(); await at(A.L); const n0 = (await log()).length;
     await pg.keyboard.down('ShiftLeft'); await pg.keyboard.down('KeyW'); await wait(60); await pg.keyboard.down('Space'); await until(() => !__p3.body().onGround, 2000); await wait(40);

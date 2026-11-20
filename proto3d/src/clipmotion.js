@@ -91,7 +91,7 @@ export function makeClipState(set, rig, body) {
     act: { kind: 'none', w: 0, tt: 0, tt0: 0, xf: 1, pu: 0, rate: 1, v0: 0, u: 0, fallW: 0, runW: 0, landK: 1, hs: 0 }, // 점프 층: kind = none/charge/push/air/land, tt = 점프 동작의 시각(초)
     G: Object.assign(newSnap(rig), { kind: [null, null] }), // G = 자작에게 넘겨준 순간의 최종 자세(얼려 둔 것)
     P0: newSnap(rig), F: newSnap(rig), // P0 = 이번 걸음의 자작 자세, F = 넘겨받은 순간의 자작 자세(얼려 둔 것)
-    feet: ['L', 'R'].map(s => ({ s, con: false, skip: false, kind: 'toe', lock: null, off: V(), yawOff: 0, gOff: 0, step: null, last: null, lastQ: new THREE.Quaternion() })), lim: 0, limOn: false, hRel: null };
+    feet: ['L', 'R'].map(s => ({ s, con: false, skip: false, kind: 'toe', lock: null, off: V(), yawOff: 0, gOff: 0, step: null, last: null, lastQ: new THREE.Quaternion() })), lim: 0, limOn: false, hRel: null, hipW: 0 };
 }
 
 // 상태 진행(고정 걸음마다, stepMotion 뒤): 누가 맡는지(C.w), 걸음 위상, 섞는 몫
@@ -120,11 +120,13 @@ export function stepClip(C, M, body, input, dt, enabled) {
     const a = C.act, m = W.jump.marks, ev = t => body.events.find(e => e.type === t);
     if (ev('takeoff')) { a.v0 = ev('takeoff').vy; a.hs = gs; a.y0 = body.pos.y; a.apex = body.pos.y; } if (ev('walkoff')) { a.v0 = 0; a.hs = gs; }
     if (!body.onGround) a.apex = Math.max(a.apex ?? body.pos.y, body.pos.y);
-    const J = W.jump; if (ev('push')) { a.tt0 = C.cw > 0.15 ? J.timeFor(J.hipAt(m.G) - 0.30 * C.cw, 0, m.A) : 0; C.limOn = C.cw > 0.15; }
+    const J = W.jump; if (ev('push')) { a.tt0 = C.cw > 0.15 ? J.timeFor(J.hipAt(m.G) - 0.30 * C.cw, 0, m.A) : 0; C.limOn = C.cw > 0.15; a.tuckW = C.limOn ? 0 : 1; }
     const pushD = k => (2.0 + 1.1 * k) * (0.14 + 0.10 * k) / 2; // 미는 동안 엉덩이가 올라가야 하는 거리 = 뛰는 속도 × 미는 시간 / 2(고르게 빨라질 때). controller.js의 JUMP_V0·V1, PUSH_T0·T1과 같은 값
     if (ev('land')) { a.kind = 'land'; a.tt = m.LD; a.landK = clamp(ev('land').impact / CLIP.LAND_V, 0.3, 1); a.rate = clamp(ev('land').impact / (a.landK * 4 * m.rise / (m.LD - m.G)), 0.6, 1.6); } // 착지 동작의 빠르기: 동작 속 점프(오른 높이 rise)의 내려앉는 빠르기 = 4·rise/공중 시간. 물리의 내려앉는 빠르기가 그보다 느리면 그만큼 느리게 튼다(엉덩이 빠르기가 이어지게)
-    else if (!body.onGround) { a.kind = 'air'; a.u = a.v0 > 0.3 ? (body.vel.y > 0 ? 0.5 * (1 - body.vel.y / a.v0) : 0.5 + 0.5 * -body.vel.y / Math.sqrt(2 * 9.81 * Math.max(0.02, a.apex - a.y0))) : 1 + body.airT / 0.25; a.tt = lerp(m.G, m.LD, Math.min(a.u, 1)); a.fallW = clamp((a.u - 1) / 0.35, 0, 1); }
-    else if (body.push) { a.kind = 'push'; const pu = clamp((body.push.t + dt) / body.push.dur, 0, 1), h0 = J.hipAt(a.tt0); a.tt = J.timeFor(h0 + (J.hipAt(m.G) - h0) * pu * pu, m.A, m.G); a.xf = smooth(clamp(pu / 0.35, 0, 1)); a.pu = pu; }
+    else if (!body.onGround) { a.kind = 'air'; a.u = a.v0 > 0.3 ? (body.vel.y > 0 ? 0.5 * (1 - body.vel.y / a.v0) : 0.5 + 0.5 * -body.vel.y / Math.sqrt(2 * 9.81 * Math.max(0.02, a.apex - a.y0))) : 1 + body.airT / 0.25; // 웅크린 채 뛴 직후에는 공중 동작(무릎을 당기는 자세)으로 넘어가는 것을 늦춘다(p3d-0.8.3): 엉덩이가 다 올라와 다리가 펴질 때까지(C.limOn) 뜨는 장면의 자세에 머물고, 그 뒤 0.1초쯤에 걸쳐 공중 자세로 섞인다(a.tuckW).
+      // 늦추지 않으면 펴지던 다리가 0.72에서 멈춘 채 곧바로 접힌다(다리 길이비. 선 채 뛰면 0.98에서 접기 시작한다). 낮게 뛰어 곧 내려설 때는 내려서기 전에 공중 자세로 다 넘어가 있게 한다(u 0.6~0.9)
+      a.tt = lerp(m.G, m.LD, Math.min(a.u, 1)); a.tuckW = Math.min(1, Math.max(C.limOn ? 0 : (a.tuckW ?? 1) + 6 * dt, clamp((a.u - 0.6) / 0.3, 0, 1))); a.fallW = clamp((a.u - 1) / 0.35, 0, 1); }
+    else if (body.push) { a.kind = 'push'; const pu = clamp((body.push.t + dt) / body.push.dur, 0, 1), h0 = J.hipAt(a.tt0); a.tt = J.timeFor(h0 + (J.hipAt(m.G) - h0) * (C.limOn ? pu : pu * pu), m.A, m.G); a.xf = smooth(clamp(pu / 0.35, 0, 1)); a.pu = pu; }
     // ↑ 엉덩이가 고르게 빨라지며 올라가 뜨는 순간 뛰는 속도가 된다. 동작의 "올라가는 쪽"(가장 낮은 장면 뒤)에서 같은 높이를 찾아 쓰고, 모으던 자세(내려가는 쪽, tt0)에서 그쪽으로 미는 시간의 첫 35% 동안 넘어간다
     else if (body.charging) { a.kind = 'charge'; const k = clamp(body.charge / 0.6, 0, 1); a.tt = J.timeFor(J.hipAt(m.G) - pushD(k), 0, m.A); } // 모은 만큼만 웅크린다: 그 깊이에서 밀면 뜨는 순간의 빠르기가 물리의 뛰는 속도와 맞는다(동작의 가장 낮은 장면까지 가지 않는다)
     else if (a.kind === 'land') { a.tt += dt * a.rate; if (a.tt >= W.jump.dur - 0.05 || (gs > 1.0 && a.tt > m.LD + 0.15)) a.kind = 'none'; } // 움직이고 있으면 착지를 일찍 마친다(동작을 빨리 감지 않는다. 빨리 감으면 엉덩이가 내려앉는 빠르기가 물리보다 커진다)
@@ -136,6 +138,8 @@ export function stepClip(C, M, body, input, dt, enabled) {
     const wT = a.kind === 'none' ? 0 : a.kind === 'land' ? a.landK * moveK * (1 - smooth(clamp((a.tt - m.B) / Math.max(0.05, W.jump.dur - 0.05 - m.B), 0, 1))) : a.kind === 'air' ? 1 : moveK; // 착지: 가장 낮은 장면을 지나면 걷기·서 있기 쪽으로 풀린다
     a.w += (wT - a.w) * (1 - Math.exp(-(wT > a.w ? (a.kind === 'air' ? 10 : a.kind === 'push' ? 8 : lerp(18, 3, C.cw)) : 9) * dt)); // 공중 자세로는 조금 천천히(달리다 뜨면 달리는 자세에서 넘어가야 해서 한 걸음에 많이 바뀐다)
     if (a.w < 1e-3) a.w = 0; // 깊이 웅크린 채 모으기 시작하면 천천히 올라온다(엉덩이가 한 번에 솟지 않게)
+    // 웅크린 채 뛸 때의 엉덩이 높이는 자세(회전)보다 빨리 점프 동작 쪽으로 넘어간다(p3d-0.8.3). 실제 오르는 빠르기는 아래 poseClip의 한계(C.lim)가 정한다
+    C.hipW = C.limOn && (a.kind === 'push' || a.kind === 'air') ? C.hipW + (1 - C.hipW) * (1 - Math.exp(-45 * dt)) : Math.max(0, C.hipW - 6 * dt);
   }
   if (body.onGround && gs > 0.02) { const p = C.phase + gs * dt / C.stride; if (p >= 1) C.turns = (C.turns + 1) % 2; C.phase = p % 1; } // turns = 지금이 짝수 번째 주기인지 홀수 번째인지(두 주기짜리 동작용)
   C.idleT += dt; C.lastSpeed = gs;
@@ -165,12 +169,13 @@ export function poseClip(C, M, body, world, groundAt, dt) {
   if (C.cw > 0) { sample(W.crouchIdle, C.idleT / W.crouchIdle.dur, C.Bp); if (C.wLocC > 1e-3) { sample(W.sneak, cyc(W.sneak, C.phase, C.turns), C.Cp); mix(C.Bp, C.Cp, C.wLocC, C.Bp); } mix(A, C.Bp, smooth(C.cw), A); } // 웅크림
   if (act.w > 0) { // 점프 층
     const m = W.jump.marks; sampleAt(W.jump, act.tt, C.Bp);
+    if (act.kind === 'air' && (act.tuckW ?? 1) < 1) { sampleAt(W.jump, m.G, C.Dp); mix(C.Dp, C.Bp, smooth(act.tuckW), C.Bp); } // 웅크린 채 뛴 직후: 뜨는 장면의 자세에서 공중 자세로
     if (act.kind === 'push') { // 밀기: 다리·엉덩이는 높이를 맞춘 시각(act.tt), 윗몸(팔 흔들기)은 가장 낮은 장면 → 뜨는 장면을 미는 진행만큼. 모으던 자세에서 그쪽으로 넘어간다
       sampleAt(W.jump, lerp(m.A, m.G, act.pu), C.Cp); UPPER(C.set.names).forEach(i => C.Bp.q[i].copy(C.Cp.q[i]));
       if (act.xf < 1) { sampleAt(W.jump, act.tt0, C.Dp); mix(C.Dp, C.Bp, act.xf, C.Bp); } }
     if (act.kind === 'air' || act.runW > 1e-3 || act.fallW > 1e-3) { if (act.runW > 1e-3) { const mr = W.runJump.marks; sampleAt(W.runJump, lerp(mr.TO, mr.LD, clamp((act.tt - m.G) / (m.LD - m.G), 0, 1)), C.Cp); mix(C.Bp, C.Cp, act.runW, C.Bp); }
       if (act.fallW > 1e-3) { sample(W.fall, C.idleT / W.fall.dur, C.Cp); C.Cp.hip.y = C.Bp.hip.y; mix(C.Bp, C.Cp, smooth(act.fallW), C.Bp); } }
-    mix(A, C.Bp, smooth(act.w), A);
+    { const y0 = A.hip.y; mix(A, C.Bp, smooth(act.w), A); if (C.hipW > smooth(act.w)) A.hip.y = lerp(y0, C.Bp.hip.y, C.hipW); }
   }
   qYaw.setFromAxisAngle(UP, body.yaw);
   const hl = A.hip.clone().applyQuaternion(qYaw), hipClip = V(hl.x, C.gy + A.hip.y, hl.z); // 뿌리(rig.root)는 몸 자리의 땅에 있다
@@ -232,7 +237,10 @@ export function poseClip(C, M, body, world, groundAt, dt) {
     if (f.step) { const u = clamp(f.step.t / CLIP.RESTEP_T, 0, 1), e = 1 - smooth(u); T.addScaledVector(f.step.off0, e); T.y += CLIP.RESTEP_LIFT * Math.sin(Math.PI * u); f.yawOff = f.step.yaw0 * e; dy = f.yawOff; }
     else if (changed && f.last) f.off.copy(f.lock ? f.last : softInv(keepLen(f, hipJd), hipJd)).sub(T); // 고정·뗌·축 바꿈의 순간: 바로 앞 자리에서 이어서(떼는 발은 당기기 전의 자리로 되돌려 넣는다 → 당긴 뒤가 바로 앞 자리와 같다)
     const fin = T.clone().add(f.off);
-    if (!f.lock) fin.copy(soft(fin, hipJd)); // 떠 있는 발: 다리가 다 펴지는 거리에 가까워지면 목표를 부드럽게 당긴다(다 편 다리는 발목이 조금만 움직여도 무릎 각도가 크게 바뀐다). 디딘 발은 당기지 않는다(엉덩이를 낮춰 맞춘다)
+    if (!f.lock) fin.copy(soft(fin, hipJd));
+    // 떠 있는 발이 땅 밑으로 내려가지 않게 한다(p3d-0.8.3). 웅크린 자세와 낮은 걸음을 섞은 자세에서는 옮기는 발의 발볼이 땅 밑 4~5cm까지 내려갔다(섞은 자세의 엉덩이 높이와 다리 각도가 서로 맞지 않는다).
+    // 발볼·뒤꿈치 가운데 낮은 쪽이 땅(그 자리의 높이)에 닿으면 그만큼만 발목을 올린다. 공중에서는 하지 않는다
+    if (!f.lock && body.onGround) { let low = 0; for (const k of ['toe', 'heel']) { const q = LOCAL[k].clone().applyQuaternion(fqOf(dy)).add(fin), d = q.y - SOLE - gAt(q.x, q.z); if (d < low) low = d; } if (low < 0) fin.y -= low; } // 떠 있는 발: 다리가 다 펴지는 거리에 가까워지면 목표를 부드럽게 당긴다(다 편 다리는 발목이 조금만 움직여도 무릎 각도가 크게 바뀐다). 디딘 발은 당기지 않는다(엉덩이를 낮춰 맞춘다)
     f.off.multiplyScalar(Math.exp(-(f.lock ? CLIP.SETTLE : 16) * dt)); if (f.off.lengthSq() < 1e-10) f.off.set(0, 0, 0);
     const fqFin = fqOf(dy);
     f.last = fin.clone(); f.lastQ.copy(fqFin);
@@ -247,10 +255,12 @@ export function poseClip(C, M, body, world, groundAt, dt) {
   let need = 0; C.feet.forEach((f, i) => { if (!f.lock) return; const v = tg[i].fin.clone().sub(worldPos(B[`upLeg.${f.s}`])), d = v.length(), R = softD(d), h2 = v.x * v.x + v.z * v.z; if (d > R) need = Math.max(need, h2 >= R * R ? CLIP.DROP_MAX_PUSH : -v.y - Math.sqrt(R * R - h2)); });
   need = clamp(need, 0, pushing ? CLIP.DROP_MAX_PUSH : CLIP.DROP_MAX); C.drop = need > C.drop ? need : C.drop + (need - C.drop) * (1 - Math.exp(-(act.kind === 'air' ? 8 : 20) * dt)); hipClip.y -= C.drop;
   // 웅크린 채 뛸 때의 엉덩이 오름 제한(p3d-0.8.2, B3): 웅크려 있어도 0.08초 뒤에 뜬다. 그 시간에 다리를 다 펴면 엉덩이가 한 걸음에 3cm 넘게 솟으므로,
-  // 미는 동안에는 "고르게 빨라져 뜨는 순간 뛰는 속도"까지만 올라가고(오른 거리 = 뛰는 속도 × 미는 시간 ÷ 2) 남은 펴기는 공중에서 한다(몸이 오르는 빠르기 + 펴는 빠르기 ≤ 3.5m/s).
+  // p3d-0.8.2: 미는 동안 "고르게 빨라져 뜨는 순간 뛰는 속도"까지만(오른 거리 = 뛰는 속도 × 미는 시간 ÷ 2 ≈ 12cm) → 다리가 거의 펴지지 않은 채 떠서 "웅크린 인형이 떠오르는" 모습이었다(GPT 검토).
+  // p3d-0.8.3: 미는 동안 처음 0.02초에 뛰는 속도 가까이(3.4m/s)까지 올리고 그 빠르기로 민다(오른 거리 ≈ 23cm. 발은 디딘 채 무릎·고관절이 펴지는 것이 보인다). 엉덩이의 빠르기가 뜨는 걸음의 몸 빠르기(3.1m/s)와 이어진다.
+  // 남은 펴기는 공중에서 한다(몸이 오르는 빠르기 + 펴는 빠르기 ≤ 3.5m/s).
   // 발은 섞은 자세의 자리 그대로 두고 엉덩이만 늦추므로 다리는 그만큼 굽은 채로 뜬다. 물리(몸의 자리·뜨는 시각)는 건드리지 않는다
   { const rel = hipClip.y - C.gy;
-    if (C.limOn && C.hRel !== null) { const cap = act.kind === 'push' ? 3.1 * clamp(act.pu ?? 0, 0, 1) : act.kind === 'air' ? Math.max(0.3, 3.5 - Math.max(0, body.vel.y)) : 0.6, fin = Math.min(rel, C.hRel + cap * dt); C.lim = rel - fin; if (C.lim < 1e-4 && act.kind !== 'push') { C.lim = 0; C.limOn = false; } }
+    if (C.limOn && C.hRel !== null) { const cap = act.kind === 'push' ? 3.4 * clamp((act.pu ?? 0) * 4, 0, 1) : act.kind === 'air' ? Math.max(0.3, 3.5 - Math.max(0, body.vel.y)) : 0.6, fin = Math.min(rel, C.hRel + cap * dt); C.lim = rel - fin; if (C.lim < 1e-4 && act.kind !== 'push') { C.lim = 0; C.limOn = false; } }
     else C.lim = 0;
     hipClip.y -= C.lim; C.hRel = rel - C.lim; }
   // 마무리: 자작 자세와 섞고(넘겨받는 동안), 다리는 섞은 발목 목표로 IK

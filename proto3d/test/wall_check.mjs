@@ -6,7 +6,7 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import * as THREE from 'three';
 const HERE = path.dirname(fileURLToPath(import.meta.url)), SRC = path.resolve(HERE, '../src'), imp = f => import(pathToFileURL(path.join(SRC, f)).href);
-const { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { limbState, CL, probeHand } = await imp('climb.js'), { PHY } = await imp('controller.js');
+const { buildCharacter, DIM } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { limbState, CL, probeHand } = await imp('climb.js'), { PHY } = await imp('controller.js'), clamp = THREE.MathUtils.clamp;
 const CLP = path.resolve(HERE, '../assets_local/clips.json'), useClip = process.env.MODE === 'clip';
 if (useClip && !fs.existsSync(CLP)) { console.log('clips.json 없음 → 건너뜀'); process.exit(0); }
 const clips = useClip ? JSON.parse(fs.readFileSync(CLP, 'utf8')) : null, rig = buildCharacter(), DT = PHY.DT, G = PHY.G;
@@ -242,13 +242,15 @@ console.log(`실패 ${fails}`);
   const go = (feetCmd, wT, rock = true) => { start([-0.9, 0, -2.58]); sim.opt.rockOver = rock; run(150, {}, [hand(0, A.L)]); run(150, {}, [hand(1, A.R)]); for (const c of feetCmd) run(260, {}, [c]);
     const y0 = sim.body.pos.y, x0 = sim.body.pos.x, i = feetCmd.length ? feetCmd[0].i : 1, k0 = knee(i); if (wT) run(wT, { cy: 1 });
     const o = { 오른_높이_cm: +((sim.body.pos.y - y0) * 100).toFixed(1), 옆으로_간_거리_cm: +((sim.body.pos.x - x0) * 100).toFixed(1), 디딘_다리_길이비_처음: +k0.toFixed(2), 손을_보낼_때: +knee(i).toFixed(2), 디딘_발_하중_몸무게배: +(L().feet[i].loadS).toFixed(2) }; const k1 = rec.length;
-    run(1, wT ? { cy: 1 } : {}, [hand(1, F)]); run(220, wT ? { cy: 1 } : {}); run(150);
+    // 잡는 순간의 값은 잡기 이벤트가 생긴 그 걸음에 적는다(p3d-0.8.3, GPT 지적: 전에는 다 가라앉은 뒤의 값을 "잡을 때"라고 적었다). 다리 길이비 = 고관절–발목 거리 ÷ 다리 길이이며 무릎이 펴진 퍼센트가 아니다
+    let atGrab = null; const kneeDeg = r => { const a = DIM.thigh, b = DIM.shin, d = r * (a + b); return Math.acos(clamp((a * a + b * b - d * d) / (2 * a * b), -1, 1)) * 180 / Math.PI; }, snap = () => ({ 걸음: sim.tick, 다리_길이비: +knee(i).toFixed(3), 무릎각_도: +kneeDeg(knee(i)).toFixed(0), 디딘_발_하중: +(sim.climb.feet[i].load || 0).toFixed(2), 손_하중: sim.climb.hands.map(h => +(h.load || 0).toFixed(2)) }), sent = snap();
+    run(1, wT ? { cy: 1 } : {}, [hand(1, F)]); for (let q = 0; q < 370; q++) { run(1, q < 220 && wT ? { cy: 1 } : {}); if (!atGrab && sim.climb.events.some(e => e.type === 'grab' && e.box === '턱 F')) atGrab = snap(); }
     const g = evs(k1).find(x => x.type === 'grab' && x.box === '턱 F'), tr = evs(k1).find(x => x.type === 'try');
-    return { ...o, 잡음: !!g && hold(0) && hold(1) && L().hands[1].box === '턱 F', 손을_보낸_뒤_잡기까지_초: g && tr ? +(g.t - tr.t).toFixed(2) : null, 잡을_때_다리_길이비: g ? +knee(i).toFixed(2) : null, 끝: evs(k1).filter(x => /grab|reject|slip/.test(x.type)).map(x => x.type + (x.why ? '(' + x.why + ')' : '')).join(' → ').slice(0, 80) }; };
+    return { ...o, 잡음: !!g && hold(0) && hold(1) && L().hands[1].box === '턱 F', 손을_보낸_뒤_잡기까지_초: g && tr ? +(g.t - tr.t).toFixed(2) : null, 손을_보내는_걸음: sent, 잡는_걸음: atGrab, 다_가라앉은_뒤: g ? snap() : null, 끝: evs(k1).filter(x => /grab|reject|slip/.test(x.type)).map(x => x.type + (x.why ? '(' + x.why + ')' : '')).join(' → ').slice(0, 80) }; };
   const R = { '두 발 바닥 · W 없음': go([], 0), '두 발 바닥 · W 2초': go([], 240), '왼발을 넓은 발판에 · W 2초': go([foot(0, [-1.32, 0.3, -2.75])], 240), '오른발을 낮은 발판에 · W 없음': go([foot(1, [-0.3, 0.5, -2.93])], 0), '오른발을 낮은 발판에 · W 2초': go([foot(1, [-0.3, 0.5, -2.93])], 240), '오른발을 낮은 발판에 · W 1초': go([foot(1, [-0.3, 0.5, -2.93])], 120), '(비교) 오른발을 낮은 발판에 · W 2초 · 엉덩이 옮기기 끔': go([foot(1, [-0.3, 0.5, -2.93])], 240, false) };
   out.cases['16 발 선택이 결과를 가르는 장면(턱 A → 턱 F)'] = R; const ok = R['오른발을 낮은 발판에 · W 2초'];
   check('턱 A → 턱 F: 바닥에 선 채로는(W를 눌러도), 왼발을 넓은 발판에 올려도 닿지 않는다', !R['두 발 바닥 · W 없음'].잡음 && !R['두 발 바닥 · W 2초'].잡음 && !R['왼발을 넓은 발판에 · W 2초'].잡음, `바닥 ${R['두 발 바닥 · W 2초'].끔 || R['두 발 바닥 · W 2초'].끝} · 넓은 발판 ${R['왼발을 넓은 발판에 · W 2초'].끝}`);
-  check('턱 A → 턱 F: 오른발을 낮은 발판에 올리고 W로 올라서면 닿는다(두 손으로 잡은 채 끝남). 발이 받친 채 다리가 펴지며 오른다', ok.잡음 && ok.디딘_발_하중_몸무게배 > 0.2 && ok.손을_보낼_때 > ok.디딘_다리_길이비_처음 + 0.05, `오른 높이 ${ok.오른_높이_cm}cm · 옆으로 ${ok.옆으로_간_거리_cm}cm · 다리 길이비 ${ok.디딘_다리_길이비_처음} → ${ok.손을_보낼_때}(손을 보낼 때) → ${ok.잡을_때_다리_길이비}(잡을 때) · 발 하중 ${ok.디딘_발_하중_몸무게배}배 · 손 보내고 ${ok.손을_보낸_뒤_잡기까지_초}초 뒤 잡음`);
+  check('턱 A → 턱 F: 오른발을 낮은 발판에 올리고 W로 올라서면 닿는다(두 손으로 잡은 채 끝남). 발이 받친 채 다리가 펴지며 오른다', ok.잡음 && ok.디딘_발_하중_몸무게배 > 0.2 && ok.손을_보낼_때 > ok.디딘_다리_길이비_처음 + 0.05, `오른 높이 ${ok.오른_높이_cm}cm · 옆으로 ${ok.옆으로_간_거리_cm}cm · 다리 길이비 ${ok.디딘_다리_길이비_처음} → ${ok.손을_보낼_때}(손을 보낼 때) → ${ok.잡는_걸음 ? ok.잡는_걸음.다리_길이비 + '(잡는 걸음 @' + ok.잡는_걸음.걸음 + ', 무릎각 ' + ok.잡는_걸음.무릎각_도 + '°)' : '-'} → ${ok.다_가라앉은_뒤 ? ok.다_가라앉은_뒤.다리_길이비 + '(다 가라앉은 뒤)' : '-'} · 발 하중 ${ok.디딘_발_하중_몸무게배}배 · 손 보내고 ${ok.손을_보낸_뒤_잡기까지_초}초 뒤 잡음`);
   console.log('      (자료) ' + Object.entries(R).map(([k, v]) => `${k}: ${v.잡음 ? '잡음' : '못 잡음'}(오른 높이 ${v.오른_높이_cm}cm)`).join(' · ')); }
 // ── 17. 당겨 오른 뒤 한 손을 놓고 매달렸다가 다시 잡기(누르는 때를 바꿔 가며): 무릎·발이 벽에 들어가지 않는다 ──
 // p3d-0.8.1에서 찾은 퇴행의 재발 방지: 늘어뜨린 발의 쉬는 자리를 벽 쪽으로 옮겼더니 발이 벽 바로 앞 바닥에 디뎌 굽힌 무릎이 벽에 들어갔다(실제 입력 시험이 먼저 잡았고, 위의 장면들은 이 누르는 때를 덮지 못했다)

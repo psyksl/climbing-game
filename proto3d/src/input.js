@@ -15,14 +15,15 @@ const DEFAULT = [
   { id: 'moveR', ctx: ['ground'], keys: ['KeyD'], label: '오른쪽' },
   { id: 'run', ctx: ['ground'], keys: ['ShiftLeft'], label: '달리기(누른 채)' },
   // p3d-0.8.1(GPT 결정): 달리기는 발 지정을 겸하지 않는다. 지상에서 발부터 올리려면 따로 둔 이 동작을 누른 채 클릭한다(벽에서는 footMod)
-  { id: 'footGround', ctx: ['ground'], keys: ['KeyX'], label: '누른 채 = 손 대신 발(땅에 서서 발부터 올리기)' },
+  // p3d-0.8.3(GPT 답): 이름은 "발 선택". 지상(footGround)과 벽(footMod)은 같은 논리 동작이다. 기본 키는 그대로(지상 X, 벽 Shift)이고, 둘 다 X로 쓰는 시범 프로필은 주소에 ?footx(저장하지 않는다)
+  { id: 'footGround', ctx: ['ground'], keys: ['KeyX'], label: '발 선택(누른 채 클릭 = 손 대신 발 · 땅에 서서 발부터 올리기)' },
   { id: 'crouch', ctx: ['ground'], keys: ['KeyC'], label: '웅크리기(누른 채)' },
   { id: 'jump', ctx: ['ground', 'wall'], keys: ['Space'], label: '점프(오래 누르면 높이). 벽에서는 A/D·W·S로 방향' },
   { id: 'limbL', ctx: ['ground', 'wall'], keys: ['Mouse0'], contact: true, label: '왼손 보내기(겨눈 턱으로)' },
   { id: 'limbR', ctx: ['ground', 'wall'], keys: ['Mouse2'], contact: true, label: '오른손 보내기(지상에서는 짧게 누르기)' },
   { id: 'relL', ctx: ['ground', 'wall'], keys: ['KeyQ'], contact: true, label: '왼손 놓기' },
   { id: 'relR', ctx: ['ground', 'wall'], keys: ['KeyE'], contact: true, label: '오른손 놓기' },
-  { id: 'footMod', ctx: ['wall'], keys: ['ShiftLeft'], label: '누른 채 = 손 대신 발(보내기·떼기)' },
+  { id: 'footMod', ctx: ['wall'], keys: ['ShiftLeft'], label: '발 선택(누른 채 클릭·놓기 = 손 대신 발)' },
   { id: 'bodyU', ctx: ['wall'], keys: ['KeyW'], label: '몸 위로' },
   { id: 'bodyD', ctx: ['wall'], keys: ['KeyS'], label: '몸 아래로' },
   { id: 'bodyL', ctx: ['wall'], keys: ['KeyA'], label: '몸 왼쪽(화면 기준)' },
@@ -32,7 +33,7 @@ const DEFAULT = [
   { id: 'camZoom', ctx: ['any'], keys: ['Wheel'], label: '시점 가까이·멀리' },
   { id: 'handMode', ctx: ['any'], keys: ['KeyH'], label: '손 조작 방식 바꾸기(눌러 보내기 ↔ 누르는 동안 뻗기)' },
   { id: 'footAssist', ctx: ['any'], keys: ['KeyF'], label: '발 보조 켬·끔' },
-  { id: 'wallRest', ctx: ['any'], keys: ['KeyJ'], label: '벽 딛기 실험(매달리면 발을 벽에 대고 버팀) 켬·끔 · 기본 끔' },
+  { id: 'wallRest', ctx: ['any'], keys: ['KeyJ'], dev: true, label: '실험: 벽 딛기(매달리면 발을 벽에 대고 버팀) 켬·끔 · 기본 끔' },
   { id: 'wallStart', ctx: ['any'], keys: ['KeyT'], label: '작은 벽 앞에서 시작' },
   { id: 'reset', ctx: ['any'], keys: ['KeyR'], label: '처음 자리로' },
   { id: 'helpAll', ctx: ['any'], keys: ['KeyK'], label: '조작표 모두 보기·접기' },
@@ -73,7 +74,7 @@ export function makeInput(el) {
   el.addEventListener('contextmenu', e => e.preventDefault());
   el.addEventListener('wheel', e => { e.preventDefault(); st.wheel += Math.sign(e.deltaY); }, { passive: false });
   // 그 키 누름이 이 동작을 일으키는가: 문맥이 맞고, 누른 뒤로 문맥이 바뀌지 않았을 때
-  const active = (b, rec) => !!rec && (b.ctx.includes('any') || (b.ctx.includes(st.mode) && rec.mode === st.mode));
+  const active = (b, rec) => !!rec && !rec.dead && (b.ctx.includes('any') || (b.ctx.includes(st.mode) && rec.mode === st.mode));
   const find = id => BIND.find(q => q.id === id);
   const isDown = id => { const b = find(id); return !!b && b.keys.some(k => active(b, down.get(k))); };
   const wasPressed = id => { const b = find(id); return !!b && b.keys.some(k => active(b, pressed.get(k))); };
@@ -84,8 +85,11 @@ export function makeInput(el) {
   // 끌고 있는가(누른 뒤 TAP.PX 넘게 움직임) / 짧게 눌렀다 뗐는가(움직이지 않고 TAP.T초 안에 뗌)
   const dragging = id => { const b = find(id); return !!b && b.keys.some(k => { const r = down.get(k); return active(b, r) && r.moved > TAP.PX; }); };
   const tapped = id => { const b = find(id); return !!b && b.keys.some(k => { const r = released.get(k); return active(b, r) && r.moved <= TAP.PX && r.dur <= TAP.T; }); };
+  // 그 동작의 지금 눌려 있는(또는 이번 프레임에 눌렸다 떼어진) 누름을 버린다(p3d-0.8.3, 취소): 아직 읽지 않은 누름도 명령이 되지 않고, 누른 채 돌아와도 같은 누름이 다시 쓰이지 않는다.
+  // 단추를 뗐다가 다시 눌러야 새 누름이다(눌린 채인 키는 press가 새 기록을 만들지 않는다)
+  const kill = id => { const b = find(id); let n = 0; if (b) for (const k of b.keys) for (const m of [down, pressed, released]) { const r = m.get(k); if (r && !r.dead) { r.dead = true; n++; } } return n > 0; };
   return {
-    down, isDown, wasPressed, wasReleased, pressedWith, dragging, tapped, st,
+    down, isDown, wasPressed, wasReleased, pressedWith, dragging, tapped, kill, st,
     setMode(m) { st.mode = m; },
     endFrame() { pressed.clear(); released.clear(); st.mdx = 0; st.mdy = 0; st.wheel = 0; st.moved = false; },
   };

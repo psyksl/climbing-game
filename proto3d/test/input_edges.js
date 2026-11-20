@@ -1,4 +1,4 @@
-// 입력 전환 구간(B1의 남은 확인, p3d-0.8.2): 뜨는 순간·착지·벽 진입·시점 보기 전환·발 지정 키를 먼저 뗌. 실제 키·마우스 이벤트(헤드리스 브라우저)로 본다.
+// 입력 전환 구간(B1의 남은 확인, p3d-0.8.2): 뜨는 순간·착지·벽 진입·시점 보기 전환·발 지정 키를 먼저 뗌. p3d-0.8.3: 첫 프레임 전의 취소와 누름 하나의 수명 기록. 실제 키·마우스 이벤트(헤드리스 브라우저)로 본다.
 // 스크립트 입력이며 사람 손이 아니다. 실제 시간으로 도는 화면이라 한 번의 통과를 근거로 쓰지 않는다(여러 번 돌려 적는다).
 // 사용: node test/input_edges.js   캡처 빌드: BUILD=climb3d_mocap.html MODE=clip   고치기 전 빌드와 견주려면 BUILD=<옛 빌드의 절대 경로>
 'use strict';
@@ -51,6 +51,21 @@ let fail = 0, pass = 0; const check = (name, ok, detail = '') => { console.log(`
     await wallStart(); await at(FAR); const n0 = (await log()).length;
     await pg.mouse.down({ button: 'right' }); await wait(40); await pg.keyboard.press('KeyV'); await wait(120); await pg.mouse.up({ button: 'right' }); await wait(150); await pg.keyboard.press('KeyV'); await wait(400); const L = (await log()).slice(n0), s = await P(() => __p3.input());
     check('시점 보기 전환: 우클릭을 누른 채 시점 보기로 바꾸고 뗌 → 손 명령 없음(끈 뒤에도 없음)', n(L, /^try/) === 0 && s.mode === 'ground', `문맥 ${s.mode} · 시도 ${n(L, /^try/)}번`); }
+  { // ⑥ 첫 프레임 전의 취소(GPT의 p3d-0.8.2 검토 P1-A): 벽 문맥·손 조작 2에서 오른쪽 단추를 누른 뒤, 다음 화면 프레임이 오기 전에 마우스가 화면을 벗어난다 → 새 뻗기 명령이 생기면 안 된다.
+    // 누름과 벗어남을 한 번의 페이지 실행 안에서 잇달아 낸다(둘 사이에 프레임이 끼지 않는다). 원시 DOM 이벤트이며 사람 손이 아니다
+    await P(() => __p3.opt({ handMode: 2 })); await wallStart(); await at(A.L); await pg.mouse.down({ button: 'left' }); await wait(120); await pg.mouse.up({ button: 'left' }); const held0 = await until(() => __p3.climb().hands[0].st === 'hold', 5000); await until(() => __p3.input().mode === 'wall', 3000); await until(() => Math.hypot(...__p3.body().vel) < 0.3, 4000);
+    const s = await at(A.R), n0 = (await log()).length, G = () => P(() => (__p3.gestures ? __p3.gestures() : [])), g0 = (await G()).length;
+    await pg.evaluate(([x, y]) => { const el = document.querySelector('canvas'); el.dispatchEvent(new MouseEvent('mousedown', { button: 2, clientX: x, clientY: y, bubbles: true, cancelable: true })); document.documentElement.dispatchEvent(new Event('mouseleave')); }, [s.x, s.y]);
+    await wait(500); const mid = await P(() => ({ h: __p3.climb().hands.map(h => h.st), held: __p3.aimHeld ? __p3.aimHeld() : [null, null] })), gNew = (await G()).slice(g0);
+    await pg.evaluate(() => window.dispatchEvent(new MouseEvent('mouseup', { button: 2, bubbles: true }))); await wait(300); const L2 = (await log()).slice(n0), end = await P(() => __p3.climb().hands.map(h => h.st));
+    check('첫 프레임 전의 취소: 누른 뒤 프레임이 오기 전에 화면을 벗어나면 뻗기 명령이 생기지 않고, 떼어도 잡으러 가지 않으며, 잡고 있던 왼손은 그대로다', held0 && n(L2, /^try 오른손/) === 0 && !mid.held[1] && mid.h[1] === 'free' && end[0] === 'hold' && end[1] === 'free', `뻗기 시도 ${n(L2, /^try 오른손/)}번 · 누르는 중 표시 ${mid.held[1]} · 오른손 ${mid.h[1]} → ${end[1]} · 왼손 ${end[0]} · 새 누름 기록 ${gNew.length ? JSON.stringify(gNew.map(g => ({ ctx: g.ctx, limb: g.limb, issued: g.issued, cancelled: g.cancelled }))) : '없음(읽기 전에 버려짐)'}`);
+    // 같은 누름은 다시 쓰이지 않지만, 뗐다가 새로 누르면 듣는다
+    await at(A.R); await pg.mouse.down({ button: 'right' }); const re = await until(() => __p3.climb().hands[1].st === 'reach', 3000); const g2 = (await G()).slice(-1)[0] || {};
+    // ⑦ 프레임 뒤의 취소: 뻗는 중(명령이 나간 뒤)에 화면을 벗어난다 → 거둔다(새로 잡지 않는다). 누름 기록에는 "명령 1번 → 취소"가 남는다
+    const n1 = (await log()).length; await P(() => document.documentElement.dispatchEvent(new Event('mouseleave'))); await wait(400); await pg.mouse.up({ button: 'right' }); await wait(300);
+    const L3 = (await log()).slice(n1), g3 = (await G()).slice(-1)[0] || {}, e3 = await P(() => __p3.climb().hands.map(h => h.st));
+    check('취소 뒤 새로 누르면 듣고(뻗음), 뻗는 중에 화면을 벗어나면 거둔다. 누름 기록: 문맥·대상·명령 1번·취소가 한 줄에 남는다', re && g2 && g2.issued === 1 && n(L3, /^cancel 오른손/) === 1 && n(L3, /^grab 오른손/) === 0 && e3[1] === 'free' && e3[0] === 'hold' && g3.issued === 1 && g3.cancelled === 'mouseleave' && g3.ctx === 'wall' && g3.limb === 'hand', `다시 눌러 뻗음 ${re} · ${show(L3)} · 누름 기록 ${JSON.stringify({ ctx: g3.ctx, limb: g3.limb, issued: g3.issued, cancelled: g3.cancelled })}`);
+    await P(() => __p3.opt({ handMode: 1 })); }
   check('페이지 오류 없음', errs.length === 0, errs.join(' | '));
   console.log(`통과 ${pass} · 실패 ${fail}`); await b.close(); process.exit(fail ? 1 : 0);
 })();
