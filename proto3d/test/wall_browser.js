@@ -121,6 +121,11 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await at(A.R); await pg.mouse.down({ button: 'right' }); await handIs(1, 'reach'); await wait(120); await P(() => window.dispatchEvent(new Event('blur'))); await wait(500); await pg.mouse.up({ button: 'right' }); await wait(300);
     const s2 = await st(), L2 = await log();
     check('B2: 뻗는 중에 창이 포커스를 잃음 → 오른손은 거둬지고 왼손은 그대로', s2.c.hands[1].st === 'free' && s2.c.hands[0].st === 'hold' && /^cancel 오른손/.test(L2.filter(x => /오른손/.test(x)).pop() || ''), `오른손 ${s2.c.hands[1].st} · ${L2.slice(-2).join(' | ')}`);
+    // 나머지 경로: 손 조작 방식 바꾸기(H), 마우스가 화면 밖으로 나감, 창이 가려짐, 키 다시 정하기. 모두 거두기만 하고 새로 잡지 않으며 왼손은 그대로다
+    for (const [nm, fn] of [['손 조작 방식 바꾸기(H)', async () => { await key('KeyH', 80); await wait(200); await key('KeyH', 80); }], ['마우스가 화면 밖으로 나감', () => P(() => document.documentElement.dispatchEvent(new Event('mouseleave')))], ['창이 가려짐', () => P(() => { Object.defineProperty(document, 'hidden', { value: true, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); Object.defineProperty(document, 'hidden', { value: false, configurable: true }); })], ['키 다시 정하기', () => P(() => { __p3.setKeys('helpAll', ['KeyK']); })]]) {
+      await P(() => __p3.opt({ handMode: 2 })); await at(A.R); await pg.mouse.down({ button: 'right' }); const r0 = await handIs(1, 'reach'); await wait(120); const n9 = (await log()).length; await fn(); await wait(450); await pg.mouse.up({ button: 'right' }); await wait(350);
+      const s9 = await st(), L9 = (await log()).slice(n9);
+      check(`B2: 뻗는 중에 ${nm} → 오른손은 거둬지고(새로 잡지 않음) 왼손은 그대로`, r0 && s9.c.hands[1].st === 'free' && s9.c.hands[0].st === 'hold' && L9.some(x => /^cancel 오른손/.test(x)) && !L9.some(x => /^grab 오른손/.test(x)), `오른손 ${s9.c.hands[1].st} · 왼손 ${s9.c.hands[0].st} · ${L9.join(' | ').slice(0, 90)}`); }
     await P(() => __p3.opt({ handMode: 1 })); }
   { // B1: 달리기 키(와 앞으로)를 누른 채 뛰고, 달리기 키를 떼지 않은 채 왼쪽 단추 → 손 명령이어야 한다(전에는 발 명령이 나가 "공중에서는 발을 보낼 수 없음"으로 거부됐다)
     await wallStart(); await at(A.L); const n0 = (await log()).length;
@@ -130,9 +135,17 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     const L = (await log()).slice(n0);
     check('B1: 달리기 키를 누른 채 뛰어 왼쪽 단추 → 왼손 명령(발 명령이 아님)', L.some(x => /^try 왼손/.test(x)) && !L.some(x => /^(try|reject) 왼발/.test(x)), L.filter(x => /^(try|grab|reject)/.test(x)).join(' | ').slice(0, 200));
     // 서서(이동 키 없이) 달리기 키 + 단추는 전처럼 발이다(발부터 올리기)
-    await wallStart(); const n1 = (await log()).length; await pg.keyboard.down('ShiftLeft'); await wait(60); await click([-0.35, 0.5, -2.93]); await wait(500); await pg.keyboard.up('ShiftLeft');
+    await wallStart(); const n1 = (await log()).length; await pg.keyboard.down('KeyX'); await wait(60); await click([-0.35, 0.5, -2.93]); await wait(500); await pg.keyboard.up('KeyX');
     const L3 = (await log()).slice(n1);
-    check('B1: 땅에 서서 이동 키 없이 달리기 키 + 왼쪽 단추 → 전처럼 왼발 명령(발부터 올리기)', L3.some(x => /^try 왼발/.test(x)), L3.join(' | ').slice(0, 160)); }
+    check('B1: 땅에 서서 발 지정 키(따로 둔 동작, 기본 X) + 왼쪽 단추 → 왼발 명령(발부터 올리기)', L3.some(x => /^try 왼발/.test(x)), L3.join(' | ').slice(0, 160));
+    // 달리기 키는 서 있을 때도 발 지정이 아니다(0.8.0의 임시 조건을 없앰): 서서 달리기 키 + 단추 → 손 명령
+    await wallStart(); const n2 = (await log()).length; await pg.keyboard.down('ShiftLeft'); await wait(60); await click(A.L); await wait(600); await pg.keyboard.up('ShiftLeft');
+    const L4 = (await log()).slice(n2);
+    check('B1: 땅에 서서 달리기 키 + 왼쪽 단추 → 손 명령(달리기는 발 지정을 겸하지 않는다)', L4.some(x => /^try 왼손/.test(x)) && !L4.some(x => /^(try|reject) 왼발/.test(x)), L4.filter(x => /^(try|grab|reject)/.test(x)).join(' | ').slice(0, 160));
+    // 미리보기도 같은 판단을 쓴다: 달리기 키를 누른 채 턱을 겨누면 손 미리보기(왼손·오른손 이름)가 뜬다
+    const pv = async k => { await wallStart(); if (k) await pg.keyboard.down(k); await at([-0.35, 0.5, -2.93]); await wait(300); const t = (await P(() => __p3.tagsText())).join(' | '); if (k) await pg.keyboard.up(k); return t; };
+    const tNone = await pv(null), tRun = await pv('ShiftLeft'), tFoot = await pv('KeyX');
+    check('B1: 미리보기도 같은 판단을 쓴다 — 달리기 키를 누른 채 겨누면 아무것도 누르지 않았을 때와 같고(손 기준), 발 지정 키를 누르면 발 미리보기로 바뀐다', tRun === tNone && tFoot !== tNone && /발/.test(tFoot), `누르지 않음 "${tNone.slice(-40)}" · 달리기 "${tRun.slice(-40)}" · 발 지정 "${tFoot.slice(-60)}"`); }
   await key('KeyE'); await until(() => __p3.body().onGround && !__p3.climb().on); await wait(300);
 
   // ── ④ 화면: 뛰어오른 동안 화면을 멈춰 둔다 ──

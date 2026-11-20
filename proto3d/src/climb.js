@@ -193,6 +193,9 @@ export function probeFoot(S, i, pt) {
 // ── 명령: 시도 → (성공 | 거부) → 유지 → 놓기 ──
 export function command(S, c) {
   const K = S.climb, pt = c.p ? V(...c.p) : null;
+  // 직접 뗀 발(userOff)은 사용자가 그 발을 다시 보내거나 보조를 켜고 끌 때(= 보조 다시 시작)까지 보조·벽 딛기가 다시 보내지 않는다.
+  // 시간이 지났거나 손을 옮겼다고 다시 붙이지 않는다(p3d-0.8.1, GPT 결정. 0.7.0은 1.5초 뒤, 0.8.0은 손을 새로 잡으면 다시 보냈다)
+  if (c.type === 'assistResume') { for (const F of K.feet) { F.userOff = false; F.offBox = null; } return; }
   if (c.type === 'release') { if (c.limb === 'hand') releaseHand(S, c.i, '놓음'); else liftFoot(S, c.i, '뗌'); return; }
   if (c.type === 'hand') {
     const H = K.hands[c.i], g = resolveGrip(S.world, pt);
@@ -216,7 +219,7 @@ export function command(S, c) {
   }
   // 누르던 단추를 뗌: 그때 겨눈 곳이 턱이면 잡으러 가고(짧게), 아니면 헛손질
   // 뻗던 손을 거둠(B2): 잡으러 가지 않고 그 손만 놓인 채로 돌아간다. 이미 붙은 다른 접촉은 건드리지 않는다
-  if (c.type === 'handCancel') { const H = K.hands[c.i]; if (H.st === 'reach' && H.drag) { H.rel.copy(H.w).sub(joints(S).sh[H.i]); H.st = 'free'; H.drag = false; H.why = '뻗기를 거둠'; note(S, 'cancel', 'hand', c.i, '뻗기를 거둠'); } return; }
+  if (c.type === 'handCancel') { const H = K.hands[c.i]; if (H.st === 'reach' && H.drag) { H.rel.copy(H.w).sub(joints(S).sh[H.i]); H.st = 'free'; H.drag = false; H.why = '손 보내기 취소'; note(S, 'cancel', 'hand', c.i, '손 보내기 취소'); } return; }
   if (c.type === 'handUp') { const H = K.hands[c.i]; if (H.st === 'reach' && H.drag) { H.drag = false; H.t = 0; H.wait = CL.TRY_T - 0.12; if (!H.edge) reject(S, H, 'hand', '헛손질(잡을 곳이 아님)'); } return; }
   if (c.type === 'foot') {
     const F = K.feet[c.i];
@@ -329,8 +332,6 @@ function limbsStep(S, dt) {
 function grab(S, H) {
   const K = S.climb; H.st = 'hold'; H.drag = false; H.w.copy(H.goal); H.load = 0; H.bad = 0; H.jam = 0; H.why = ''; H.F = null;
   note(S, 'grab', 'hand', H.i, '', { box: H.edge.box.name, grip: H.grip.toArray() });
-  // 직접 뗀 발은 사용자가 그 발을 다시 보내거나 손을 새로 잡을 때까지 보조가 다시 보내지 않는다(전에는 1.5초 뒤 다시 보냈다)
-  for (const F of K.feet) { F.userOff = false; F.offBox = null; }
   if (!K.on) enter(S, S.body.onGround ? '서서 잡음' : '공중에서 잡음');
 }
 // 벽 문맥으로 들어간다(첫 손이 잡힌 순간). 몸의 속도는 그대로. 땅에 서 있었으면 두 발은 지금 디딘 자리의 접촉이 된다

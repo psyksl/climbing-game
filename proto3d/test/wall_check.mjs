@@ -228,6 +228,10 @@ console.log(`실패 ${fails}`);
   // 직접 뗀 발은 다시 대지 않는다. 손을 새로 잡으면 다시 댄다
   hangR(); run(1, {}, [rel('foot', 0)]); run(360); const off = L().feet[0].st;
   check('벽 딛기: 직접 뗀 발은 저절로 다시 대지 않는다(3초 뒤에도 놓여 있음)', off === 'free' && L().feet[1].st === 'plant', `왼발 ${off} · 오른발 ${L().feet[1].st}`);
+  // 손을 옮겨 잡아도 그 발을 다시 대지 않는다(다른 손을 고르는 것이 그 발을 다시 보내라는 뜻은 아니다). 보조를 다시 시작하면(켜고 끄기) 다시 댄다
+  run(150, {}, [hand(1, [1.12, 2.32, -2.86])]); run(300); const off2 = L().feet[0].st, moved = hold(1);
+  run(1, {}, [{ type: 'assistResume' }]); run(360); const back = L().feet[0].st;
+  check('직접 뗀 발: 손을 옮겨 잡아도 다시 대지 않고, 보조를 다시 시작하면 다시 댄다', moved && off2 === 'free' && back === 'plant', `손 옮긴 뒤 왼발 ${off2} · 보조 다시 시작 뒤 ${back}`);
   // 흔드는 입력(A/D)을 넣고 있으면 발을 대지 않는다(반동을 덮어쓰지 않는다)
   hangB(); sim.opt.wallRest = true; pump(3 * 120, 'in'); const sw = L().feet.every(x => x.st === 'free'), a = amp(225);
   check('벽 딛기: 매달려 흔드는 동안에는 발을 대지 않는다(반동이 그대로 커진다)', sw && a > 0.15, `흔드는 동안 발 ${sw ? '놓임' : '디딤'} · 진폭 ${cm(a)}`); }
