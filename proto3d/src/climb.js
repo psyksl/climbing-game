@@ -111,7 +111,7 @@ function note(S, type, limb, i, why = '', extra = {}) {
 
 // ── 몸통의 틀: 어깨·고관절 자리. 물리와 그림이 같은 함수를 쓴다(손이 잡은 자리와 그림이 어긋나지 않게) ──
 export function torso(b, K) {
-  // 몸의 층(p3d-0.8.0, K.pz — 계산 걸음에서만 바뀐다): 가슴 비틀기(뻗는 손·잡은 손 쪽 어깨가 벽으로)와 골반의 반대 비틀기, 골반 기울기(체중이 실린 쪽이 올라가고 어깨 선은 반대로), 머리가 목표를 보고 몸이 옆으로 기울어도 머리는 덜 기운다, 뛰는 동안 윗몸을 젖히고 위를 봄, 숨
+  // 몸의 층(p3d-0.8.0, K.pz — 계산 걸음에서만 바뀐다): 가슴 비틀기(뻗는 손·잡은 손 쪽 어깨가 벽으로)와 골반의 반대 비틀기, 골반 기울기(체중이 실린 쪽이 올라가고 어깨 선은 반대로), 머리가 목표(옮기는 발 > 뻗는 손 > 겨눈 곳)를 보고 몸이 옆으로 기울어도 머리는 덜 기운다, 뛰는 동안 윗몸을 젖히고 위를 봄, 숨
   const Z = K.pz, br = 0.02 * Math.sin(Z.breath * 1.9), tk = clamp(Z.tuck, 0, 1);
   const tq = { hips: Q().setFromAxisAngle(UP, b.yaw - Z.twist * 0.3).multiply(Q().setFromAxisAngle(V(0, 0, 1), K.lean.z * 0.4 + Z.hipRoll)), spine: Q().setFromEuler(new THREE.Euler(K.lean.x - 0.16 * tk, 0, K.lean.z * 0.6 - Z.hipRoll * 1.2, 'ZXY')), chest: Q().setFromAxisAngle(UP, Z.twist * 1.3),
     neck: Q().setFromAxisAngle(X, K.hands.some(h => h.st === 'hold') ? -0.18 : 0).multiply(Q().setFromEuler(new THREE.Euler(Z.lookP * 0.4 - 0.12 * tk, Z.lookY * 0.4, -K.lean.z * 0.4, 'YXZ'))), head: Q().setFromEuler(new THREE.Euler(Z.lookP * 0.6 - 0.14 * tk, Z.lookY * 0.6, -K.lean.z * 0.4, 'YXZ')),
@@ -298,20 +298,23 @@ function limbsStep(S, dt) {
       //   흔들기(A/D)를 넣으면 다리가 그쪽으로 먼저 간다(가는 쪽 다리가 더 크게, 무릎을 조금 접어) — 옆으로 미는 힘(SWING_A)의 원인을 몸이 보여 준다. 벽에서 뛰는 동안에는 무릎을 접어 올렸다가 편다
       { const Kc = S.climb, yaw = S.body.yaw, sd = Kc.sideIn || 0, tk = clamp(Kc.pz.tuck, 0, 1), sx = F.i ? -1 : 1, lead = sd * sx > 0;
         const rest = V(sx * 0.02, -CL.DANGLE + (F.cool > 0 ? 0.05 * Math.sin(Math.PI * F.cool / 0.22) : 0) + 0.36 * tk + (lead ? 0.10 : 0.04) * Math.abs(sd), -0.06 - 0.30 * tk).applyAxisAngle(UP, yaw).addScaledVector(V(Math.cos(yaw), 0, -Math.sin(yaw)), sd * (lead ? 0.30 : 0.15));
+        // 한 발만 디디고 있으면 놓인 다리는 디딘 발의 반대쪽으로 뻗어 둔다(실제 영상에서 되풀이해 보이는 모양 — 품질 검토 13절). 지금 몸 모델에서는 균형에 효과가 없는 "모양"이다(연출 후보라고 적어 둔다)
+        { const O = Kc.feet[1 - F.i], wf = O.st === 'plant' && Kc.hands.some(h => h.st === 'hold') ? clamp(((O.loadS || 0) - 0.05) / 0.15, 0, 1) : 0; if (wf > 0) { const lf = V(Math.cos(yaw), 0, -Math.sin(yaw)), dd = hj.clone().sub(O.p).dot(lf), sg = Math.abs(dd) < 0.06 ? sx : dd > 0 ? 1 : -1; rest.addScaledVector(lf, sg * 0.26 * wf); rest.y += 0.05 * wf; } }
         const w = F.cool > 0 ? 16 : (F.i ? 6.4 : 5.6) + 5 * tk + 3 * Math.abs(sd), zeta = F.cool > 0 ? 1 : 0.55; F.relV = F.relV || V();
         F.relV.addScaledVector(F.rel.clone().sub(rest), -w * w * dt).multiplyScalar(1 / (1 + 2 * zeta * w * dt)).addScaledVector(Kc.accS, -0.55 * dt);
         F.rel.addScaledVector(F.relV, dt); const L = F.rel.length(), L1 = clamp(L, 0.45, DIM.leg * 0.985); if (L !== L1) { F.rel.multiplyScalar(L1 / L); const n = F.rel.clone().normalize(); F.relV.addScaledVector(n, -F.relV.dot(n)); } }
       F.a.copy(hj).add(F.rel);
       // 늘어뜨린 발·발끝이 벽·턱 옆면에 들어가면 들어가지 않을 때까지 벽에서 뗀다
-      // (벽·턱의 옆면만 본다. 발이 윗면 위에 있거나 바닥에 가까운 것은 아래의 "닿은 발"이 다룬다 — 전에는 바닥·윗면 가까이에서도 걸음마다 30cm씩 뒤로 밀어 다리가 뒤로 날아갔다)
-      { const fw = V(Math.sin(S.body.yaw), 0, Math.cos(S.body.yaw)), side = (p, m, top = -0.02) => S.world.boxes.some(x => x.kind !== 'floor' && p.y < x.max.y + top && p.y > x.min.y - m && p.x > x.min.x - m && p.x < x.max.x + m && p.z > x.min.z - m && p.z < x.max.z + m);
-        for (let k = 0; k < 10 && (side(F.a, 0.03) || side(F.a.clone().addScaledVector(fw, 0.13).add(V(0, -0.05, 0)), 0.01, 0.01)); k++) { F.a.addScaledVector(fw, -0.03); F.rel.addScaledVector(fw, -0.03); } }
+      // 벽·턱의 옆면만 본다(발이 윗면 위에 있거나 바닥에 가까운 것은 아래의 "닿은 발"이 다룬다). 들어간 만큼만 가장 얕은 쪽(옆 또는 위)으로 빼내고(한 걸음에 5cm까지), 그쪽으로 들어가던 속도는 지운다
+      // (전에는 언제나 뒤로 3cm씩 밀어, 바닥·윗면 가까이에서는 걸음마다 30cm씩 날아갔고 옆의 발판에 닿으면 3cm 단위로 떨었다)
+      { const fw = V(Math.sin(S.body.yaw), 0, Math.cos(S.body.yaw)), out = (q, m, top) => { let n = null; for (const x of S.world.boxes) { if (x.kind === 'floor' || q.y >= x.max.y + top || q.y <= x.min.y - m) continue; const d = [[q.x - x.min.x + m, -1, 0, 0], [x.max.x + m - q.x, 1, 0, 0], [q.z - x.min.z + m, 0, 0, -1], [x.max.z + m - q.z, 0, 0, 1]]; if (d.some(e => e[0] <= 0)) continue; d.push([x.max.y + top - q.y, 0, 1, 0]); const o = d.sort((a, c) => a[0] - c[0])[0], k = Math.min(o[0], 0.05); n = V(o[1] * k, o[2] * k, o[3] * k); q.add(n); } return n; };
+        for (const [off, m, top] of [[V(), 0.03, -0.02], [fw.clone().multiplyScalar(0.13).add(V(0, -0.05, 0)), 0.01, 0.01]]) { const q = F.a.clone().add(off), n = out(q, m, top); if (n) { F.a.add(n); F.rel.add(n); if (F.relV) { const u = n.clone().normalize(); F.relV.addScaledVector(u, -Math.min(0, F.relV.dot(u))); } } } }
       const g = groundAt(S.world, F.a.x, F.a.z, F.a.y - DIM.ankleY + 0.04, 0, 0), g2 = groundAt(S.world, F.a.x, F.a.z, F.a.y + 0.05, 0, 0.12);
       F.clear = g2.box ? Math.max(0, F.a.y - DIM.ankleY - g2.y) : 9;
       if (g.box && F.a.y - DIM.ankleY <= g.y) {
         // 닿은 발: 다리가 닿는 자리이고 몸이 올라가는 중이 아니면 디딘다. 아니면 발끝만 닿은 채 둔다(면 아래로 들어가지 않게 올려 둔다)
         const yaw = S.body.yaw, fwd = V(Math.sin(yaw), 0, Math.cos(yaw)), p = V(F.a.x, g.y, F.a.z).addScaledVector(fwd, DIM.ballZ), q = Q().setFromAxisAngle(UP, yaw), G = footGeom(p, UP, q);
-        F.a.y = g.y + DIM.ankleY; F.rel.copy(F.a).sub(hj);
+        F.a.y = g.y + DIM.ankleY; F.rel.copy(F.a).sub(hj); if (F.relV) { if (F.relV.y < 0) F.relV.y = 0; F.relV.multiplyScalar(0.85); }
         if (!(F.cool > 0) && !(F.userOff && F.offBox === g.box) && S.body.vel.y <= 0.05 && hj.distanceTo(G.ank) <= DIM.leg * 0.995 && hj.y - g.y >= CL.LEG_MIN_H) {
           Object.assign(F, { st: 'plant', kind: 'top', box: g.box, patch: patchOf(p, fwd, g.box), auto: true, load: 0, why: '' });
           F.p.copy(p); F.ball.copy(G.ball); F.ank.copy(G.ank); F.a.copy(G.ank); F.q.copy(q); F.n.copy(UP);
@@ -419,6 +422,8 @@ export function stepClimb(S, inp, dt) {
   // 손으로만 매달려 좌우로 흔들릴 때는 몸 전체가 손을 축으로 기운다(몸통이 꼿꼿한 채 옆으로만 밀리면 팔이 머리를 지나가게 된다)
   const swingRoll = held.length && !planted.some(f => f.load > 0.1);
   if (swingRoll) { const c = V(); for (const h of held) c.add(h.goal); c.multiplyScalar(1 / held.length); rollT += clamp(Math.atan2(b.pos.clone().sub(c).dot(left), c.y - b.pos.y - DIM.hipY), -0.6, 0.6); }
+  // 발로 받치고 있을 때도 윗몸은 잡은 손 쪽으로 기운다(엉덩이가 옆으로 가면 몸통이 손을 향해 눕는다. 실제 영상에서 몸통 기울기는 −10~38°를 오간다 — 품질 검토 13절). 발이 받치는 만큼 덜 기운다
+  else if (held.length) { const c = V(); for (const h of held) c.add(h.goal); c.multiplyScalar(1 / held.length); rollT += 0.75 * clamp(Math.atan2(b.pos.clone().sub(c).dot(left), Math.max(0.25, c.y - b.pos.y - DIM.hipY)), -0.6, 0.6); }
   // 머리 위(25cm 안)에 턱이 있으면 머리가 그 앞으로 지나가게 윗몸을 젖힌다(필요한 만큼만)
   let need = 0; const hx = b.pos.x, hz = b.pos.z, hy = b.pos.y + DIM.hipY + DIM.spine + 0.60, back = fwd.clone().negate();
   for (const x of W.boxes) { if (x.kind === 'floor' || x.min.y > hy + CL.R_HEAD + 0.25 || x.max.y < hy - CL.R_HEAD) continue; if (Math.hypot(hx - clamp(hx, x.min.x, x.max.x), hz - clamp(hz, x.min.z, x.max.z)) >= CL.R_HEAD + 0.02) continue; const supp = Math.max(x.min.x * back.x, x.max.x * back.x) + Math.max(x.min.z * back.z, x.max.z * back.z); need = Math.max(need, supp + CL.R_HEAD + 0.03 - (hx * back.x + hz * back.z)); }
@@ -435,11 +440,11 @@ export function stepClimb(S, inp, dt) {
   { const Z = K.pz, reach = K.hands.find(h => h.st === 'reach'), one = held.length === 1 && !reach ? held[0] : null;
     springS(Z, 'twist', reach ? (reach.i ? 1 : -1) * 0.30 : one ? (one.i ? 1 : -1) * 0.18 : 0, 0.12, dt);
     let hr = 0; const pl = planted.filter(f => f.load > 0.05);
-    if (pl.length) { const c = V(); for (const f of pl) c.add(f.p); c.multiplyScalar(1 / pl.length); hr = clamp(b.pos.clone().sub(c).dot(left) / 0.25, -1, 1) * 0.13; }
+    if (pl.length) { const c = V(); for (const f of pl) c.add(f.p); c.multiplyScalar(1 / pl.length); hr = clamp(b.pos.clone().sub(c).dot(left) / 0.25, -1, 1) * 0.22; }
     else if (hanging) hr = clamp(b.vel.dot(left) * 0.10, -0.15, 0.15) + side * 0.10;
     springS(Z, 'hipRoll', hr, 0.10, dt);
-    const tgt = reach ? reach.goal : inp.look ? V(...inp.look) : null; let ly = 0, lp = 0;
-    if (tgt && K.T) { const d = tgt.clone().sub(K.T.head).applyQuaternion(K.T.qC.clone().invert()); if (d.z > -0.1) { ly = clamp(Math.atan2(d.x, d.z), -1.0, 1.0); lp = clamp(-Math.atan2(d.y, Math.hypot(d.x, d.z)), -0.7, 0.5); } }
+    const mv = K.feet.find(f => f.st === 'move'), tgt = mv ? mv.p : reach ? reach.goal : inp.look ? V(...inp.look) : null; let ly = 0, lp = 0;
+    if (tgt && K.T) { const d = tgt.clone().sub(K.T.head).applyQuaternion(K.T.qC.clone().invert()); if (d.z > -0.1) { ly = clamp(Math.atan2(d.x, d.z), -1.0, 1.0); lp = clamp(-Math.atan2(d.y, Math.hypot(d.x, d.z)), -0.7, 0.8); } }
     if (!tgt && hanging) ly = side * 0.5;
     springS(Z, 'lookY', ly, 0.09, dt); springS(Z, 'lookP', lp, 0.09, dt); springS(Z, 'tuck', K.push ? 1 : 0, 0.07, dt); Z.breath += dt;
     K.sideIn = hanging ? side : 0; }
@@ -587,7 +592,7 @@ function restFeet(S, dt) {
   const fwd = V(Math.sin(b.yaw), 0, Math.cos(b.yaw)), left = V(Math.cos(b.yaw), 0, -Math.sin(b.yaw));
   for (const F of K.feet) {
     if (F.st !== 'free' || F.cool > 0 || F.userOff) continue;
-    const o = K.T.hj[F.i].clone().add(V(0, -0.40, 0)).addScaledVector(left, (F.i ? -1 : 1) * 0.10), t = rayHit(S.world, o, o.clone().addScaledVector(fwd, 0.75));
+    const o = K.T.hj[F.i].clone().add(V(0, -0.40, 0)).addScaledVector(left, (F.i ? -1 : 1) * 0.20), t = rayHit(S.world, o, o.clone().addScaledVector(fwd, 0.75));
     if (t >= 1) continue;
     const p = o.addScaledVector(fwd, 0.75 * t), g = resolveFoot(S.world, p, b.yaw);
     if (!g || g.kind !== 'smear' || held.some(h => h.edge && h.edge.box === g.box) || !probeFoot(S, F.i, p).ok) continue;
