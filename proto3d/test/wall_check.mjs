@@ -256,6 +256,21 @@ console.log(`실패 ${fails}`);
   for (const wT of [60, 140, 240]) for (const gap of [10, 150]) for (const rw of [100, 250, 400]) { start([-0.9, 0, -2.58]); run(150, {}, [hand(0, A.L)]); run(150, {}, [hand(1, A.R)]); run(wT, { cy: 1 }); run(gap); run(rw, {}, [rel('hand', 1)]); run(60, {}, [hand(0, [-1.3, 1.5, -3.0])]); run(200, {}, [hand(1, A.R)]); run(200);
     const st = sim.climb.stats; n++; if (st.pen > 0) { bad++; if (st.pen > worst) { worst = st.pen; what = `W ${wT}걸음·쉼 ${gap}·놓고 ${rw}: ${st.penWhat}`; } } }
   check('당겨 오름 → 한 손 놓기 → 다시 잡기(누르는 때 18가지): 어느 경우에도 지형 관통 0', bad === 0, `관통이 있던 경우 ${bad}/${n}${bad ? ' · 가장 긴 것 ' + worst + '걸음(' + what + ')' : ''}`); out.cases['17 한 손 놓고 다시 잡기의 관통'] = { 경우: n, 관통이_있던_경우: bad, 가장_긴_걸음: worst }; }
+// ── 18. 발 보조를 켜고 끄는 순간(GPT Reply07: "보조 모드 변경 시 이미 붙은 접촉의 유지·이동 중 목표 처리도 기록한다") ──
+// 정한 것(p3d-0.8.2): 켜고 끄는 것은 이미 붙은 손발을 건드리지 않는다. 보조가 보내던 발은 끈 뒤에도 가던 자리까지 간다(끄는 것이 "떼기"가 되지 않게). 끈 뒤에는 보조가 새로 보내지 않는다
+{ const con = () => JSON.stringify([sim.climb.hands.map(h => (h.st === 'hold' ? h.edge.box.name + h.goal.toArray().map(v => v.toFixed(4)) : h.st)), sim.climb.feet.map(f => (f.st === 'plant' ? f.box.name + f.p.toArray().map(v => v.toFixed(4)) : f.st === 'move' ? 'move' + f.ank.toArray().map(v => v.toFixed(4)) : f.st))]);
+  const go = cut => { start([-0.8, 0, -2.60]); sim.opt.footAssist = true; run(150, {}, [hand(0, [-0.95, 1.92, -2.84])]); run(150, {}, [hand(1, [-0.65, 1.92, -2.84])]); const k0 = rec.length; let R = null;
+    for (let k = 0; k < 540; k++) { const mv = sim.climb.feet.findIndex(f => f.st === 'move' && f.byAssist);
+      if (!R && mv >= 0) { const tgt = sim.climb.feet[mv].ank.clone(); if (cut) { sim.opt.footAssist = false; run(1, { cy: 1 }, [{ type: 'assistResume' }]); } else run(1, { cy: 1 }); R = { foot: mv, c1: con(), tgt, at: rec.length }; continue; }
+      run(1, { cy: k < 300 ? 1 : 0 }); }
+    const st = evs(k0).filter(x => x.type === 'step' && x.assist); return { R, steps: st.length, after: R ? rec.slice(R.at).flatMap(r => r.ev).filter(x => x.type === 'step' && x.assist).length : 0, F: R ? sim.climb.feet[R.foot] : null }; };
+  // 접촉이 그대로인지는 같은 걸음의 "끄지 않은 경우"와 견준다(그 걸음에 다른 까닭으로 발이 떨어지는 우연과 섞이지 않게)
+  const keep = go(false), cut = go(true), F = cut.F, arrived = !!cut.R && F.st === 'plant' && F.ank.distanceTo(cut.R.tgt) < 0.02; if (cut.R) cut.R.same = !!keep.R && keep.R.c1 === cut.R.c1;
+  check('발 보조를 끄는 순간: 붙어 있던 손발은 그대로이고, 보조가 보내던 발은 가던 자리에 디딘다. 끈 뒤의 보조 디딤은 그 발 하나뿐이다', !!cut.R && cut.R.same && arrived && cut.after === 1, cut.R ? `끄는 걸음에 접촉 ${cut.R.same ? '그대로' : '바뀜'} · 가던 발 ${F.st}${arrived ? '(가던 자리)' : ''} · 끈 뒤 보조 디딤 ${cut.after}번(가던 발 1번까지) · 계속 켠 경우 ${keep.steps}번` : '보조가 보내는 발이 없었음');
+  // 끈 채 직접 디딘 발과 잡은 손은 보조를 켜는 걸음에도 그대로다
+  const on1 = tg => { start([-0.9, 0, -2.58]); sim.opt.footAssist = false; run(150, {}, [hand(0, A.L)]); run(150, {}, [hand(1, A.R)]); run(200, {}, [foot(1, [-0.35, 0.5, -2.93])]); if (tg) { sim.opt.footAssist = true; run(1, {}, [{ type: 'assistResume' }]); } else run(1); return { c: con(), f: L().feet[1].st }; }, cA = on1(false), cB = on1(true);
+  check('발 보조를 켜는 순간: 잡은 손과 직접 디딘 발은 켜지 않은 경우와 같다(그 걸음에 달라지는 접촉이 없다)', cA.c === cB.c && cB.f === 'plant', cA.c === cB.c ? '' : `켜지 않음 ${cA.c} ‖ 켬 ${cB.c}`);
+  out.cases['18 발 보조 켬·끔의 순간'] = { 끄는_걸음에_접촉_그대로: !!cut.R && cut.R.same, 가던_발: F ? F.st : '-', 끈_뒤_보조_디딤: cut.after, 계속_켠_경우_보조_디딤: keep.steps }; }
 check('위의 모든 장면에서 몸이 바닥 아래로 떨어지지 않는다(몸 자리의 가장 낮은 높이가 −0.6m 위. 웅크려 매달리면 조금 음수가 된다)', jk.minY > -0.6, `가장 낮은 높이 ${jk.minY.toFixed(2)}m (${jk.minAt})`);
 check('벽 동작 전체(위의 모든 장면): 뼈의 한 걸음 회전량이 바로 앞 걸음보다 12° 넘게 달라지지 않는다(지상 동작과 같은 기준)', jk.max <= 12, `가장 큰 튐 ${jk.max.toFixed(1)}° (${jk.what}) · 12° 넘은 횟수 ${jk.n}`); out.cases['벽 동작의 한 걸음 회전 튐'] = { 최대_도: +jk.max.toFixed(1), 어디: jk.what, '12도_넘은_횟수': jk.n };
 if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify(out, null, 1));

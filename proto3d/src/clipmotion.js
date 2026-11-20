@@ -91,7 +91,7 @@ export function makeClipState(set, rig, body) {
     act: { kind: 'none', w: 0, tt: 0, tt0: 0, xf: 1, pu: 0, rate: 1, v0: 0, u: 0, fallW: 0, runW: 0, landK: 1, hs: 0 }, // 점프 층: kind = none/charge/push/air/land, tt = 점프 동작의 시각(초)
     G: Object.assign(newSnap(rig), { kind: [null, null] }), // G = 자작에게 넘겨준 순간의 최종 자세(얼려 둔 것)
     P0: newSnap(rig), F: newSnap(rig), // P0 = 이번 걸음의 자작 자세, F = 넘겨받은 순간의 자작 자세(얼려 둔 것)
-    feet: ['L', 'R'].map(s => ({ s, con: false, skip: false, kind: 'toe', lock: null, off: V(), yawOff: 0, gOff: 0, step: null, last: null, lastQ: new THREE.Quaternion() })) };
+    feet: ['L', 'R'].map(s => ({ s, con: false, skip: false, kind: 'toe', lock: null, off: V(), yawOff: 0, gOff: 0, step: null, last: null, lastQ: new THREE.Quaternion() })), lim: 0, limOn: false, hRel: null };
 }
 
 // 상태 진행(고정 걸음마다, stepMotion 뒤): 누가 맡는지(C.w), 걸음 위상, 섞는 몫
@@ -120,7 +120,7 @@ export function stepClip(C, M, body, input, dt, enabled) {
     const a = C.act, m = W.jump.marks, ev = t => body.events.find(e => e.type === t);
     if (ev('takeoff')) { a.v0 = ev('takeoff').vy; a.hs = gs; a.y0 = body.pos.y; a.apex = body.pos.y; } if (ev('walkoff')) { a.v0 = 0; a.hs = gs; }
     if (!body.onGround) a.apex = Math.max(a.apex ?? body.pos.y, body.pos.y);
-    const J = W.jump; if (ev('push')) a.tt0 = C.cw > 0.15 ? J.timeFor(J.hipAt(m.G) - 0.30 * C.cw, 0, m.A) : 0;
+    const J = W.jump; if (ev('push')) { a.tt0 = C.cw > 0.15 ? J.timeFor(J.hipAt(m.G) - 0.30 * C.cw, 0, m.A) : 0; C.limOn = C.cw > 0.15; }
     const pushD = k => (2.0 + 1.1 * k) * (0.14 + 0.10 * k) / 2; // 미는 동안 엉덩이가 올라가야 하는 거리 = 뛰는 속도 × 미는 시간 / 2(고르게 빨라질 때). controller.js의 JUMP_V0·V1, PUSH_T0·T1과 같은 값
     if (ev('land')) { a.kind = 'land'; a.tt = m.LD; a.landK = clamp(ev('land').impact / CLIP.LAND_V, 0.3, 1); a.rate = clamp(ev('land').impact / (a.landK * 4 * m.rise / (m.LD - m.G)), 0.6, 1.6); } // 착지 동작의 빠르기: 동작 속 점프(오른 높이 rise)의 내려앉는 빠르기 = 4·rise/공중 시간. 물리의 내려앉는 빠르기가 그보다 느리면 그만큼 느리게 튼다(엉덩이 빠르기가 이어지게)
     else if (!body.onGround) { a.kind = 'air'; a.u = a.v0 > 0.3 ? (body.vel.y > 0 ? 0.5 * (1 - body.vel.y / a.v0) : 0.5 + 0.5 * -body.vel.y / Math.sqrt(2 * 9.81 * Math.max(0.02, a.apex - a.y0))) : 1 + body.airT / 0.25; a.tt = lerp(m.G, m.LD, Math.min(a.u, 1)); a.fallW = clamp((a.u - 1) / 0.35, 0, 1); }
@@ -179,7 +179,7 @@ export function poseClip(C, M, body, world, groundAt, dt) {
   const actPlant = act.w > 0.5 && act.kind !== 'air' && act.kind !== 'none' && C.lastSpeed < CLIP.PLANT_V; // 점프 층이 두 발을 붙드는 때
   const tg = C.feet.map((f, i) => {
     const L = M.legs[i], F = B[`foot.${f.s}`], ankC = worldPos(F), fq = F.getWorldQuaternion(new THREE.Quaternion()), hipJ = worldPos(B[`upLeg.${f.s}`]), kneeC = worldPos(B[`leg.${f.s}`]);
-    const hipJd = hipJ.clone(); hipJd.y -= C.drop; // 바로 앞 걸음에 낮춘 엉덩이 기준의 고관절(떠 있는 발을 당길 때는 실제로 그려진 엉덩이 높이로 잰다)
+    const hipJd = hipJ.clone(); hipJd.y -= C.drop + C.lim; // 바로 앞 걸음에 낮춘 엉덩이 기준의 고관절(떠 있는 발을 당길 때는 실제로 그려진 엉덩이 높이로 잰다)
     const legQ = [B[`upLeg.${f.s}`].getWorldQuaternion(new THREE.Quaternion()), B[`leg.${f.s}`].getWorldQuaternion(new THREE.Quaternion())]; // 캡처 자세의 다리 뼈 회전(비틀림의 기준)
     const pt = k => LOCAL[k].clone().applyQuaternion(fq).add(ankC), hT = pt('toe').y - SOLE - C.gy, hH = pt('heel').y - SOLE - C.gy;
     // 닿음: 걷기 동작이 충분히 섞이기 전에는 서 있는 것(두 발 디딤). 그 뒤로는 걷기나 달리기 한쪽이 거의 다일 때 그쪽 값, 둘을 섞는 동안(빨라지거나 느려지는 중)에는 둘 다 닿아 있을 때만
@@ -246,6 +246,13 @@ export function poseClip(C, M, body, world, groundAt, dt) {
   const pushing = act.kind === 'push' && act.w > 0.5;
   let need = 0; C.feet.forEach((f, i) => { if (!f.lock) return; const v = tg[i].fin.clone().sub(worldPos(B[`upLeg.${f.s}`])), d = v.length(), R = softD(d), h2 = v.x * v.x + v.z * v.z; if (d > R) need = Math.max(need, h2 >= R * R ? CLIP.DROP_MAX_PUSH : -v.y - Math.sqrt(R * R - h2)); });
   need = clamp(need, 0, pushing ? CLIP.DROP_MAX_PUSH : CLIP.DROP_MAX); C.drop = need > C.drop ? need : C.drop + (need - C.drop) * (1 - Math.exp(-(act.kind === 'air' ? 8 : 20) * dt)); hipClip.y -= C.drop;
+  // 웅크린 채 뛸 때의 엉덩이 오름 제한(p3d-0.8.2, B3): 웅크려 있어도 0.08초 뒤에 뜬다. 그 시간에 다리를 다 펴면 엉덩이가 한 걸음에 3cm 넘게 솟으므로,
+  // 미는 동안에는 "고르게 빨라져 뜨는 순간 뛰는 속도"까지만 올라가고(오른 거리 = 뛰는 속도 × 미는 시간 ÷ 2) 남은 펴기는 공중에서 한다(몸이 오르는 빠르기 + 펴는 빠르기 ≤ 3.5m/s).
+  // 발은 섞은 자세의 자리 그대로 두고 엉덩이만 늦추므로 다리는 그만큼 굽은 채로 뜬다. 물리(몸의 자리·뜨는 시각)는 건드리지 않는다
+  { const rel = hipClip.y - C.gy;
+    if (C.limOn && C.hRel !== null) { const cap = act.kind === 'push' ? 3.1 * clamp(act.pu ?? 0, 0, 1) : act.kind === 'air' ? Math.max(0.3, 3.5 - Math.max(0, body.vel.y)) : 0.6, fin = Math.min(rel, C.hRel + cap * dt); C.lim = rel - fin; if (C.lim < 1e-4 && act.kind !== 'push') { C.lim = 0; C.limOn = false; } }
+    else C.lim = 0;
+    hipClip.y -= C.lim; C.hRel = rel - C.lim; }
   // 마무리: 자작 자세와 섞고(넘겨받는 동안), 다리는 섞은 발목 목표로 IK
   if (w < 1) { B.hips.position.lerpVectors(S0.hip, hipClip, w); rig.list.forEach((b, i) => { if (!LEGS.includes(b.name)) { qT.copy(b.quaternion); b.quaternion.slerpQuaternions(S0.q[i], qT, w); } }); } // slerpQuaternions는 결과를 쓰기 전에 첫 값을 복사하므로 자기 자신을 둘째 값으로 주면 안 된다
   else B.hips.position.copy(hipClip);

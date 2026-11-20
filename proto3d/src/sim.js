@@ -27,8 +27,8 @@ export function makeSim(rig, world, clips = null) {
     const K = S.climb; K.events.length = 0; K.tick = S.tick; K.exited = false; S.inp = inp;
     for (const c of inp.cmd || []) command(S, c);
     if (K.on) { stepClimb(S, inp, PHY.DT); if (K.exited) ground(); }
-    // B3(웅크린 채 점프도 0.08초에 뜬다)는 자작 모션에서만 풀었다. 캡처 모션은 뜨는 걸음의 자세 연결이 남아 전처럼 웅크린 만큼 늦게(최대 0.30초) 뜬다 — 미해결로 적어 둔다
-    else { S.body.slowCrouch = !!(S.clip && S.useClip); stepBody(S.body, inp, world); stepMotion(S.motion, S.body, inp, world, groundAt, PHY.DT); if (S.clip) stepClip(S.clip, S.motion, S.body, inp, PHY.DT, S.useClip); }
+    // B3: 웅크린 채 점프도 0.08초에 뜬다. 자작 모션은 p3d-0.8.0, 캡처 모션은 p3d-0.8.2(엉덩이 오름을 늦추는 처리, clipmotion.js)에서 풀었다
+    else { stepBody(S.body, inp, world); stepMotion(S.motion, S.body, inp, world, groundAt, PHY.DT); if (S.clip) stepClip(S.clip, S.motion, S.body, inp, PHY.DT, S.useClip); }
     pose(PHY.DT); S.tick++;
   };
   S.reset();

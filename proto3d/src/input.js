@@ -61,7 +61,7 @@ export const TAP = { PX: 6, T: 0.35 };
 export function makeInput(el) {
   // down: 키 → 누른 순간의 { mode, x, y, t, moved }. pressed·released: 이번 화면 프레임에 새로 눌린·떼어진 키
   const down = new Map(), pressed = new Map(), released = new Map(), st = { mdx: 0, mdy: 0, wheel: 0, mx: 0, my: 0, moved: false, mode: 'ground', has: false };
-  const press = code => { if (!down.has(code)) { const rec = { mode: st.mode, x: st.mx, y: st.my, t: performance.now(), moved: 0 }; pressed.set(code, rec); down.set(code, rec); } };
+  const press = code => { if (!down.has(code)) { const rec = { mode: st.mode, x: st.mx, y: st.my, t: performance.now(), moved: 0, with: new Map([...down].map(([c, r]) => [c, r.mode])) }; pressed.set(code, rec); down.set(code, rec); } }; // with = 이 키를 누른 순간(이벤트 시각)에 눌려 있던 다른 키와 그 키를 누른 문맥
   const lift = code => { const rec = down.get(code); if (rec) { rec.dur = (performance.now() - rec.t) / 1000; released.set(code, rec); down.delete(code); } };
   addEventListener('keydown', e => { if (e.code === 'Space' || e.code === 'Tab') e.preventDefault(); press(e.code); });
   addEventListener('keyup', e => { lift(e.code); });
@@ -78,11 +78,14 @@ export function makeInput(el) {
   const isDown = id => { const b = find(id); return !!b && b.keys.some(k => active(b, down.get(k))); };
   const wasPressed = id => { const b = find(id); return !!b && b.keys.some(k => active(b, pressed.get(k))); };
   const wasReleased = id => { const b = find(id); return !!b && b.keys.some(k => active(b, released.get(k))); };
+  // 이 동작의 키를 누른 순간에 다른 동작(mod)의 키가 눌려 있었는가(p3d-0.8.2). 화면 프레임이 아니라 이벤트 시각으로 본다:
+  // 한 프레임 안에 "발 지정 키 누름 → 단추 누름 → 발 지정 키 뗌"이 다 들어오면 프레임 끝의 상태로는 순서를 잃는다(느린 화면에서 발 명령이 손 명령으로 나갔다)
+  const pressedWith = (id, modId) => { const b = find(id), m = find(modId); return !!b && !!m && b.keys.some(k => { const r = pressed.get(k); return active(b, r) && (m.ctx.includes('any') || m.ctx.includes(r.mode)) && m.keys.some(k2 => r.with.get(k2) === r.mode); }); };
   // 끌고 있는가(누른 뒤 TAP.PX 넘게 움직임) / 짧게 눌렀다 뗐는가(움직이지 않고 TAP.T초 안에 뗌)
   const dragging = id => { const b = find(id); return !!b && b.keys.some(k => { const r = down.get(k); return active(b, r) && r.moved > TAP.PX; }); };
   const tapped = id => { const b = find(id); return !!b && b.keys.some(k => { const r = released.get(k); return active(b, r) && r.moved <= TAP.PX && r.dur <= TAP.T; }); };
   return {
-    down, isDown, wasPressed, wasReleased, dragging, tapped, st,
+    down, isDown, wasPressed, wasReleased, pressedWith, dragging, tapped, st,
     setMode(m) { st.mode = m; },
     endFrame() { pressed.clear(); released.clear(); st.mdx = 0; st.mdy = 0; st.wheel = 0; st.moved = false; },
   };

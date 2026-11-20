@@ -35,9 +35,9 @@ export function stepBody(b, input, world) {
   if (b.onGround && face.lengthSq() > 0.01 && want.lengthSq() > 0.01) { const ty = Math.atan2(face.x, face.y); let d = ty - b.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); b.yaw += THREE.MathUtils.clamp(d, -P.TURN * dt, P.TURN * dt); }
   // 점프: 누르는 순간 밀기 시작(달리던 속도는 그대로), 0.08초 뒤에 뜬다. 모으기는 없다(b.charging은 늘 거짓 — 옛 코드와 시험이 읽는 값이라 남겨 둔다)
   b.charging = false; b.charge = 0;
-  // 웅크린 채 누르면 다리를 펴는 데 시간이 더 걸린다(깊이 웅크렸으면 0.30초). 서 있을 때는 0.08초
+  // 웅크린 채 눌러도 서 있을 때와 같이 0.08초 뒤에 뜬다(다 펴지 못한 다리는 공중에서 편다 — 자세 쪽 처리). crouchK는 자세가 읽는다
   b.crouchK = (b.crouchK || 0) + ((input.crouch && b.onGround ? 1 : 0) - (b.crouchK || 0)) * (1 - Math.exp(-7 * dt));
-  if (pressed && b.onGround && !b.push) { b.push = { t: 0, k: 1, dur: P.PUSH_T + (b.slowCrouch ? (0.30 - P.PUSH_T) * b.crouchK : 0), held: true }; b.events.push({ type: 'push', k: 1, t: b.t }); }
+  if (pressed && b.onGround && !b.push) { b.push = { t: 0, k: 1, dur: P.PUSH_T, held: true }; b.events.push({ type: 'push', k: 1, t: b.t }); }
   else if (b.push && b.onGround) {
     if (!input.jump) b.push.held = false;
     if ((b.push.t += dt) >= b.push.dur) { const k = b.push.held ? 1 : 0; b.push = null; b.vel.y = P.JUMP_V1; b.jumpRise = true; if (want.lengthSq() > 0.01) { const d = want.clone().normalize(), along = b.vel.x * d.x + b.vel.z * d.y, need = P.JUMP_H0 + P.JUMP_H1 * k; if (along < need) { b.vel.x += d.x * (need - along); b.vel.z += d.y * (need - along); } } b.onGround = false; b.airT = 0; b.events.push({ type: 'takeoff', k, vy: b.vel.y, t: b.t }); }
