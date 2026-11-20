@@ -21,7 +21,7 @@ const SCENES = [
   ['① 발을 고르지 않고(두 발 바닥) W로 당겨 오르며 오른손을 턱 F로 — 닿지 않는다', [-0.9, 0, -2.58], (sim, put, rep) => { onA(rep); rep(240, { cy: 1 }); rep(1, { cy: 1 }, [hand(1, F)]); rep(220, { cy: 1 }); rep(200); }],
   ['② 왼발을 넓은 발판에 올리고 W → 오른손을 턱 F로 — 10cm 모자란다', [-0.9, 0, -2.58], (sim, put, rep) => { onA(rep); rep(260, {}, [foot(0, [-1.32, 0.3, -2.75])]); rep(240, { cy: 1 }); rep(1, { cy: 1 }, [hand(1, F)]); rep(220, { cy: 1 }); rep(200); }],
   ['③ 오른발을 낮은 발판에 올리고 W로 올라서며 오른손을 턱 F로 — 잡는다', [-0.9, 0, -2.58], (sim, put, rep) => { onA(rep); rep(260, {}, [foot(1, [-0.3, 0.5, -2.93])]); rep(240, { cy: 1 }); rep(1, { cy: 1 }, [hand(1, F)]); rep(220, { cy: 1 }); rep(240); }],
-  ['④ 뛰어 턱 B에 매달림(발은 벽 가까이, 닿지 않음) → 흔들기 → 두 손 놓기', [0.7, 0, -2.65], (sim, put, rep) => { hangB(rep); pump(sim, put, 420); rep(60); rep(1, {}, [rel('hand', 0), rel('hand', 1)]); rep(240); }],
+  ['④ 뛰어 턱 B에 매달림 → 흔들기(제때 A/D) → 두 손 놓기', [0.7, 0, -2.65], (sim, put, rep) => { hangB(rep); pump(sim, put, 420); rep(60); rep(1, {}, [rel('hand', 0), rel('hand', 1)]); rep(240); }],
 ];
 fs.mkdirSync(out, { recursive: true });
 const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });

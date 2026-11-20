@@ -27,7 +27,7 @@ if (!dir) { console.log('사용: node test/wall_sheet.js <폴더>'); process.exi
     ['ours_reach_back', '우리: 벽을 디딘 채 오른손을 25cm 오른쪽으로 옮겨 잡기(0.075초 간격) · 뒤에서 · 벽 딛기 켬', Math.PI, 'T.hangB(); __p3.cmd({ type: "hand", i: 1, p: [1.17, 2.32, -2.86] });', 'T.run(9)', true],
     ['ours_standup_back', '우리: 오른발을 낮은 발판에 올린 뒤 W로 올라서며 오른손을 턱 F로(0.33초 간격) · 뒤에서 · 수동 발', Math.PI, 'T.onA(false); __p3.cmd({ type: "foot", i: 1, p: [-0.3, 0.5, -2.93] }); T.run(260);', '__p3.T9 = (__p3.T9 || 0) + 1; if (__p3.T9 === 6) __p3.cmd({ type: "hand", i: 1, p: [-0.3, 2.15, -2.86] }); T.run(40, { cy: 1 })', false],
     ['ours_standup_side', '우리: 같은 장면 · 옆에서(반대쪽)', -Math.PI / 2, '__p3.T9 = 0; T.onA(false); __p3.cmd({ type: "foot", i: 1, p: [-0.3, 0.5, -2.93] }); T.run(260);', '__p3.T9 = (__p3.T9 || 0) + 1; if (__p3.T9 === 6) __p3.cmd({ type: "hand", i: 1, p: [-0.3, 2.15, -2.86] }); T.run(40, { cy: 1 })', false],
-    ['ours_hang_side', '우리: 뛰어 턱 B에 매달림(발은 벽 가까이, 닿지 않음. 0.3초 간격) · 옆에서 · 기본 설정', Math.PI / 2, 'T.hangB(40);', 'T.run(36)', false],
+    ['ours_hang_side', '우리: 뛰어 턱 B에 매달림(0.3초 간격) · 옆에서 · 기본 설정', Math.PI / 2, 'T.hangB(40);', 'T.run(36)', false],
     ['ours_fall_side', '우리: 두 손을 놓고 떨어져 내려섬(0.125초 간격) · 옆에서(반대쪽)', -Math.PI / 2, 'T.hangB(); __p3.cmd({ type: "release", limb: "hand", i: 0 }); __p3.cmd({ type: "release", limb: "hand", i: 1 });', 'T.run(15)', false],
   ];
   fs.mkdirSync(dir, { recursive: true }); const sheet = await b.newPage({ viewport: { width: 1240, height: 330 } }), N = 8;
