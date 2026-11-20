@@ -444,10 +444,13 @@ export function stepClimb(S, inp, dt) {
     let hr = 0; const pl = planted.filter(f => f.load > 0.05);
     if (pl.length) { const c = V(); for (const f of pl) c.add(f.p); c.multiplyScalar(1 / pl.length); hr = clamp(b.pos.clone().sub(c).dot(left) / 0.25, -1, 1) * 0.22; }
     else if (hanging) hr = clamp(b.vel.dot(left) * 0.10, -0.15, 0.15) + side * 0.10;
-    springS(Z, 'hipRoll', hr, 0.10, dt);
+    springS(Z, 'hipRoll', hr + 0.035 * (Z.idleW || 0) * Math.sin(Z.breath * 1.5), 0.10, dt);
     const mv = K.feet.find(f => f.st === 'move'), tgt = mv ? mv.p : reach ? reach.goal : inp.look ? V(...inp.look) : null; let ly = 0, lp = 0;
     if (tgt && K.T) { const d = tgt.clone().sub(K.T.head).applyQuaternion(K.T.qC.clone().invert()); if (d.z > -0.1) { ly = clamp(Math.atan2(d.x, d.z), -1.0, 1.0); lp = clamp(-Math.atan2(d.y, Math.hypot(d.x, d.z)), -0.7, 0.8); } }
     if (!tgt && hanging) ly = side * 0.5;
+    // 가만히 있는 동안(1.5초 넘게 입력·손발 이동 없음): 머리가 천천히 둘러보고 골반이 아주 조금 오간다(실제 영상에서는 머무는 동안에도 몸이 계속 움직인다 — 품질 검토 13.2). 모양만이다
+    K.idleT = inp.cx || inp.cy || inp.jump || reach || mv || b.vel.length() > 0.12 ? 0 : (K.idleT || 0) + dt;
+    { const wI = clamp((K.idleT - 1.5) / 1.0, 0, 1); if (wI > 0 && !tgt) { ly += 0.38 * wI * Math.sin(Z.breath * 1.18); lp += 0.10 * wI * Math.sin(Z.breath * 0.83 + 1); } Z.idleW = wI; }
     springS(Z, 'lookY', ly, 0.09, dt); springS(Z, 'lookP', lp, 0.09, dt); springS(Z, 'tuck', K.push ? 1 : 0, 0.07, dt); Z.breath += dt;
     K.sideIn = hanging ? side : 0; }
   if (hanging) { K.ref.x = b.pos.x; K.ref.z = b.pos.z; } else K.ref.addScaledVector(left, side * CL.SHIFT_V * dt);
@@ -465,7 +468,9 @@ export function stepClimb(S, inp, dt) {
   //   손으로 잡고 있을 때 = 발판 위의 발이 몸을 받치면 벽 쪽 깊이만 그 발 위로.
   //   손이 없을 때 = 좌우·깊이 모두. 발을 옮기려는 중이면 남는 발 위로, 몸 위로(W)를 누르면 높은 발 위로, 아니면 디딘 발들의 가운데로.
   { const ctr = f => V((f.patch.x0 + f.patch.x1) / 2, 0, (f.patch.z0 + f.patch.z1) / 2), topsAll = planted.filter(f => f.kind === 'top');
-    if (held.length) { const tops = topsAll.filter(f => f.load > 0.1 && f.box.kind !== 'floor'); if (tops.length) { const c = V(); for (const f of tops) c.add(ctr(f)); c.multiplyScalar(1 / tops.length); const d = c.sub(K.ref).setY(0); K.ref.add(fwd.clone().multiplyScalar(d.dot(fwd)).clampLength(0, 0.3 * dt)); } }
+    if (held.length) { const tops = topsAll.filter(f => f.load > 0.1 && f.box.kind !== 'floor'); if (tops.length) { const c = V(); for (const f of tops) c.add(ctr(f)); c.multiplyScalar(1 / tops.length); const d = c.sub(K.ref).setY(0); K.ref.add(fwd.clone().multiplyScalar(d.dot(fwd)).clampLength(0, 0.3 * dt));
+      // 몸 위로(W)를 누르고 있으면 가장 높이 디딘 발 쪽으로 엉덩이가 옆으로도 간다(높은 발 → 엉덩이를 그 위로 → 다리로 일어서기. 실제 영상 두 편에서 올라가는 일은 다리가 했다 — 품질 검토 12·13절). 임시 — 조작은 기획 결정 대기
+      if ((inp.cy || 0) > 0) { const hi = tops.reduce((a, f) => (f.p.y > a.p.y ? f : a), tops[0]), dl = ctr(hi).sub(K.ref).setY(0).dot(left); K.ref.addScaledVector(left, clamp(dl, -0.35 * dt, 0.35 * dt)); } } }
     else if (topsAll.length) {
       const P = K.pendFoot, hi = topsAll.reduce((a, f) => (f.p.y > a.p.y ? f : a), topsAll[0]);
       const tgt = P && K.feet[P.stay].st === 'plant' ? ctr(K.feet[P.stay]) : (inp.cy || 0) > 0 && topsAll.length > 1 && hi.p.y > Math.min(...topsAll.map(f => f.p.y)) + 0.05 ? ctr(hi) : topsAll.reduce((a, f) => a.add(ctr(f)), V()).multiplyScalar(1 / topsAll.length);
