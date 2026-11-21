@@ -18,7 +18,7 @@ const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z), clamp = THREE.Mat
 const UP = V(0, 1, 0), DOWN = V(0, -1, 0), SOLE = 0.02, LOCAL = { toe: V(0, -(DIM.ankleY - SOLE), DIM.ballZ), heel: V(0, -(DIM.ankleY - SOLE), DIM.heelZ) };
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
 const qYaw = new THREE.Quaternion(), qA = new THREE.Quaternion(), qB = new THREE.Quaternion(), qT = new THREE.Quaternion(), LEGS = ['upLeg.L', 'leg.L', 'foot.L', 'upLeg.R', 'leg.R', 'foot.R'];
-export const CLIP = {
+export const CLIP = { AIR_SYM: 0.8,
   LIFT: 0.015, AWAY: 0.035,  // 일찍 떼기: 캡처 자세에서 축이 되는 점이 이만큼(m) 들리거나 고정 자리에서 이만큼 멀어지면
   CON_LOC: 0.3,             // 걷기 동작이 이만큼 섞이기 전에는 두 발 모두 디딘 것으로 본다(서 있기)
   KIND: 0.012,              // 축 바꿈(뒤꿈치 ↔ 발끝): 다른 점이 이만큼 더 낮아야 한다
@@ -187,8 +187,14 @@ export function poseClip(C, M, body, world, groundAt, dt) {
   B.hips.position.copy(hipClip); names.forEach((n, i) => B[n].quaternion.copy(A.q[i])); B.hips.quaternion.premultiply(qYaw); rig.root.updateMatrixWorld(true);
   // 발: 닿음 판정 → 고정 → 발목 목표
   const actPlant = act.w > 0.5 && act.kind !== 'air' && act.kind !== 'none' && C.lastSpeed < CLIP.PLANT_V; // 점프 층이 두 발을 붙드는 때
+  // 제자리 점프의 아랫몸 섞기(p3d-0.8.5): 받은 점프 동작은 떠 있는 동안 두 발이 앞뒤로 50cm쯤 벌어진다(달려가며 뛰는 모양). 견줄 기준은 자작 동작이다(두 발을 모은 채 뜬다 — test/jump_compare.mjs).
+  // 떠 있는 동안, 고관절에서 본 발의 앞뒤 거리를 두 발의 평균 쪽으로 옮긴다(높이·좌우·발의 방향·뜨는 시각·물리는 그대로). 수평으로 움직이며 뛸 때(1 → 3m/s)는 덜 옮긴다 — 달리며 뛰는 모양은 남긴다.
+  // **닿음 판정보다 앞에서** 캡처 쪽 발목 자리(ankC)를 옮긴다: 착지에서 발을 고정하는 자리가 옮긴 자세에서 정해지므로 고정되는 걸음에 목표가 튀지 않는다(0.8.4에서는 판정 뒤에 옮겨 착지 때 24° 튀었고 되돌렸다)
+  const symShift = (() => { const k = (C.airC || 0) * CLIP.AIR_SYM * (1 - clamp((Math.hypot(body.vel.x, body.vel.z) - 1) / 2, 0, 1)); if (k < 1e-3 || globalThis.NOSYM) return null;
+    const fw = V(Math.sin(body.yaw), 0, Math.cos(body.yaw)), z = C.feet.map(f => worldPos(B[`foot.${f.s}`]).sub(worldPos(B[`upLeg.${f.s}`])).dot(fw)), mean = (z[0] + z[1]) / 2; return z.map(v => fw.clone().multiplyScalar((mean - v) * k)); })();
   const tg = C.feet.map((f, i) => {
     const L = M.legs[i], F = B[`foot.${f.s}`], ankC = worldPos(F), fq = F.getWorldQuaternion(new THREE.Quaternion()), hipJ = worldPos(B[`upLeg.${f.s}`]), kneeC = worldPos(B[`leg.${f.s}`]);
+    if (symShift) { ankC.add(symShift[i]); kneeC.addScaledVector(symShift[i], 0.5); }
     const hipJd = hipJ.clone(); hipJd.y -= C.drop + C.lim; // 바로 앞 걸음에 낮춘 엉덩이 기준의 고관절(떠 있는 발을 당길 때는 실제로 그려진 엉덩이 높이로 잰다)
     const legQ = [B[`upLeg.${f.s}`].getWorldQuaternion(new THREE.Quaternion()), B[`leg.${f.s}`].getWorldQuaternion(new THREE.Quaternion())]; // 캡처 자세의 다리 뼈 회전(비틀림의 기준)
     const pt = k => LOCAL[k].clone().applyQuaternion(fq).add(ankC), hT = pt('toe').y - SOLE - C.gy, hH = pt('heel').y - SOLE - C.gy;
