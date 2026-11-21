@@ -444,6 +444,8 @@ function collide(S, T) {
 //   팔 = 어깨→손 방향으로 당기기만(0 ~ cap). 다리 = 디딘 면의 마찰 범위 안의 어느 방향이든(면을 누르는 쪽만, 다리 축에서 벗어난 몫은 perp까지, 크기는 cap까지. 다 펴진 다리는 더 밀지 못한다).
 //   r = 힘이 걸리는 점(잡은 자리·디딘 자리) − 무게중심. 발 하나로 설 때 무게중심이 발 위에 없으면 돌림힘을 없앨 수 없어 힘이 기울고, 몸이 그쪽으로 넘어간다.
 //   돌림힘은 손으로 잡고 있지 않을 때만 따진다(lam). 손에 매달린 몸은 흔들릴 뿐 넘어가지 않고, 그 흔들림은 팔 길이 구속이 만든다.
+// 진단: 섞은 뒤의 힘이 그 걸음의 한계를 1N 넘게 넘은 횟수와 가장 큰 넘침(N). loose = 한계를 다시 걸지 않는다(p3d-0.8.3까지의 동작, 견주기용)
+export const FSTAT = { n: 0, over: 0, max: 0, loose: false };
 function solveForces(C, Fd, lam) {
   const F = C.map(c => (c.f0 ? c.f0.clone() : V())), eps = 0.02;
   for (let it = 0; it < 40; it++) C.forEach((c, i) => {
@@ -461,6 +463,8 @@ function solveForces(C, Fd, lam) {
   });
   // 앞 걸음의 답과 반씩 섞는다(두 팔이 비슷한 방향일 때 힘이 걸음마다 이 팔 저 팔로 옮겨 다니지 않게)
   C.forEach((c, i) => { if (c.f0) F[i].lerp(c.f0, 0.5); });
+  // 한계는 넘지 못하는 값이다: 섞은 뒤에도 지금 걸음의 한계 안에 둔다(한계가 앞 걸음보다 줄었을 때 앞 걸음의 힘이 절반 남아 한계를 넘던 것 — p3d-0.8.4)
+  C.forEach((c, i) => { const over = F[i].length() - Math.max(0, c.cap); FSTAT.n++; if (over > 1) { FSTAT.over++; FSTAT.max = Math.max(FSTAT.max, over); } if (FSTAT.loose) return; if (c.cap <= 0) F[i].set(0, 0, 0); else if (over > 0) F[i].setLength(c.cap); });
   return F;
 }
 

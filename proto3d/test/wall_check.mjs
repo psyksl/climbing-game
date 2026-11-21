@@ -6,11 +6,11 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import * as THREE from 'three';
 const HERE = path.dirname(fileURLToPath(import.meta.url)), SRC = path.resolve(HERE, '../src'), imp = f => import(pathToFileURL(path.join(SRC, f)).href);
-const { buildCharacter, DIM } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { limbState, CL, probeHand } = await imp('climb.js'), { PHY } = await imp('controller.js'), clamp = THREE.MathUtils.clamp;
+const { buildCharacter, DIM } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { limbState, CL, probeHand, FSTAT } = await imp('climb.js'), { PHY } = await imp('controller.js'), clamp = THREE.MathUtils.clamp;
 const CLP = path.resolve(HERE, '../assets_local/clips.json'), useClip = process.env.MODE === 'clip';
 if (useClip && !fs.existsSync(CLP)) { console.log('clips.json 없음 → 건너뜀'); process.exit(0); }
 const clips = useClip ? JSON.parse(fs.readFileSync(CLP, 'utf8')) : null, rig = buildCharacter(), DT = PHY.DT, G = PHY.G;
-globalThis.KDBG = !!process.env.KDBG; let sim, rec, fails = 0; const jk = { prev: null, sim: null, d: [], max: 0, what: '', n: 0, minY: 9, minAt: '' };
+globalThis.KDBG = !!process.env.KDBG; FSTAT.loose = !!process.env.LOOSE; let sim, rec, fails = 0; const jk = { prev: null, sim: null, d: [], max: 0, what: '', n: 0, minY: 9, minAt: '' };
 const out = { note: '스크립트 입력(사람 손 아님). 모션 = ' + (useClip ? '캡처' : '자작'), checks: [], cases: {} };
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${detail}`); out.checks.push({ name, ok, detail }); if (!ok) fails++; };
 const start = (pos, yaw = Math.PI, extra = []) => { const w = makeWorld(); for (const [name, min, max] of extra) w.boxes.push({ name, min: new THREE.Vector3(...min), max: new THREE.Vector3(...max), kind: 'block' }); sim = makeSim(rig, w, clips); sim.reset({ pos, yaw }); rec = []; run(30); };
@@ -275,5 +275,7 @@ console.log(`실패 ${fails}`);
   out.cases['18 발 보조 켬·끔의 순간'] = { 끄는_걸음에_접촉_그대로: !!cut.R && cut.R.same, 가던_발: F ? F.st : '-', 끈_뒤_보조_디딤: cut.after, 계속_켠_경우_보조_디딤: keep.steps }; }
 check('위의 모든 장면에서 몸이 바닥 아래로 떨어지지 않는다(몸 자리의 가장 낮은 높이가 −0.6m 위. 웅크려 매달리면 조금 음수가 된다)', jk.minY > -0.6, `가장 낮은 높이 ${jk.minY.toFixed(2)}m (${jk.minAt})`);
 check('벽 동작 전체(위의 모든 장면): 뼈의 한 걸음 회전량이 바로 앞 걸음보다 12° 넘게 달라지지 않는다(지상 동작과 같은 기준)', jk.max <= 12, `가장 큰 튐 ${jk.max.toFixed(1)}° (${jk.what}) · 12° 넘은 횟수 ${jk.n}`); out.cases['벽 동작의 한 걸음 회전 튐'] = { 최대_도: +jk.max.toFixed(1), 어디: jk.what, '12도_넘은_횟수': jk.n };
+// 힘의 한계(p3d-0.8.4): LOOSE=1이면 p3d-0.8.3까지처럼 섞은 뒤 한계를 다시 걸지 않는다(견주기용). 아래 숫자는 "걸기 전에 넘어 있던" 횟수다
+console.log(`기록  힘의 한계: 접촉·걸음 ${FSTAT.n}번 가운데 섞은 뒤 한계를 1N 넘게 넘어 있던 것 ${FSTAT.over}번(가장 큰 넘침 ${FSTAT.max.toFixed(0)}N = 몸무게의 ${(FSTAT.max / (CL.MASS * PHY.G)).toFixed(2)}배) · ${FSTAT.loose ? '한계를 다시 걸지 않음(옛 동작)' : '한계 안으로 되돌림'}`); out.cases['힘의 한계'] = { ...FSTAT };
 if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify(out, null, 1));
 process.exit(fails ? 1 : 0);
