@@ -46,7 +46,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   // 벽: 우클릭은 누르는 순간 오른손
   await click(A.R, 'right'); await handIs(1, 'hold');
   { const s = await st(); check('벽 문맥: 우클릭 = 오른손(누르는 순간)', s.c.hands[1].st === 'hold'); await shot('1_두손_잡음'); }
-  { await wait(300); const t = (await P(() => __p3.tagsText())).join(' | '); { const m = /잡음 지금 ([0-9.]+) · 고른 값 ([0-9.]+) · 한계 (0\.65)/.exec(t.replace(/\s+/g, ' ')); check('진단 표시(임시): 잡은 손의 이름표에 지금 걸음의 힘·고른 값·한계가 따로 나온다(모두 몸무게의 배수). 지금 힘은 한계를 넘지 않는다', !!m && +m[1] <= +m[3] + 0.005, t.replace(/\s+/g, ' ').slice(0, 130)); } }
+  { await wait(300); const t = (await P(() => __p3.tagsText())).join(' | '); { const m = /잡음 당김 ([0-9.]+) · 편 팔 버팀 [0-9.]+ · 고른 값 ([0-9.]+) · 당김 한계 (0\.65)/.exec(t.replace(/\s+/g, ' ')); check('진단 표시(임시): 잡은 손의 이름표에 당기는 힘·편 팔로 버티는 몫·고른 값·당김 한계가 따로 나온다(모두 몸무게의 배수). 당기는 힘은 한계를 넘지 않는다', !!m && +m[1] <= +m[3] + 0.005, t.replace(/\s+/g, ' ').slice(0, 130)); } }
   // 시점 보기 모드: 조작이 모두 멈추고 우클릭 끌기로 시점만 돈다
   await key('KeyV', 80); await wait(100);
   { const n0 = await tries(), s0 = await st(); await pg.keyboard.down('Space'); await pg.keyboard.down('KeyQ'); await pg.keyboard.down('KeyW'); await wait(150); const mid = await st(); await pg.keyboard.up('Space'); await pg.keyboard.up('KeyQ'); await pg.keyboard.up('KeyW');

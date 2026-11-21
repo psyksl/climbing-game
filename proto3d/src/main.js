@@ -168,8 +168,8 @@ const tags = [0, 1, 2, 3, 4].map(() => { const d = document.createElement('div')
 const mark = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), new THREE.MeshBasicMaterial({ color: '#ffffff', depthTest: false, transparent: true, opacity: 0.9 })); mark.renderOrder = 9; mark.visible = false; scene.add(mark);
 // 진단 표시(임시): 하중과 그 손발이 지금 낼 수 있는 한계를 함께 적는다(둘 다 몸무게의 배수. 하중 ÷ 한계가 아니다 — GPT Reply07 5장)
 // p3d-0.8.3(GPT 답): "현재 하중"과 "허용 한계"를 낱말로 나눠 적는다(같은 단위 = 몸무게의 배수). 한계가 0이면(다 펴진 다리는 더 밀지 못한다) 그렇게 적는다. 지금 순간의 값이며 앞으로 버틸지·피로를 뜻하지 않는다
-// 진단 표시(임시): 지금 걸음의 힘 · 고른 값(표시용, 약 0.08초) · 지금 걸음의 한계. 단위는 모두 몸무게의 배수. 한계는 넘지 못하는 값이다(p3d-0.8.4). 지금 힘 ÷ 한계를 '힘쓰는 정도'로 보이지 않는다
-const LOADT = x => (OPT.diag ? ` <i>지금 ${(x.load || 0).toFixed(2)} · 고른 값 ${(x.loadS || 0).toFixed(2)} · 한계 ${x.cap > 1e-3 ? x.cap.toFixed(2) : '0(더 못 냄)'}</i>` : '');
+// 진단 표시(임시, 몸무게의 배수): 손 = 근육이 당기는 힘(당김 한계 안) · 다 편 팔이 줄처럼 버티는 몫(한계와 무관) · 고른 값(둘의 합을 약 0.08초로 고른 표시용 값) · 당김 한계. 발 = 지금 미는 힘 · 고른 값 · 한계. '힘쓰는 정도(%)'로 보이지 않는다
+const LOADT = x => (OPT.diag ? ` <i>${x.pas !== undefined ? `당김 ${(x.act || 0).toFixed(2)} · 편 팔 버팀 ${(x.pas || 0).toFixed(2)}` : `지금 ${(x.load || 0).toFixed(2)}`} · 고른 값 ${(x.loadS || 0).toFixed(2)} · 당김 한계 ${x.cap > 1e-3 ? x.cap.toFixed(2) : '0(더 못 냄)'}</i>` : '');
 function drawTags() {
   const K = sim.climb, put = (d, p, html, cls, dx = 10) => { const s = screenOf(p); d.style.display = s.front ? 'block' : 'none'; d.style.left = `${s.x + dx}px`; d.style.top = `${s.y - 10}px`; d.className = `tag ${cls}`; d.innerHTML = html; };
   tags.forEach(d => { d.style.display = 'none'; }); mark.visible = false;

@@ -178,7 +178,12 @@ export function poseClip(C, M, body, world, groundAt, dt) {
     { const y0 = A.hip.y; mix(A, C.Bp, smooth(act.w), A); if (C.hipW > smooth(act.w)) A.hip.y = lerp(y0, C.Bp.hip.y, C.hipW); }
   }
   qYaw.setFromAxisAngle(UP, body.yaw);
-  const hl = A.hip.clone().applyQuaternion(qYaw), hipClip = V(hl.x, C.gy + A.hip.y, hl.z); // 뿌리(rig.root)는 몸 자리의 땅에 있다
+  // 뿌리(rig.root)는 몸 자리의 땅에 있다
+  // 공중에서는 엉덩이의 좌우 치우침을 없앤다(p3d-0.8.4): 받은 점프 동작은 공중에서 엉덩이가 뿌리보다 옆으로 4.6cm(뒤로 7.4cm) 벗어나 있다.
+  // 옆으로 벗어난 채 턱을 잡으면 벽 문맥이 그 엉덩이 자리에서 시작해 치우친 채 매달리고, 그 흔들림이 5초 넘게 남았다(무입력 매달림의 잔여 속도 0.063m/s).
+  // 앞뒤 몫은 그대로 둔다: 엉덩이는 뒤로, 두 발은 앞으로 나간 자세라 엉덩이를 앞으로 당기면 앞발이 벽 속으로 6cm 들어갔다(해 봄). 디딘 발이 없는 동안만 모으므로 발 고정과 부딪치지 않는다
+  C.airC = (C.airC || 0) + ((body.onGround ? 0 : 1) - (C.airC || 0)) * (1 - Math.exp(-(body.onGround ? 6 : 10) * dt));
+  const hl = A.hip.clone().setX(A.hip.x * (1 - C.airC)).applyQuaternion(qYaw), hipClip = V(hl.x, C.gy + A.hip.y, hl.z);
   B.hips.position.copy(hipClip); names.forEach((n, i) => B[n].quaternion.copy(A.q[i])); B.hips.quaternion.premultiply(qYaw); rig.root.updateMatrixWorld(true);
   // 발: 닿음 판정 → 고정 → 발목 목표
   const actPlant = act.w > 0.5 && act.kind !== 'air' && act.kind !== 'none' && C.lastSpeed < CLIP.PLANT_V; // 점프 층이 두 발을 붙드는 때

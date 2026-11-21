@@ -549,7 +549,7 @@ export function stepClimb(S, inp, dt) {
   }
   for (const h of held) { C.push({ arm: true, f0: h.F, u: h.goal.clone().sub(T.sh[h.i]).normalize(), cap: (K.push ? CL.ARM_BURST : CL.ARM_F) * BW, r: h.goal.clone().sub(com) }); who.push(h); }
   const Fs = solveForces(C, Fd, held.length ? 0 : CL.MOM), acc = V(0, -PHY.G, 0), v0 = b.vel.clone(), p0 = b.pos.clone();
-  Fs.forEach((f, i) => { acc.addScaledVector(f, 1 / m); who[i].load = f.length() / BW; who[i].cap = C[i].cap / BW; who[i].F = f; if (!C[i].arm) who[i].ok = f.lengthSq() > 1; });
+  Fs.forEach((f, i) => { acc.addScaledVector(f, 1 / m); who[i].load = who[i].act = f.length() / BW; who[i].pas = 0; who[i].cap = C[i].cap / BW; who[i].F = f; if (!C[i].arm) who[i].ok = f.lengthSq() > 1; });
   // 흔들기: 손으로만 매달렸을 때 A/D는 벽과 나란한 쪽으로 몸을 미는 힘(엉덩이·다리를 차서 흔드는 것을 질점 몸에 옮긴 근사. 팔 길이 구속이 진자 운동으로 바꾼다)
   if (hanging && side && !K.push) acc.addScaledVector(left, side * CL.SWING_A);
   b.vel.addScaledVector(acc, dt); if (who.length && !K.push) b.vel.multiplyScalar(1 - (hanging ? CL.HANG_DAMP : CL.DAMP) * dt);
@@ -569,7 +569,8 @@ export function stepClimb(S, inp, dt) {
   }
   for (let it = 0; it < 4; it++) for (const h of held) { const d = h.goal.clone().sub(T.sh[h.i].clone().add(b.pos).sub(p0)), L = d.length(); if (L > CL.ARM) b.pos.addScaledVector(d.multiplyScalar(1 / L), L - CL.ARM); }
   const shock = lim.length ? armDv / lim.length : 0;
-  for (const h of lim) h.load += shock * m / dt / BW;
+  // 손의 하중 = 근육이 당기는 힘(act. 한계 cap 안) + 다 편 팔이 줄처럼 버티는 몫(pas. 뼈대가 받는 것이라 당기는 한계와 무관하다. 충격도 여기 든다)
+  for (const h of lim) { h.pas = shock * m / dt / BW; h.load += h.pas; }
   K.T = torso(b, K);
   // 몸의 가속(걸러서 적어 둔다): 늘어뜨린 다리가 관성으로 뒤따르는 데 쓴다
   K.accS.lerp(b.vel.clone().sub(v0).multiplyScalar(1 / dt).clampLength(0, 25), 1 - Math.exp(-30 * dt));
@@ -801,6 +802,6 @@ export function afterPose(S) {
 }
 export const limbState = K => ({
   on: K.on,
-  hands: K.hands.map(h => ({ s: h.s, st: h.st, armBlock: h.st === 'reach' && (h.blockT || 0) > 0.12, load: h.load, loadS: h.loadS || 0, cap: h.cap || 0, why: h.why, grip: h.st === 'free' ? null : h.grip.toArray(), w: h.w.toArray(), box: h.st !== 'free' && h.edge ? h.edge.box.name : '' })),
+  hands: K.hands.map(h => ({ s: h.s, st: h.st, armBlock: h.st === 'reach' && (h.blockT || 0) > 0.12, load: h.load, act: h.act || 0, pas: h.pas || 0, loadS: h.loadS || 0, cap: h.cap || 0, why: h.why, grip: h.st === 'free' ? null : h.grip.toArray(), w: h.w.toArray(), box: h.st !== 'free' && h.edge ? h.edge.box.name : '' })),
   feet: K.feet.map(f => ({ s: f.s, st: f.st, load: f.load, loadS: f.loadS || 0, cap: f.cap || 0, ok: f.ok, kind: f.kind, auto: f.auto, why: f.why, p: f.st === 'free' ? null : f.p.toArray(), box: f.st !== 'free' && f.box ? f.box.name : '' })),
 });
