@@ -10,7 +10,7 @@ const { buildCharacter, DIM } = await imp('rig.js'), { makeWorld } = await imp('
 const CLP = path.resolve(HERE, '../assets_local/clips.json'), useClip = process.env.MODE === 'clip';
 if (useClip && !fs.existsSync(CLP)) { console.log('clips.json 없음 → 건너뜀'); process.exit(0); }
 const clips = useClip ? JSON.parse(fs.readFileSync(CLP, 'utf8')) : null, rig = buildCharacter(), DT = PHY.DT, G = PHY.G;
-for (const k of ['OLDHAND', 'NOSTRETCH']) globalThis[k] = !!process.env[k]; // p3d-0.8.8 비교 스위치: OLDHAND = 손의 빠르기 곡선과 팔의 복귀를 0.8.7처럼, NOSTRETCH = 뻗을 때의 몸 연결 끔
+for (const k of ['OLDHAND', 'NOSTRETCH', 'OLDPOSE']) globalThis[k] = !!process.env[k]; // p3d-0.8.8 비교 스위치: OLDHAND = 손의 빠르기 곡선과 팔의 복귀를 0.8.7처럼, NOSTRETCH = 뻗을 때의 몸 연결 끔
 globalThis.KDBG = !!process.env.KDBG; FSTAT.loose = !!process.env.LOOSE; globalThis.NOOPEN = !!process.env.NOOPEN; globalThis.NOSELF = !!process.env.NOSELF; globalThis.NOARMS = !!process.env.NOARMS; if (process.env.XTW) globalThis.XTW = +process.env.XTW; if (process.env.MW) globalThis.MW = +process.env.MW; if (process.env.XT) globalThis.XT = +process.env.XT; globalThis.NOLEAN = !!process.env.NOLEAN; let sim, rec, fails = 0; const jk = { prev: null, sim: null, d: [], max: 0, what: '', n: 0, minY: 9, minAt: '' };
 const out = { note: '스크립트 입력(사람 손 아님). 모션 = ' + (useClip ? '캡처' : '자작'), checks: [], cases: {} };
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${detail}`); out.checks.push({ name, ok, detail }); if (!ok) fails++; };
