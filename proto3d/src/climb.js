@@ -241,7 +241,7 @@ function crossSide(a0, a1, b0, b1, fwd) {
 }
 // 다른 팔을 돌아가는 길(p3d-0.8.6): 손목이 목표로 곧게 가는 길이 다른 팔의 팔뚝을 가로지르면, 그 팔뚝의 앞(벽 쪽)이나 뒤(몸 쪽)로 돌아가는 경유점을 돌려준다(없으면 null).
 // 어느 쪽으로 도는가(H.pass, +1 = 벽 쪽 · −1 = 몸 쪽. 한 번 정하면 이 뻗기 동안 바꾸지 않는다):
-//   지금 두 팔뚝이 이미 엇갈려 있으면(풀 때) 지금 놓인 쪽 그대로, 아니면 **목표에 닿았을 때의 자세**(pickPole)에서 이 팔뚝이 다른 팔뚝의 어느 쪽에 놓이는지로 정한다.
+//   지금 두 팔뚝이 이미 엇갈려 있으면(풀 때) 지금 놓인 쪽 그대로, 아니면 벽 쪽(잡은 팔의 밑)으로 돈다.
 //   (0.8.5는 손목이 늘 몸 쪽으로 다가가서, 끝 자세가 벽 쪽일 때 두 팔뚝이 서로를 가로질렀다. 굵기를 지키게 하면 그 자리에서 멈춰 교차가 되지 않았다)
 // 경유점 = 다른 팔뚝 위의 한 점(그 손목에서 10cm 넘게 아래 — 잡은 손목과 턱 사이에는 자리가 없다)에서 고른 쪽으로 두 반지름 + 1.5cm. 옆으로 그 점을 지나고 나면 목표로 간다
 function armVia(S, H, sh, goal, SB, fwdW, leftW, yaw, sx, qC) {
@@ -252,10 +252,9 @@ function armVia(S, H, sh, goal, SB, fwdW, leftW, yaw, sx, qC) {
   const dir = Math.sign(goal.clone().sub(q).dot(leftW)) || 1, s0 = H.w.clone().sub(q).dot(leftW) * dir; if (s0 > 0.02) return null; // 이미 옆으로 지나왔다
   // 쪽은 손목이 그 팔뚝의 22cm 안에 왔을 때 정한다(뻗기 시작한 걸음에는 가슴이 아직 돌아가지 않아 끝 자세가 다르게 나온다). 그 전에는 곧게 간다
   if (!H.pass && H.w.distanceTo(q) > 0.22) return null;
-  if (!H.pass) { const el = worldPos(S.rig.bones[`foreArm.${H.s}`]), cur = crossSide(el, H.w, c.a, c.b, fwdW);
-    // 지금 이 팔뚝이 다른 팔뚝보다 벽 쪽이나 몸 쪽으로 2cm 넘게 치우쳐 있으면 그쪽으로 돈다(이미 엇갈려 있을 때 = 풀 때도 같다. 팔이 지금 있는 쪽을 따라가야 팔뚝이 다른 팔을 가로지르지 않는다)
-    if (cur.depth > 0.02 && cur.side && !globalThis.VIAFIN) H.pass = cur.side;
-    else { const fin = dryBend(S, 'el' + H.s, () => pickPole(S, sh, goal, yaw, sx, qC, H.edge ? H.edge.box : null, SB)), ik = twoBone(sh, goal, DIM.upperArm, DIM.foreArm, fin.pole), fc = crossSide(ik.mid, ik.end, c.a, c.b, fwdW); H.pass = fc.gap < 0.02 && fc.side ? fc.side : -1; } }
+  // 쪽을 정한다: 지금 그림에서 두 팔뚝이 이미 엇갈려 있으면(풀 때) 지금 놓인 쪽 그대로. 아니면 **벽 쪽(잡은 팔의 밑)** 으로 돈다 — 교차 중에는 건너가는 팔의 어깨를 벽 쪽으로 비틀어 두므로 끝 자세가 벽 쪽에서 성립한다.
+  // (작업 중에 해 본 것: ① 목표에 닿았을 때의 자세로 정하기 — 뻗기 시작한 걸음에는 가슴이 아직 돌지 않아 반대쪽이 나왔다 ② 지금 팔뚝이 치우친 쪽 — 늘어뜨린 손에서는 맞았지만 턱을 잡고 있던 손에서 시작하면 몸 쪽이 나와 끝에서 막혔다)
+  if (!H.pass) { const el = worldPos(S.rig.bones[`foreArm.${H.s}`]), cur = crossSide(el, H.w, c.a, c.b, fwdW); H.pass = cur.gap < 0.01 && cur.depth > 0.01 && cur.side ? cur.side : (globalThis.PASS ?? 1); }
   return q.addScaledVector(fwdW, H.pass * clear).addScaledVector(leftW, dir * 0.04);
 }
 function segSeg(p1, q1, p2, q2) {
