@@ -179,13 +179,23 @@ function selfBody(S) {
 // 0.8.5는 셋 가운데 가장 깊은 것 하나만 돌려줘서, 다른 팔에 더 깊이 겹친 걸음에는 몸통의 겹침이 가려졌다(다른 팔과의 겹침으로는 멈추지 않으므로 몸통 검사까지 빠졌다).
 // rArm = 다른 팔에 대해 쓰는 반지름(실제 굵기). 다른 팔과는 살이 눌리는 만큼(ARM_SQ)까지 겹침으로 보지 않는다
 const ARM_SQ = 0.012;
-function selfHits(B, p, r, headOnly = false, rHead = Math.min(r, 0.01), rArm = r) {
+// 거리 0의 경계(p3d-0.8.7, GPT의 0.8.6 검토): 점이 머리의 가운데나 다른 팔의 가운데 선 위에 놓이면 빠져나갈 방향(가운데에서 그 점으로)을 계산할 수 없다.
+// 0.8.6은 그때 겹침 자체를 버렸다(가장 깊이 겹친 자리에서 "겹치지 않음"이 나왔다). 겹침과 깊이는 그대로 남기고, 방향은 아래 순서로 정한다(같은 입력이면 늘 같은 방향):
+//   ① 부르는 쪽이 넘긴 방향(hint — 뻗는 손은 앞 걸음에 실제로 쓴 방향) ② 가슴 가운데에서 그 점으로 가는 쪽(몸 밖) ③ 위 ④ 옆 ⑤ 앞. 캡슐이면 축과 나란한 몫을 뺀다(옆으로 빠져나가는 방향만 뜻이 있다).
+// 이렇게 정한 결과에는 deg: true를 붙인다. 부르는 쪽은 이것을 "앞 걸음의 방향"으로 기억하지 않는다
+const DEG_L = 1e-4;
+function degN(B, p, axis, hint) {
+  for (const c of [hint, B.boxes && B.boxes[0] ? p.clone().sub(B.boxes[0].c) : null, UP, X, V(0, 0, 1)]) { if (!c) continue; const n = c.clone(); if (axis) n.addScaledVector(axis, -n.dot(axis)); const l2 = n.lengthSq(); if (Number.isFinite(l2) && l2 > 1e-8) return n.multiplyScalar(1 / Math.sqrt(l2)); }
+  return UP.clone(); }
+function selfHits(B, p, r, headOnly = false, rHead = Math.min(r, 0.01), rArm = r, hint = null) {
   let body = null, arm = null;
   // 머리: 팔이 귀 옆에 붙는 것(팔의 가운데 선이 머리 가운데에서 12cm)까지는 겹침이 아니다
-  { const v = p.clone().sub(B.head.c), L = v.length(), d = rHead + B.head.r - L; if (d > 0 && L > 1e-5) body = { d, n: v.multiplyScalar(1 / L), head: true }; }
+  { const v = p.clone().sub(B.head.c), L = v.length(), d = rHead + B.head.r - L; if (d > 0) body = L > DEG_L ? { d, n: v.multiplyScalar(1 / L), head: true } : { d, n: degN(B, p, null, hint && hint.body), head: true, deg: true }; }
   if (!headOnly) for (const x of B.boxes) { const l = p.clone().sub(x.c).applyQuaternion(x.qi), q = V(Math.abs(l.x) - x.h.x, Math.abs(l.y) - x.h.y, Math.abs(l.z) - x.h.z), o = V(Math.max(q.x, 0), Math.max(q.y, 0), Math.max(q.z, 0)), out = o.length(), d = r - (out + Math.min(Math.max(q.x, q.y, q.z), 0));
     if (d > 0 && (!body || d > body.d)) { const n = out > 1e-6 ? V(o.x * Math.sign(l.x), o.y * Math.sign(l.y), o.z * Math.sign(l.z)).normalize() : q.x >= q.y && q.x >= q.z ? V(Math.sign(l.x) || 1, 0, 0) : q.y >= q.z ? V(0, Math.sign(l.y) || 1, 0) : V(0, 0, Math.sign(l.z) || 1); body = { d, n: n.applyQuaternion(x.q) }; } }
-  if (B.caps && rArm > 0) for (const c of B.caps) { const ab = c.b.clone().sub(c.a), t = clamp(p.clone().sub(c.a).dot(ab) / Math.max(1e-9, ab.lengthSq()), 0, 1), v = p.clone().sub(c.a.clone().addScaledVector(ab, t)), L = v.length(), d = rArm + lerp(c.ra, c.rb, t) - ARM_SQ - L; if (d > 0 && L > 1e-5 && (!arm || d > arm.d)) arm = { d, n: v.multiplyScalar(1 / L), arm: true, ci: B.caps.indexOf(c), ct: t, L }; }
+  if (B.caps && rArm > 0) for (const c of B.caps) { const ab = c.b.clone().sub(c.a), t = clamp(p.clone().sub(c.a).dot(ab) / Math.max(1e-9, ab.lengthSq()), 0, 1), v = p.clone().sub(c.a.clone().addScaledVector(ab, t)), L = v.length(), d = rArm + lerp(c.ra, c.rb, t) - ARM_SQ - L; if (!(d > 0) || (arm && d <= arm.d)) continue;
+    if (L > DEG_L) arm = { d, n: v.multiplyScalar(1 / L), arm: true, ci: B.caps.indexOf(c), ct: t, L };
+    else { const al = ab.length(); arm = { d, n: degN(B, p, al > 1e-6 ? ab.clone().multiplyScalar(1 / al) : null, hint && hint.arm), arm: true, ci: B.caps.indexOf(c), ct: t, L, deg: true }; } }
   return { body, arm };
 }
 // 팔의 겹침 { body, arm }(둘 다 없으면 null).
@@ -370,8 +380,8 @@ function aimHand(S, H, pt) {
 // 거부: 새 명령을 받아들이지 않을 뿐, 지금의 접촉·움직임은 그대로 둔다
 function deny(S, L, limb, why) { L.why = why; note(S, 'reject', limb, L.i, why, { kept: L.st }); }
 // 실패: 옮기기 시작한 손발이 닿지 못했다(그 손발은 놓인 채 남는다. 전 자리로 되돌려 붙이지 않는다)
-function reject(S, L, limb, why) { const J = joints(S), K = S.climb; L.why = why; if (limb === 'hand') { L.rel.copy(L.w).sub(J.sh[L.i]); L.st = 'free'; L.drag = false; L.swivel = false; L.selfBlock = 0; L.armCross = 0; L.pass = 0; } else { L.rel.copy(L.a).sub(J.hj[L.i]); L.st = 'free'; L.cool = 0.3; if (L.byAssist) K.assistBad = { p: L.p.clone(), k: K.tick }; } note(S, 'reject', limb, L.i, why, L.byAssist && limb === 'foot' ? { auto: true } : {}); }
-function releaseHand(S, i, why, type = 'release') { const K = S.climb, H = K.hands[i]; if (H.st === 'free') return; const was = H.st; H.st = 'free'; H.swivel = false; H.selfBlock = 0; H.armCross = 0; H.pass = 0; H.F = null; H.rel.copy(H.w).sub(joints(S).sh[i]); H.load = 0; H.bad = 0; H.why = why; if (was === 'hold') note(S, type, 'hand', i, why, { vel: S.body.vel.toArray() }); }
+function reject(S, L, limb, why) { const J = joints(S), K = S.climb; L.why = why; if (limb === 'hand') { L.rel.copy(L.w).sub(J.sh[L.i]); L.st = 'free'; L.drag = false; L.swivel = false; L.selfBlock = 0; L.armCross = 0; L.pass = 0; L.hn = null; } else { L.rel.copy(L.a).sub(J.hj[L.i]); L.st = 'free'; L.cool = 0.3; if (L.byAssist) K.assistBad = { p: L.p.clone(), k: K.tick }; } note(S, 'reject', limb, L.i, why, L.byAssist && limb === 'foot' ? { auto: true } : {}); }
+function releaseHand(S, i, why, type = 'release') { const K = S.climb, H = K.hands[i]; if (H.st === 'free') return; const was = H.st; H.st = 'free'; H.swivel = false; H.selfBlock = 0; H.armCross = 0; H.pass = 0; H.hn = null; H.F = null; H.rel.copy(H.w).sub(joints(S).sh[i]); H.load = 0; H.bad = 0; H.why = why; if (was === 'hold') note(S, type, 'hand', i, why, { vel: S.body.vel.toArray() }); }
 function liftFoot(S, i, why, type = 'lift') { const K = S.climb, F = K.feet[i]; if (F.st === 'free') return; const was = F.st; F.st = 'free'; F.F = null; F.cool = 0.22; if (why === '뗌') { F.userOff = true; F.offBox = F.box; } F.rel.copy(F.a).sub(joints(S).hj[i]); F.load = 0; F.ok = false; F.why = why; if (was === 'plant') note(S, type, 'foot', i, why); }
 
 // 보내는 손발을 한 걸음 옮긴다. 어깨·고관절에서 닿는 데까지만 간다(늘어나지 않는다). 다 가서 닿았으면 잡고, 닿지 않으면 잠깐 더 뻗어 보다가 거부한다
@@ -394,14 +404,15 @@ function limbsStep(S, dt) {
     // p3d-0.8.6: 머리·몸통과 다른 팔을 **따로** 본다(둘 다 닿아 있으면 둘 다 비킨다). 다른 팔은 실제 굵기로 보고, 똑바로 부딪쳐 옆으로 갈 몫이 없으면 앞(벽 쪽)·뒤(몸 쪽) 가운데 빈 쪽으로 돌아간다
     // (앞뒤 7cm 자리에 손목을 놓아 보고 지형·몸통에 덜 겹치는 쪽. 같으면 몸 쪽 — 잡고 있는 손목과 벽 사이에는 자리가 없다). 한 번 고른 쪽은 이 뻗기 동안 바꾸지 않는다(H.pass)
     const SB = selfShapes(S, H.i), RW = ARM_R.fore[1], fwdW = V(Math.sin(S.body.yaw), 0, Math.cos(S.body.yaw)); let selfTouch = false, armTouch = false;
-    if (SB && dl > 1e-6) { const hh = selfHits(SB, H.w, RW + 0.025, false, RW + 0.025, RW + 0.025);
+    const hn = H.hn || (H.hn = { body: null, arm: null }), keepN = hh => { if (hh.body && !hh.body.deg) hn.body = hh.body.n.clone(); if (hh.arm && !hh.arm.deg) hn.arm = hh.arm.n.clone(); };
+    if (SB && dl > 1e-6) { const hh = selfHits(SB, H.w, RW + 0.025, false, RW + 0.025, RW + 0.025, hn); keepN(hh);
       for (const [h, isArm] of [[hh.body, false], [hh.arm, true]]) { if (!h) continue; const into = dv.dot(h.n); if (into >= 0) continue; if (isArm) armTouch = true; else selfTouch = true; dv.addScaledVector(h.n, -into);
         if (dv.length() >= 0.35 * dl) continue; let pref;
         if (isArm) { if (!H.pass) { const cost = sg => { const t = fwdW.clone().multiplyScalar(sg); t.addScaledVector(h.n, -t.dot(h.n)); if (t.lengthSq() < 1e-6) return 9; const q = H.w.clone().addScaledVector(t.normalize(), 0.07); let c = 0; for (const x of S.world.boxes) { const g = x.kind === 'floor' ? null : sphereBox(q, RW + ARM_PAD, x); if (g) c = Math.max(c, g.d); } const b2 = selfHits(SB, q, RW, false, RW, 0).body; return b2 ? Math.max(c, b2.d) : c; }; H.pass = cost(-1) <= cost(1) + 1e-4 ? -1 : 1; } pref = fwdW.clone().multiplyScalar(H.pass); }
         else pref = fwdW.clone().multiplyScalar(0.6).add(UP);
         const tg = pref.addScaledVector(h.n, -pref.dot(h.n)); if (tg.lengthSq() > 1e-6) dv.addScaledVector(tg.normalize(), 0.6 * dl); } }
     { const l2 = dv.length(); if (l2 > 1e-6) H.w.addScaledVector(dv, Math.min(selfTouch || armTouch ? dl / l2 : 1, H.sp * dt / l2)); }
-    if (SB) for (let it = 0; it < 2; it++) { const hh = selfHits(SB, H.w, RW, false, RW, RW); if (!hh.body && !hh.arm) break; if (hh.body) { H.w.addScaledVector(hh.body.n, Math.min(hh.body.d, 0.02 + shMv)); selfTouch = true; } if (hh.arm) { H.w.addScaledVector(hh.arm.n, Math.min(hh.arm.d, 0.02 + shMv)); armTouch = true; } }
+    if (SB) for (let it = 0; it < 2; it++) { const hh = selfHits(SB, H.w, RW, false, RW, RW, hn); keepN(hh); if (!hh.body && !hh.arm) break; if (hh.body) { H.w.addScaledVector(hh.body.n, Math.min(hh.body.d, 0.02 + shMv)); selfTouch = true; } if (hh.arm) { H.w.addScaledVector(hh.arm.n, Math.min(hh.arm.d, 0.02 + shMv)); armTouch = true; } }
     H.selfBlock = selfTouch || H.stopB ? (H.selfBlock || 0) + dt : 0; H.armCross = armTouch || H.stopA ? (H.armCross || 0) + dt : 0; H.stopB = false; H.stopA = false;
     const d = H.w.clone().sub(sh); if (d.length() > CL.ARM) H.w.copy(sh).addScaledVector(d.normalize(), CL.ARM);
     // B4: 뻗는 손이 벽·턱 속으로 들어가지 않는다. ① 이 걸음에 간 길(앞 자리 → 새 자리)이 지형을 가로지르면 닿은 데서 멈춘다(얇은 것을 한 걸음에 건너뛰지 않게) ② 그래도 겹치면 들어간 만큼 가장 얕은 쪽으로 빼낸다(손목 둘레 = 팔뚝 끝의 실제 반지름 3.6cm + 여유. p3d-0.8.2까지는 1.5cm여서 그려진 팔뚝 끝이 턱에 들어갔다. 잡을 때의 손목 자리는 턱 앞면에서 4cm 앞이라 막히지 않는다). 손은 겉면을 따라 미끄러져 간다
@@ -451,7 +462,7 @@ function limbsStep(S, dt) {
     const yielding = (H.stopA && ((S.poleS && S.poleS['el' + (H.i ? 'L' : 'R') + 'w']) || 0) > 0.5) || ((H.stopA || H.stopB) && ((S.poleS && S.poleS['el' + H.s + 'w']) || 0) > 0.5);
     if (H.w.clone().sub(sh).distanceTo(rel0) < 0.0015 && !H.swivel && !yielding) H.wait += dt;
     // 까닭의 순서(p3d-0.8.6): 팔이 턱에 걸림 → 팔을 다 펴도 닿지 않는 거리(몸·다른 팔에 스쳤더라도 거리가 까닭이다) → 제 몸에 가림 → 다른 팔에 가림
-    if (H.wait > CL.TRY_T || H.t > H.T) reject(S, H, 'hand', H.blockT > 0.12 ? '팔이 턱에 걸려 닿지 않음' : far > 0.02 ? `닿지 않음(${short(Math.max(far, miss))} 모자람)` : (H.selfBlock || 0) > 0.12 ? '제 몸에 가려 닿지 않음' : (H.armCross || 0) > 0.12 ? '다른 팔에 가려 닿지 않음' : `닿지 않음(${short(Math.max(far, miss))} 모자람)`);
+    if (H.wait > CL.TRY_T || H.t > H.T) reject(S, H, 'hand', H.blockT > 0.12 ? '팔이 턱에 걸려 닿지 않음' : far > 0.02 ? `닿지 않음(${short(Math.max(far, miss))} 모자람)` : (H.selfBlock || 0) > 0.12 ? '몸에 막혀 닿지 않음' : (H.armCross || 0) > 0.12 ? '다른 팔에 막혀 닿지 않음' : `닿지 않음(${short(Math.max(far, miss))} 모자람)`);
   }
   if (!K.on) return;
   for (const F of K.feet) {
@@ -504,7 +515,7 @@ function limbsStep(S, dt) {
   }
 }
 function grab(S, H) {
-  const K = S.climb; H.st = 'hold'; H.drag = false; H.swivel = false; H.selfBlock = 0; H.armCross = 0; H.pass = 0; H.w.copy(H.goal); H.load = 0; H.bad = 0; H.jam = 0; H.why = ''; H.F = null;
+  const K = S.climb; H.st = 'hold'; H.drag = false; H.swivel = false; H.selfBlock = 0; H.armCross = 0; H.pass = 0; H.hn = null; H.w.copy(H.goal); H.load = 0; H.bad = 0; H.jam = 0; H.why = ''; H.F = null;
   note(S, 'grab', 'hand', H.i, '', { box: H.edge.box.name, grip: H.grip.toArray() });
   if (!K.on) enter(S, S.body.onGround ? '서서 잡음' : '공중에서 잡음');
 }
