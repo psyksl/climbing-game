@@ -15,9 +15,9 @@ const hand = (i, p) => ({ type: 'hand', i, p }), foot = (i, p) => ({ type: 'foot
 const base = { ...NEW.CL }, VARS = [
   ...(OLD ? [['0.8.8 소스', OLD, null, false]] : []),
   ['층 끔(OLDPOSE)', NEW, {}, true],
-  ['층 켬 · 손 뻗기의 몫 0', NEW, { PO_REACH: 0 }, false],
   [`층 켬 · 기본(손 뻗기의 몫 ${base.PO_REACH * 100}cm)`, NEW, {}, false],
-  [`층 켬 · 손 뻗기의 몫 ${base.PO_REACH * 200}cm`, NEW, { PO_REACH: base.PO_REACH * 2 }, false],
+  ['층 켬 · 손 뻗기의 몫 3cm', NEW, { PO_REACH: 0.03 }, false],
+  ['층 켬 · 손 뻗기의 몫 6cm', NEW, { PO_REACH: 0.06 }, false],
   ['층 켬 · 받치는 발 쪽으로 가는 몫 0', NEW, { PO_SIDE: 0 }, false],
   ['층 켬 · 엉덩이를 빼는 몫 0', NEW, { PO_BACK: 0 }, false],
 ];
