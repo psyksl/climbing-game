@@ -751,7 +751,9 @@ export function stepClimb(S, inp, dt) {
       const mv = K.feet.find(f => f.st === 'move'), sup = planted.filter(f => f.load > 0.05);
       // 쓰는 때: 발을 옮기는 동안, 또는 발판 위의 한 발이 하중의 60%를 넘게 받는 만큼(그 발로 올라서는 중). 바닥에 서 있을 때는(두 발이든 한 발이든) 옮기지 않는다 — 바닥에 선 자세의 어깨 자리가 0.8.8과 달라지지 않게.
       //   처음에는 가리지 않았다. 그랬더니 바닥에 서서 옆으로 뻗는 손이 3cm 덜 닿았고, 팔을 다 편 교차(1.6cm 기준에 걸쳐 있는 아슬아슬한 장면)가 어깨 1~2cm 차이로 "다른 팔에 막힘"이 됐다
-      if (sup.length) { let c = 0, w = 0, top = null; for (const f of sup) { c += f.ank.clone().sub(b.pos).dot(left) * f.load; w += f.load; if (!top || f.load > top.load) top = f; } const one = mv ? 1 : top.box.kind !== 'floor' ? clamp((top.load / w - 0.6) / 0.25, 0, 1) : 0; tx += one * clamp(c / w * CL.PO_SIDE * (mv ? 1.4 : 1), -CL.PO_SIDE_MAX, CL.PO_SIDE_MAX); }
+      if (sup.length) { let c = 0, w = 0, top = null; for (const f of sup) { c += f.ank.clone().sub(b.pos).dot(left) * f.load; w += f.load; if (!top || f.load > top.load) top = f; } // 멀리 뻗어야 닿는 발판으로 가는 발에는 쓰지 않는다(다리를 78% 넘게 펴야 하는 만큼 줄인다): 골반이 남는 발 쪽으로 가면 뻗는 발이 그만큼 덜 닿는다(해 보니 5cm 모자라던 옆 발판이 8cm 모자랐다 — 영상의 기록에서 찾음)
+        const farK = mv ? 1 - clamp((Tn.hj[mv.i].distanceTo(mv.ank) / DIM.leg - 0.78) / 0.14, 0, 1) : 1;
+        const one = mv ? farK : top.box.kind !== 'floor' ? clamp((top.load / w - 0.6) / 0.25, 0, 1) : 0; tx += one * clamp(c / w * CL.PO_SIDE * (mv ? 1.4 : 1), -CL.PO_SIDE_MAX, CL.PO_SIDE_MAX); }
       for (const f of K.feet) { if (f.st === 'free' || f.kind !== 'top' || (f.st === 'plant' && f.box.kind === 'floor')) continue; const hj = Tn.hj[f.i], d = f.ank.clone().sub(hj), sx = f.i ? -1 : 1;
         const fold = clamp((0.66 - d.length() / DIM.leg) / 0.26, 0, 1), front = clamp((d.dot(fwd) - 0.08) / 0.12, 0, 1); tz = Math.min(tz, -CL.PO_BACK * fold * front);
         ty += -sx * CL.PO_YAW * clamp((-sx * d.dot(left) - 0.05) / 0.20, 0, 1); }
