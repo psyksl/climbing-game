@@ -178,7 +178,7 @@ function drawTags() {
   const near = K.hands.every(h => h.st !== 'free') && (() => { const a = screenOf(K.hands[0].st === 'hold' ? K.hands[0].grip : K.hands[0].goal), b = screenOf(K.hands[1].st === 'hold' ? K.hands[1].grip : K.hands[1].goal); return Math.abs(a.y - b.y) < 22 && Math.abs(a.x - b.x) < 150; })();
   // 취소 알림(임시 모양·문구): 뻗던 손을 거둔 뒤 0.9초 동안 그 손 자리에 한 번만 보인다(뻗는 표시는 이미 사라졌다). 놓기·실패와 다른 기호를 쓴다
   { const now = sim.tick / 120; for (let k = K.log.length - 1; k >= 0 && now - K.log[k].t < 0.9; k--) { const e = K.log[k]; if (e.type === 'cancel' && e.limb === 'hand' && K.hands[e.i].st === 'free') { put(tags[e.i], rig.bones[`hand.${e.i ? 'R' : 'L'}`].getWorldPosition(new THREE.Vector3()), `⤺ ${e.name} 보내기 취소`, 'pv'); break; } } }
-  K.hands.forEach((h, i) => { const n = i ? '오른손' : '왼손', dx = near && !i ? -112 : 10; if (h.st === 'hold') put(tags[i], h.grip, `● ${n} 잡음${LOADT(h)}`, i ? 'R' : 'L', dx); else if (h.st === 'reach') put(tags[i], h.w, (h.drag ? `◌ ${n} 뻗는 중${h.edge ? ' · 떼면 잡기' : ''}` : `→ ${n} 보내는 중`) + ((h.blockT || 0) > 0.12 ? ' · <b>팔 경로 막힘</b>' : ''), i ? 'R' : 'L', dx); });
+  K.hands.forEach((h, i) => { const n = i ? '오른손' : '왼손', dx = near && !i ? -112 : 10; if (h.st === 'hold') put(tags[i], h.grip, `● ${n} 잡음${LOADT(h)}`, i ? 'R' : 'L', dx); else if (h.st === 'reach') put(tags[i], h.w, (h.drag ? `◌ ${n} 뻗는 중${h.edge ? ' · 떼면 잡기' : ''}` : `→ ${n} 보내는 중`) + (h.swivel ? ` · <b>⤴ 팔꿈치 돌리는 중 ${'◜◝◞◟'[Math.floor(sim.tick / 10) % 4]}</b>` : (h.blockT || 0) > 0.12 ? ' · <b>⤬ 팔 경로 막힘</b>' : ''), i ? 'R' : 'L', dx); });
   const nearF = K.feet.every(f => f.st !== 'free') && (() => { const a = screenOf(K.feet[0].p), b = screenOf(K.feet[1].p); return Math.abs(a.y - b.y) < 22 && Math.abs(a.x - b.x) < 150; })();
   K.feet.forEach((f, i) => { const n = i ? '오른발' : '왼발', dx = nearF && !i ? -112 : 10; if (f.st === 'plant' && !(f.auto && f.box.kind === 'floor' && !OPT.diag)) put(tags[2 + i], f.p, (f.loadS || 0) > 0.05 ? `▲ ${n} 디딤${LOADT(f)}` : `△ ${n} 닿아만 있음`, i ? 'R' : 'L', dx); else if (f.st === 'move') put(tags[2 + i], f.p, `→ ${n} 보내는 중${f.byAssist ? '(보조)' : ''}`, i ? 'R' : 'L', dx); });
   // 미리보기: 겨눈 자리를 지금 자세에서 잡을(디딜) 수 있는지. 실제 판정과 같은 함수. 몸이 움직이는 중이면 확정처럼 보이지 않게 "?"를 붙인다
@@ -188,9 +188,11 @@ function drawTags() {
   const sa = screenOf(a), foot = wantsFoot(), P = [0, 1].map(i => (foot ? probeFoot : probeHand)(sim, i, a)), g = P.find(x => x.grip);
   if (!g && !foot) return; // 턱이 아닌 곳을 겨눌 때는 손 미리보기를 띄우지 않는다(눌렀을 때의 거부 까닭은 기록에 남는다)
   if (g) { mark.position.set(...g.grip); mark.visible = true; mark.material.color.set(P.some(x => x.ok) ? '#7be08a' : '#ffb35c'); }
+  // 단추 이름표(임시 모양, GPT 답): 발 선택을 누르고 있으면 같은 단추의 이름이 왼손·오른손 → 왼발·오른발로 바뀐다. 키 설정에서 읽는다(이름을 코드에 고정해 쓰지 않는다)
+  const cap = id => { const bd = BIND.find(x => x.id === id); return bd && bd.keys[0] ? `<span style="display:inline-block;padding:0 5px;margin-right:4px;border:1px solid ${foot ? '#e0a94f' : '#8fa3b5'};border-radius:4px;font-size:11px;color:${foot ? '#ffd58a' : '#cfd9e2'}">${keyName(bd.keys[0])}</span>` : ''; };
   const act = x => (/닿지 않음/.test(x.why) ? '조금 더 가까이' + (OPT.diag ? ` (${x.why})` : '') : x.why);
   const line = (x, n) => `${x.ok ? '●' : x.short !== undefined ? '○' : '✕'} ${n} ${x.ok ? (foot ? '디딜 수 있음' : '닿음') : act(x)}${x.sure === false ? ' <i>? 지금 자세 기준</i>' : ''}`;
-  tip((g ? `<b>${g.name}</b>${g.kind ? (g.kind === 'top' ? ' 윗면' : ' 벽면') : ''}<br>` : '') + (P[0].why === P[1].why && !P[0].ok && !g ? `✕ ${P[0].why}` : line(P[0], foot ? '왼발' : '왼손') + '<br>' + line(P[1], foot ? '오른발' : '오른손')), sa.front ? sa.x : input.st.mx, sa.front ? sa.y : input.st.my);
+  tip((g ? `<b>${g.name}</b>${g.kind ? (g.kind === 'top' ? ' 윗면' : ' 벽면') : ''}<br>` : '') + (P[0].why === P[1].why && !P[0].ok && !g ? `✕ ${P[0].why}` : cap('limbL') + line(P[0], foot ? '왼발' : '왼손') + '<br>' + cap('limbR') + line(P[1], foot ? '오른발' : '오른손')), sa.front ? sa.x : input.st.mx, sa.front ? sa.y : input.st.my);
 }
 function stateName() {
   if (sim.climb.on) { const K = sim.climb, h = K.hands.filter(x => x.st === 'hold').length, f = K.feet.filter(x => x.st === 'plant' && x.load > 0.05).length; return h === 2 ? (f ? '두 손 + 발' : '두 손 매달림') : h === 1 ? (f ? '한 손 + 발' : '한 손 매달림') : '손 없이 발로 섬'; }

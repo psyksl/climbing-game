@@ -333,7 +333,9 @@ function limbsStep(S, dt) {
     if (H.edge && miss <= Math.max(CL.CATCH, H.sp * dt * 0.5) && far <= 0.002) { const c = armCheck(S, H.i, sh, H.goal, H.n); if (c) reject(S, H, 'hand', c); else grab(S, H); continue; }
     // 더 갈 수 없게 된 뒤(팔이 다 펴졌거나 멈춤)로 TRY_T만큼만 더 뻗고 있는다. 그사이 몸이 다가가면 잡는다
     // 팔꿈치가 아직 돌고 있는 동안(팔꿈치 먼저)은 "더 갈 수 없게 된 시간"으로 세지 않는다. 세면 팔꿈치가 다 돌기 전에 0.3초가 차서 닿을 수 있는 턱을 거부한다
-    if (H.w.clone().sub(sh).distanceTo(rel0) < 0.0015 && !(H.armBlock && ((S.poleS && S.poleS['el' + H.s + 'w']) || 0) > 0.5)) H.wait += dt;
+    // 팔꿈치가 아직 돌아가는 중인가(화면이 '막힘'과 나눠 보인다 — p3d-0.8.4)
+    H.swivel = H.armBlock && ((S.poleS && S.poleS['el' + H.s + 'w']) || 0) > 0.5;
+    if (H.w.clone().sub(sh).distanceTo(rel0) < 0.0015 && !H.swivel) H.wait += dt;
     if (H.wait > CL.TRY_T || H.t > H.T) reject(S, H, 'hand', H.blockT > 0.12 ? '팔이 턱에 걸려 닿지 않음' : `닿지 않음(${short(Math.max(far, miss))} 모자람)`);
   }
   if (!K.on) return;
@@ -540,7 +542,8 @@ export function stepClimb(S, inp, dt) {
   { const ctr = f => V((f.patch.x0 + f.patch.x1) / 2, 0, (f.patch.z0 + f.patch.z1) / 2), topsAll = planted.filter(f => f.kind === 'top');
     if (held.length) { const tops = topsAll.filter(f => f.load > 0.1 && f.box.kind !== 'floor'); if (tops.length) { const c = V(); for (const f of tops) c.add(ctr(f)); c.multiplyScalar(1 / tops.length); const d = c.sub(K.ref).setY(0); K.ref.add(fwd.clone().multiplyScalar(d.dot(fwd)).clampLength(0, 0.3 * dt));
       // 몸 위로(W)를 누르고 있으면 가장 높이 디딘 발 쪽으로 엉덩이가 옆으로도 간다(높은 발 → 엉덩이를 그 위로 → 다리로 일어서기. 실제 영상 두 편에서 올라가는 일은 다리가 했다 — 품질 검토 12·13절). 임시 — 조작은 기획 결정 대기
-      if ((inp.cy || 0) > 0 && !(S.opt && S.opt.rockOver === false)) { const hi = tops.reduce((a, f) => (f.p.y > a.p.y ? f : a), tops[0]), dl = ctr(hi).sub(K.ref).setY(0).dot(left); K.ref.addScaledVector(left, clamp(dl, -0.35 * dt, 0.35 * dt)); } } }
+      // p3d-0.8.4(GPT): 좌우(A/D)를 직접 누르고 있으면 자동으로 옮기지 않는다 — 직접 낸 의도가 먼저다
+      if ((inp.cy || 0) > 0 && !(inp.cx || 0) && !(S.opt && S.opt.rockOver === false)) { const hi = tops.reduce((a, f) => (f.p.y > a.p.y ? f : a), tops[0]), dl = ctr(hi).sub(K.ref).setY(0).dot(left); K.ref.addScaledVector(left, clamp(dl, -0.35 * dt, 0.35 * dt)); } } }
     else if (topsAll.length) {
       const P = K.pendFoot, hi = topsAll.reduce((a, f) => (f.p.y > a.p.y ? f : a), topsAll[0]);
       const tgt = P && K.feet[P.stay].st === 'plant' ? ctr(K.feet[P.stay]) : (inp.cy || 0) > 0 && topsAll.length > 1 && hi.p.y > Math.min(...topsAll.map(f => f.p.y)) + 0.05 ? ctr(hi) : topsAll.reduce((a, f) => a.add(ctr(f)), V()).multiplyScalar(1 / topsAll.length);
