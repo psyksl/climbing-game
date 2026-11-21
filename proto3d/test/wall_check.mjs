@@ -10,7 +10,7 @@ const { buildCharacter, DIM } = await imp('rig.js'), { makeWorld } = await imp('
 const CLP = path.resolve(HERE, '../assets_local/clips.json'), useClip = process.env.MODE === 'clip';
 if (useClip && !fs.existsSync(CLP)) { console.log('clips.json 없음 → 건너뜀'); process.exit(0); }
 const clips = useClip ? JSON.parse(fs.readFileSync(CLP, 'utf8')) : null, rig = buildCharacter(), DT = PHY.DT, G = PHY.G;
-globalThis.KDBG = !!process.env.KDBG; FSTAT.loose = !!process.env.LOOSE; globalThis.NOOPEN = !!process.env.NOOPEN; globalThis.NOLEAN = !!process.env.NOLEAN; let sim, rec, fails = 0; const jk = { prev: null, sim: null, d: [], max: 0, what: '', n: 0, minY: 9, minAt: '' };
+globalThis.KDBG = !!process.env.KDBG; FSTAT.loose = !!process.env.LOOSE; globalThis.NOOPEN = !!process.env.NOOPEN; globalThis.NOSELF = !!process.env.NOSELF; globalThis.NOARMS = !!process.env.NOARMS; globalThis.NOLEAN = !!process.env.NOLEAN; let sim, rec, fails = 0; const jk = { prev: null, sim: null, d: [], max: 0, what: '', n: 0, minY: 9, minAt: '' };
 const out = { note: '스크립트 입력(사람 손 아님). 모션 = ' + (useClip ? '캡처' : '자작'), checks: [], cases: {} };
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${detail}`); out.checks.push({ name, ok, detail }); if (!ok) fails++; };
 const start = (pos, yaw = Math.PI, extra = []) => { const w = makeWorld(); for (const [name, min, max] of extra) w.boxes.push({ name, min: new THREE.Vector3(...min), max: new THREE.Vector3(...max), kind: 'block' }); sim = makeSim(rig, w, clips); sim.reset({ pos, yaw }); rec = []; run(30); };
@@ -278,6 +278,37 @@ check('벽 동작 전체(위의 모든 장면): 뼈의 한 걸음 회전량이 �
 // ── 19. W의 자동 옆 옮김보다 A/D가 먼저(p3d-0.8.4, GPT): 오른발을 낮은 발판에 올린 채 W만 누르면 엉덩이가 그 발 쪽(오른쪽)으로 가고, W + 몸 왼쪽을 함께 누르면 왼쪽으로 간다 ──
 { const go = cx => { start([-0.9, 0, -2.58]); run(150, {}, [hand(0, A.L)]); run(150, {}, [hand(1, A.R)]); run(260, {}, [foot(1, [-0.3, 0.5, -2.93])]); const x0 = sim.body.pos.x; run(120, { cy: 1, cx, cxSign: 1 }); return sim.body.pos.x - x0; }, w = go(0), wl = go(-1);
   check('W + 몸 왼쪽(A): 자동 옆 옮김이 직접 누른 좌우를 이기지 않는다(W만 = 디딘 발 쪽으로, W + 왼쪽 = 왼쪽으로)', w > 0.02 && wl < -0.02, `W만 ${cm(w)} · W + 왼쪽 ${cm(wl)}`); }
+// ── 20. 팔 교차와 몸 앞을 가로지르는 길(p3d-0.8.5): 손 조작 1. 목표와 다른 손의 접촉은 그대로 두고, 뻗는 팔이 제 머리·몸통을 비켜 간다. 가까운 교차(다른 손 15cm 너머)는 거부되지 않는다 ──
+// 재는 것: 팔뚝의 줄기(팔꿈치–손목 아홉 점)가 머리 타원체·가슴 상자에 든 걸음(arm_mesh와 같은 기준), 손목 표면(반지름 3.6cm)이 머리·가슴에 든 가장 깊은 깊이, 두 팔뚝 줄기 사이의 거리(자료 — 통과·실패로 보지 않는다)
+{ const inv = new THREE.Matrix4(), HR = DIM.headR, wp = n => rig.bones[n].getWorldPosition(new THREE.Vector3()), loc = (p, bone, c) => p.clone().applyMatrix4(inv.copy(rig.bones[bone].matrixWorld).invert()).sub(new THREE.Vector3(...c));
+  const dHead = p => { const l = loc(p, 'head', [0, HR * 0.9, 0.01]); return (1 - Math.hypot(l.x / (HR * 0.9), l.y / (HR * 1.05), l.z / HR)) * HR * 0.9; }, dChest = p => { const l = loc(p, 'chest', [0, 0.11, 0.005]); return Math.min(0.18 - Math.abs(l.x), 0.12 - Math.abs(l.y), 0.105 - Math.abs(l.z)); };
+  const segDist = (a0, a1, b0, b1) => { let m = 9; for (let i = 0; i <= 8; i++) for (let j = 0; j <= 8; j++) m = Math.min(m, a0.clone().lerp(a1, i / 8).distanceTo(b0.clone().lerp(b1, j / 8))); return m; };
+  const leg = (i, p, n) => { const k0 = rec.length, sd = i ? 'R' : 'L', od = i ? 'L' : 'R', o = { 줄기_든_걸음: 0, 손목_겹침_cm: 0, 팔뚝_사이_최소_cm: 900, 팔뚝_4cm_안_걸음: 0 };
+    for (let k = 0; k < n; k++) { run(1, {}, k === 0 ? [hand(i, p)] : null); if (sim.climb.hands[i].st !== 'reach') continue; rig.root.updateMatrixWorld(true); const a = wp(`foreArm.${sd}`), w = wp(`hand.${sd}`);
+      let worst = 0; for (let j = 0; j <= 8; j++) { const q = a.clone().lerp(w, j / 8); worst = Math.max(worst, dHead(q), dChest(q)); } if (worst > 0.001) o.줄기_든_걸음++;
+      o.손목_겹침_cm = Math.max(o.손목_겹침_cm, (Math.max(dHead(w), dChest(w)) + 0.036) * 100); const sdist = segDist(a, w, wp(`foreArm.${od}`), wp(`hand.${od}`)) * 100; o.팔뚝_사이_최소_cm = Math.min(o.팔뚝_사이_최소_cm, sdist); if (sdist < 4) o.팔뚝_4cm_안_걸음++; }
+    o.끝 = evs(k0).filter(e => e.limb === 'hand' && e.i === i && e.type !== 'try').map(e => e.type + (e.why ? `(${e.why})` : '')).join(' → '); o.두_손 = L().hands.map(h => h.st).join('/'); o.손목_겹침_cm = +o.손목_겹침_cm.toFixed(1); o.팔뚝_사이_최소_cm = +o.팔뚝_사이_최소_cm.toFixed(1);
+    if (hold(0) && hold(1)) { rig.root.updateMatrixWorld(true); o.잡은_채_팔뚝_사이_cm = +(segDist(wp('foreArm.L'), wp('hand.L'), wp('foreArm.R'), wp('hand.R')) * 100).toFixed(1); } return o; };
+  const R = {}, pre = [];
+  // 장면의 앞 조건(먼저 잡아 둘 손)이 두 모션에서 모두 성립하는 자리로 잡았다(자작 모션에 맞춘 아슬아슬한 자리는 캡처 모션에서 2cm 모자라 잡히지 않았다). 성립하지 않으면 실패로 끝낸다
+  start([-0.9, 0, -2.58]); run(220, {}, [hand(1, [-0.85, 1.92, -2.84])]); pre.push(hold(1)); R['서서 오른손만 잡고 → 왼손을 오른손 15cm 너머로'] = leg(0, [-0.70, 1.92, -2.84], 260); run(120); R['  1초 뒤'] = { 두_손: L().hands.map(h => h.st).join('/') }; R['  → 왼손을 되돌림'] = leg(0, [-1.2, 1.92, -2.84], 200);
+  start([-0.9, 0, -2.58]); run(150, {}, [hand(0, A.L)]); run(150, {}, [hand(1, A.R)]); run(200, { cy: 1 }); run(60, {}, [rel('hand', 1)]); pre.push(hold(0)); R['당겨 올라가 한 손 매달림 → 오른손을 왼손 15cm 너머로'] = leg(1, [-1.25, 1.92, -2.84], 260); run(120); R['  1초 뒤 '] = { 두_손: L().hands.map(h => h.st).join('/') }; R['  → 오른손을 되돌림'] = leg(1, A.R, 200);
+  start([-0.9, 0, -2.58]); run(150, {}, [hand(0, A.L)]); pre.push(hold(0)); R['서서 왼손만 잡고(오른손 늘어뜨림) → 오른손을 왼손 28cm 너머로(닿지 않는 거리)'] = leg(1, [-1.38, 1.92, -2.84], 200);
+  start([-0.9, 0, -2.58]); run(220, {}, [hand(1, [-0.85, 1.92, -2.84])]); pre.push(hold(1)); R['서서 오른손만 잡고 → 왼손을 오른손 23cm 너머로(팔을 거의 다 편 교차)'] = leg(0, [-0.62, 1.92, -2.84], 260); run(120); R['  1초 뒤  '] = { 두_손: L().hands.map(h => h.st).join('/'), 기록: evs().filter(e => e.type === 'slip').map(e => e.why).join(' ') };
+  run(360); R['  4초 뒤'] = { 두_손: L().hands.map(h => h.st).join('/'), 기록: evs().filter(e => e.type === 'slip').map(e => e.why).join(' '), 윗몸_비킴_rad: [sim.climb.hg ? +sim.climb.hg.x.toFixed(2) : 0, sim.climb.hg ? +sim.climb.hg.z.toFixed(2) : 0] };
+  start([-0.9, 0, -2.58]); R['땅에 서서(아무것도 잡지 않고) 왼손을 오른쪽 위 턱으로(닿지 않는 거리, 지상 문맥)'] = leg(0, [-0.62, 1.92, -2.84], 200);
+  out.cases['20 팔 교차'] = R; const legs = Object.values(R).filter(r => r.줄기_든_걸음 !== undefined), near = ['서서 오른손만 잡고 → 왼손을 오른손 15cm 너머로', '당겨 올라가 한 손 매달림 → 오른손을 왼손 15cm 너머로'], ext = '서서 오른손만 잡고 → 왼손을 오른손 23cm 너머로(팔을 거의 다 편 교차)';
+  check('팔 교차 장면의 앞 조건: 먼저 잡아 둘 손이 네 장면 모두 잡혀 있다', pre.every(Boolean), pre.map(x => (x ? '잡음' : '못 잡음')).join(', '));
+  check('가까운 팔 교차(다른 손 15cm 너머): 거부되지 않고 잡으며, 1초 뒤에도 두 손이 그대로이고, 되돌려 잡을 수 있다', near.every(k => /grab/.test(R[k].끝) && R[k].두_손 === 'hold/hold') && R['  1초 뒤'].두_손 === 'hold/hold' && R['  1초 뒤 '].두_손 === 'hold/hold' && /grab/.test(R['  → 왼손을 되돌림'].끝) && /grab/.test(R['  → 오른손을 되돌림'].끝), near.map(k => R[k].끝).join(' | '));
+  check('교차·되돌리기·닿지 않는 교차·지상에서 뻗기의 일곱 구간: 뻗는 팔뚝의 줄기가 제 머리·가슴에 들지 않고, 손목 표면이 1.5cm 넘게 들지 않는다', legs.every(r => r.줄기_든_걸음 === 0 && r.손목_겹침_cm <= 1.5), `줄기가 든 걸음 ${legs.map(r => r.줄기_든_걸음).join(', ')} · 손목 표면 겹침 ${legs.map(r => r.손목_겹침_cm.toFixed(1)).join(', ')}cm`);
+  check('팔을 거의 다 편 교차(다른 손 23cm 너머): 잡고, 4초 뒤에도 두 손이 그대로다(머리가 팔에 들어가 놓치지 않는다)', /grab/.test(R[ext].끝) && R['  1초 뒤  '].두_손 === 'hold/hold' && R['  4초 뒤'].두_손 === 'hold/hold', `${R[ext].끝} · 1초 뒤 ${R['  1초 뒤  '].두_손} · 4초 뒤 ${R['  4초 뒤'].두_손} ${R['  4초 뒤'].기록} · 윗몸이 비킨 각(앞뒤, 좌우) ${R['  4초 뒤'].윗몸_비킴_rad.join(', ')}rad`);
+  console.log(`      (자료) 두 팔뚝 줄기 사이: 뻗는 동안 가장 가까이 ${legs.map(r => r.팔뚝_사이_최소_cm).join(', ')}cm · 4cm 안인 걸음 ${legs.map(r => r.팔뚝_4cm_안_걸음).join(', ')} · 엇갈려 잡은 채 ${[...near, ext].map(k => R[k].잡은_채_팔뚝_사이_cm).join(', ')}cm`); }
+// ── 21. 손 조작 2(누르는 동안 뻗기)에서도 "팔꿈치가 도는 중"이 걸음마다 갱신된다(p3d-0.8.5. 0.8.4는 손 조작 1에서만 갱신했다) ──
+// 왼손으로 턱 A를 잡고, 오른손을 누른 채 턱 위·아래의 일곱 곳으로 0.5초마다 옮기며 몸도 위·아래·좌·우로 옮긴다(arm_mesh ③과 같은 입력. 그 가운데 몇 걸음에서 팔뚝이 턱에 걸려 팔꿈치가 먼저 돈다) → 뗀다
+{ start([-0.9, 0, -2.58]); run(150, {}, [hand(0, A.L)]); const pts = [[-0.78, 1.55, -3.0], [-0.78, 2.25, -3.0], [-0.95, 1.5, -3.0], [-0.6, 2.3, -3.0], [-0.78, 2.03, -3.0], [-0.5, 1.6, -3.0], [-0.72, 2.06, -3.0]]; let sw = 0, blk = 0, both2 = 0, n = 0;
+  for (let k = 0; k < 840; k++) { const p = pts[Math.floor(k / 60) % 7]; run(1, { reach: [null, p], cy: [1, -1, 0, 0][Math.floor(k / 48) % 4], cx: [0, 0, -1, 1][Math.floor(k / 48) % 4] }, k === 0 ? [{ type: 'hand', i: 1, p, hold: true }] : null); const H = sim.climb.hands[1]; if (H.st !== 'reach') continue; n++; if (H.swivel) sw++; if (H.armBlock) blk++; if (H.swivel && !H.armBlock) both2++; }
+  run(1, {}, [{ type: 'handUp', i: 1 }]); run(30); const after = sim.climb.hands[1];
+  check('손 조작 2: 팔뚝이 걸려 팔꿈치가 도는 걸음에 swivel이 참이 되고(막힘이 아닌 걸음에는 거짓), 손을 거둔 뒤에는 거짓이다', n > 800 && sw > 0 && both2 === 0 && !after.swivel && hold(0), `뻗은 걸음 ${n} · 팔뚝이 걸린 걸음 ${blk} · 그 가운데 팔꿈치가 도는 중 ${sw} · 걸리지 않았는데 참인 걸음 ${both2} · 거둔 뒤 ${after.st}/${!!after.swivel}`); }
 // 힘의 한계(p3d-0.8.4): LOOSE=1이면 p3d-0.8.3까지처럼 섞은 뒤 한계를 다시 걸지 않는다(견주기용). 아래 숫자는 "걸기 전에 넘어 있던" 횟수다
 console.log(`기록  힘의 한계: 접촉·걸음 ${FSTAT.n}번 가운데 섞은 뒤 한계를 1N 넘게 넘어 있던 것 ${FSTAT.over}번(가장 큰 넘침 ${FSTAT.max.toFixed(0)}N = 몸무게의 ${(FSTAT.max / (CL.MASS * PHY.G)).toFixed(2)}배) · ${FSTAT.loose ? '한계를 다시 걸지 않음(옛 동작)' : '한계 안으로 되돌림'}`); out.cases['힘의 한계'] = { ...FSTAT };
 if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify(out, null, 1));
