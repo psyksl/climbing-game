@@ -327,7 +327,7 @@ check('벽 동작 전체(위의 모든 장면): 뼈의 한 걸음 회전량이 �
   check('손 조작 2: 팔뚝이 걸려 팔꿈치가 도는 걸음에 swivel이 참이 되고(막힘이 아닌 걸음에는 거짓), 손을 거둔 뒤에는 거짓이다', n > 800 && sw > 0 && both2 === 0 && !after.swivel && hold(0), `뻗은 걸음 ${n} · 팔뚝이 걸린 걸음 ${blk} · 그 가운데 팔꿈치가 도는 중 ${sw} · 걸리지 않았는데 참인 걸음 ${both2} · 거둔 뒤 ${after.st}/${!!after.swivel}`); }
 // ── 22. 충돌 결과를 나눠 돌려준다(p3d-0.8.6): 한 점이 가슴 상자에 1cm, 다른 팔에는 그보다 깊이(3cm) 겹쳐 있어도 몸통의 겹침이 사라지지 않는다 ──
 { const { _dbg } = await imp('climb.js'), V3 = THREE.Vector3, Q4 = THREE.Quaternion, B = { head: { c: new V3(0, 3, 0), r: 0.11 }, boxes: [{ c: new V3(0, 0, 0), q: new Q4(), qi: new Q4(), h: new V3(0.18, 0.12, 0.105) }], caps: [{ a: new V3(0.2, -0.3, 0.115), b: new V3(0.2, 0.3, 0.115), ra: 0.045, rb: 0.045 }] };
-  const p = new V3(0.17, 0, 0.115), h = _dbg.selfHits(B, p, 0.02, false, 0.01, 0.04);
+  const p = new V3(0.17, 0, 0.115), h = _dbg.selfHits ? _dbg.selfHits(B, p, 0.02, false, 0.01, 0.04) : (() => { const one = _dbg.selfHit ? _dbg.selfHit(B, p, 0.02) : null; return { body: one && !one.arm ? one : null, arm: one && one.arm ? one : null }; })(); // 0.8.5 소스에는 나눠 돌려주는 함수가 없다(대조용)
   check('충돌 결과 분리: 다른 팔에 더 깊이 겹친 점에서도 몸통의 겹침이 따로 나온다(0.8.5는 더 깊은 하나만 돌려줘 몸통 검사가 가려졌다)', !!h.body && !!h.arm && h.arm.d > h.body.d && h.body.d > 0.005, `몸통 ${h.body ? (h.body.d * 100).toFixed(1) : '없음'}cm · 다른 팔 ${h.arm ? (h.arm.d * 100).toFixed(1) : '없음'}cm`); }
 // 힘의 한계(p3d-0.8.4): LOOSE=1이면 p3d-0.8.3까지처럼 섞은 뒤 한계를 다시 걸지 않는다(견주기용). 아래 숫자는 "걸기 전에 넘어 있던" 횟수다
 console.log(`기록  힘의 한계: 접촉·걸음 ${FSTAT.n}번 가운데 섞은 뒤 한계를 1N 넘게 넘어 있던 것 ${FSTAT.over}번(가장 큰 넘침 ${FSTAT.max.toFixed(0)}N = 몸무게의 ${(FSTAT.max / (CL.MASS * PHY.G)).toFixed(2)}배) · ${FSTAT.loose ? '한계를 다시 걸지 않음(옛 동작)' : '한계 안으로 되돌림'}`); out.cases['힘의 한계'] = { ...FSTAT };
