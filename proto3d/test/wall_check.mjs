@@ -310,7 +310,7 @@ check('벽 동작 전체(위의 모든 장면): 뼈의 한 걸음 회전량이 �
   start([-0.9, 0, -2.58]); run(220, {}, [hand(1, [-0.85, 1.92, -2.84])]); run(120, {}, [hand(0, [-0.70, 1.92, -2.84])]); const still0 = sim.body.pos.clone(), kS = rec.length; let drift = 0; for (let k = 0; k < 600; k++) { run(1); drift = Math.max(drift, sim.body.pos.distanceTo(still0)); }
   R['엇갈려 잡은 채 5초'] = { 두_손: HS(), 몸이_옮겨_간_가장_먼_거리_cm: +(drift * 100).toFixed(1), 발이_떨어진_횟수: evs(kS).filter(e => e.type === 'lift').length, 윗몸_비킴_rad: [sim.climb.hg ? +sim.climb.hg.x.toFixed(2) : 0, sim.climb.hg ? +sim.climb.hg.z.toFixed(2) : 0] };
   // ⑦ 턱을 잡고 있던 손에서 시작하는 교차(옆으로 옮겨 가다 손을 넘기는 흔한 순서. 늘어뜨린 손에서 시작할 때와 손목이 가는 길이 다르다 — 작업 중에 영상의 기록에서 이 순서만 막히는 것을 찾았다)
-  const fromHeld = [[-1.15, -0.70], [-1.15, -0.62], [-1.05, -0.70], [-1.25, -0.70]].map(([fr, to]) => { start([-0.9, 0, -2.58]); run(220, {}, [hand(1, [-0.85, 1.92, -2.84])]); run(240, {}, [hand(0, [fr, 1.92, -2.84])]); const ok0 = hold(0) && hold(1), k0 = rec.length, o = leg(0, [to, 1.92, -2.84], 300); run(120); return { 자리: `${fr * 100} → ${to * 100}`, 앞_조건: ok0, ...o, 두_손_1초_뒤: HS(), 놓침: slips(k0) }; });
+  const fromHeld = [[-1.15, -0.70], [-1.15, -0.62], [-1.05, -0.70], [-1.25, -0.70]].map(([fr, to]) => { start([-0.9, 0, -2.58]); run(220, {}, [hand(1, [-0.85, 1.92, -2.84])]); run(240, {}, [hand(0, [fr, 1.92, -2.84])]); const ok0 = hold(0) && hold(1), k0 = rec.length, o = leg(0, [to, 1.92, -2.84], 300); run(120); return { 자리: `${Math.round(fr * 100)} → ${Math.round(to * 100)}`, 앞_조건: ok0, ...o, 두_손_1초_뒤: HS(), 놓침: slips(k0) }; });
   R['턱을 잡고 있던 손에서 시작하는 교차 네 가지'] = fromHeld;
   // ⑤ 지상 문맥
   start([-0.9, 0, -2.58]); R['땅에 서서(아무것도 잡지 않고) 왼손을 오른쪽 위 턱으로(닿지 않는 거리, 지상 문맥)'] = leg(0, [-0.62, 1.92, -2.84], 200);
