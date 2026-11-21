@@ -114,8 +114,10 @@ function note(S, type, limb, i, why = '', extra = {}) {
 export function torso(b, K) {
   // 몸의 층(p3d-0.8.0, K.pz — 계산 걸음에서만 바뀐다): 가슴 비틀기(뻗는 손·잡은 손 쪽 어깨가 벽으로)와 골반의 반대 비틀기, 골반 기울기(체중이 실린 쪽이 올라가고 어깨 선은 반대로), 머리가 목표(옮기는 발 > 뻗는 손 > 겨눈 곳)를 보고 몸이 옆으로 기울어도 머리는 덜 기운다, 뛰는 동안 윗몸을 젖히고 위를 봄, 숨
   const Z = K.pz, br = 0.02 * Math.sin(Z.breath * 1.9), tk = clamp(Z.tuck, 0, 1);
+  // 잡은 팔이 머리에 닿으면 **목과 머리**가 비킨다(p3d-0.8.6. K.hg). 0.8.5는 윗몸 전체를 기울였는데, 팔을 다 편 채로 윗몸이 물러나면 팔 길이에 끌려 몸이 벽 쪽으로 딸려 가고 디딘 발이 떨어졌다
+  const hgx = K.hg ? K.hg.x : 0, hgz = K.hg ? K.hg.z : 0;
   const tq = { hips: Q().setFromAxisAngle(UP, b.yaw - Z.twist * 0.3).multiply(Q().setFromAxisAngle(V(0, 0, 1), K.lean.z * 0.4 + Z.hipRoll)), spine: Q().setFromEuler(new THREE.Euler(K.lean.x - 0.16 * tk, 0, K.lean.z * 0.6 - Z.hipRoll * 1.2, 'ZXY')), chest: Q().setFromAxisAngle(UP, Z.twist * 1.3),
-    neck: Q().setFromAxisAngle(X, K.hands.some(h => h.st === 'hold') ? -0.18 : 0).multiply(Q().setFromEuler(new THREE.Euler(Z.lookP * 0.4 - 0.12 * tk, Z.lookY * 0.4, -K.lean.z * 0.4, 'YXZ'))), head: Q().setFromEuler(new THREE.Euler(Z.lookP * 0.6 - 0.14 * tk, Z.lookY * 0.6, -K.lean.z * 0.4, 'YXZ')),
+    neck: Q().setFromAxisAngle(X, K.hands.some(h => h.st === 'hold') ? -0.18 : 0).multiply(Q().setFromEuler(new THREE.Euler(Z.lookP * 0.4 - 0.12 * tk + hgx, Z.lookY * 0.4, -K.lean.z * 0.4 + hgz, 'YXZ'))), head: Q().setFromEuler(new THREE.Euler(Z.lookP * 0.6 - 0.14 * tk + hgx * 0.5, Z.lookY * 0.6, -K.lean.z * 0.4 + hgz * 0.5, 'YXZ')),
     'shoulder.L': Q().setFromAxisAngle(V(0, 0, 1), K.shrug[0] + br), 'shoulder.R': Q().setFromAxisAngle(V(0, 0, 1), -K.shrug[1] - br) };
   if (K.blend) { const k = mj(clamp(K.blend.t / CL.BLEND_T, 0, 1)); for (const n of TORSO) tq[n] = K.blend.q[n].clone().slerp(tq[n], k); }
   const hip = V(b.pos.x, b.pos.y + DIM.hipY, b.pos.z), qH = tq.hips, qS = qH.clone().multiply(tq.spine), qC = qS.clone().multiply(tq.chest);
@@ -598,9 +600,10 @@ function heldPole(S, s, sh, goal, yaw, sx, qC) {
   const u = goal.clone().sub(sh); if (u.lengthSq() < 1e-8) return { pole: base.pole, ik: base.ik, self: s0 }; u.normalize();
   const e0 = base.pole.clone().addScaledVector(u, -base.pole.dot(u)); if (e0.lengthSq() < 1e-8) return { pole: base.pole, ik: base.ik, self: s0 }; e0.normalize();
   const e1 = u.clone().cross(e0), prev = S.pw && S.poleS && S.poleS['el' + s], pa = prev ? Math.atan2(prev.dot(e1), prev.dot(e0)) : 0; let best = null;
-  for (let j = 0; j < 24; j++) { const a = j * Math.PI / 12, an = a > Math.PI ? a - 2 * Math.PI : a, pl = e0.clone().multiplyScalar(Math.cos(a)).addScaledVector(e1, Math.sin(a)), ik = twoBone(sh, goal, DIM.upperArm, DIM.foreArm, pl), sf = armSelf(B, ik, sh, 0, XA);
+  for (let j = 0; j < 24; j++) { const a = j * Math.PI / 12, an = a > Math.PI ? a - 2 * Math.PI : a, pl = e0.clone().multiplyScalar(Math.cos(a)).addScaledVector(e1, Math.sin(a)), ik = twoBone(sh, goal, DIM.upperArm, DIM.foreArm, pl), sf = armSelf(B, ik, sh), sm = XA ? armSelf(B, ik, sh, 0, XA) : sf;
     let dp = Math.abs(an - pa); if (dp > Math.PI) dp = 2 * Math.PI - dp;
-    const cost = 3 * sd(sf, 'body') + 3 * sd(sf, 'arm') + (elbowIn(S.world, ik.mid) ? 0.05 : 0) + 0.004 * Math.abs(an) + (prev ? 0.006 * dp : 0); if (!best || cost < best.cost - 1e-7) best = { cost, pole: pl, ik, self: sf }; }
+    // 실제 겹침(머리·몸통, 여유 밖의 다른 팔)이 먼저다. 다른 팔과의 여유(6cm 안)는 가볍게만 본다 — 여유를 벌리려고 팔꿈치를 머리 쪽으로 돌리면 머리에 닿는다(0.8.6 작업 중에, 그것을 윗몸이 비키느라 엇갈려 잡은 몸이 36cm 옆으로 밀려갔다)
+    const cost = 3 * sd(sf, 'body') + 3 * sd(sf, 'arm') + (globalThis.MW ?? 0.2) * Math.max(0, sd(sm, 'arm') - sd(sf, 'arm')) + (elbowIn(S.world, ik.mid) ? 0.05 : 0) + 0.004 * Math.abs(an) + (prev ? 0.006 * dp : 0); if (!best || cost < best.cost - 1e-7) best = { cost, pole: pl, ik, self: sf }; }
   return best;
 }
 
@@ -626,14 +629,14 @@ export function stepClimb(S, inp, dt) {
   let need = 0; const hx = b.pos.x, hz = b.pos.z, hy = b.pos.y + DIM.hipY + DIM.spine + 0.60, back = fwd.clone().negate();
   for (const x of W.boxes) { if (x.kind === 'floor' || x.min.y > hy + CL.R_HEAD + 0.25 || x.max.y < hy - CL.R_HEAD) continue; if (Math.hypot(hx - clamp(hx, x.min.x, x.max.x), hz - clamp(hz, x.min.z, x.max.z)) >= CL.R_HEAD + 0.02) continue; const supp = Math.max(x.min.x * back.x, x.max.x * back.x) + Math.max(x.min.z * back.z, x.max.z * back.z); need = Math.max(need, supp + CL.R_HEAD + 0.03 - (hx * back.x + hz * back.z)); }
   const leanT = held.length ? Math.min(sup ? -0.2 : -0.04, -Math.asin(clamp(need / 0.60, 0, 0.5))) : 0;
-  // 잡은 팔이 머리에 닿으면 윗몸이 비켜 준다(p3d-0.8.5): 팔을 다 펴서 엇갈려 잡으면 팔꿈치를 어느 쪽으로 두어도 팔이 얼굴 앞을 지나가는데, 윗몸이 잡은 손 쪽으로 기울며 머리가 그 팔에 들어가 0.15초 뒤 손을 놓쳤다.
+  // 잡은 팔이 머리에 닿으면 비켜 준다(p3d-0.8.5: 윗몸 → 0.8.6: 목·머리. torso()가 K.hg를 목·머리의 회전에 쓴다): 팔을 다 펴서 엇갈려 잡으면 팔꿈치를 어느 쪽으로 두어도 팔이 얼굴 앞을 지나가는데, 윗몸이 잡은 손 쪽으로 기울며 머리가 그 팔에 들어가 0.15초 뒤 손을 놓쳤다.
   // 겹친 깊이만큼 머리가 팔에서 멀어지는 쪽으로 윗몸을 기울이고(K.hg — 앞뒤·좌우), 여유 1.5cm를 두고도 닿지 않을 때만 천천히 되돌린다. 계산 걸음에서만 바뀌고 torso()를 거친다(물리 = 그림). 기존 접촉을 놓는 대신 몸이 비킨다
   { const g = K.hg || (K.hg = { x: 0, z: 0 }), Tn = K.T || torso(b, K); let hit = false, loose = true;
     if (!globalThis.NOSELF) for (const h of held) { const hp = heldPole(S, h.s, Tn.sh[h.i], h.goal, b.yaw, h.i ? -1 : 1, Tn.qC), sf = hp.self && hp.self.body && hp.self.body.head ? hp.self.body : null;
       if (sf) { hit = true; const k = Math.min(sf.d / 0.01, 2) * 5 * dt / 0.65 * 0.1; g.x += -sf.n.dot(fwd) * k * 6.5; g.z += sf.n.dot(left) * k * 6.5; }
       else if (loose) { const s2 = armSelf(selfShapes(S, h.i), hp.ik, Tn.sh[h.i], 0.015); if (s2 && s2.body && s2.body.head) loose = false; } }
-    if (!hit && loose) { const k = Math.exp(-1.2 * dt); g.x *= k; g.z *= k; } g.x = clamp(g.x, -0.3, 0.3); g.z = clamp(g.z, -0.3, 0.3); }
-  K.lean.x += (leanT + K.hg.x - K.lean.x) * (1 - Math.exp(-8 * dt)); K.lean.z += (rollT + K.hg.z - K.lean.z) * (1 - Math.exp(-(swingRoll ? 14 : 4) * dt));
+    if (!hit && loose) { const k = Math.exp(-1.2 * dt); g.x *= k; g.z *= k; } g.x = clamp(g.x, -0.35, 0.35); g.z = clamp(g.z, -0.35, 0.35); } // p3d-0.8.6: 윗몸이 아니라 목·머리의 각이다(끝 0.35rad = 20°. 머리 가운데가 7cm쯤 비킨다. 그래도 닿으면 더 비키지 않는다)
+  K.lean.x += (leanT - K.lean.x) * (1 - Math.exp(-8 * dt)); K.lean.z += (rollT - K.lean.z) * (1 - Math.exp(-(swingRoll ? 14 : 4) * dt));
   // 어깨(빗장뼈) 올림: 편 팔로 매달리면 그 어깨가 올라가 있고(힘을 뺀 매달림), 다른 손을 위로 뻗거나 몸을 당기면 매달린 어깨는 내리고(몸이 5cm쯤 올라온다) 뻗는 쪽 어깨가 올라간다
   { const reaching = K.hands.some(h => h.st === 'reach' && h.goal.y > b.pos.y + 1.4), up = (inp.cy || 0) > 0;
     K.hands.forEach((h, i) => { const t = h.st === 'reach' && h.goal.y > b.pos.y + 1.4 ? CL.SHRUG : h.st === 'hold' && h.load > 0.5 && !reaching && !up ? CL.SHRUG : 0; K.shrug[i] += (t - K.shrug[i]) * (1 - Math.exp(-5 * dt)); }); }
@@ -654,8 +657,9 @@ export function stepClimb(S, inp, dt) {
     // p3d-0.8.6: 뻗는 손의 목표가 다른 손 너머(교차)일 때도 같은 쪽으로 비튼다. 푸는 동안에도 스프링으로 이어서 돌아온다(목표가 바뀔 뿐 값은 건너뛰지 않는다)
     if (reach) K.lastReach = reach.i;
     const xs = globalThis.XTW ?? 1, gOf = h => (h.st === 'hold' || (h.st === 'reach' && h.edge) ? h.goal : null), g0 = gOf(K.hands[0]), g1 = gOf(K.hands[1]), isX = !!g0 && !!g1 && g0.clone().sub(g1).dot(left) < -0.02 && !globalThis.NOARMS;
-    const crossed = !reach && isX ? xs * ((K.lastReach ?? 1) ? 1 : -1) * 0.30 : 0, reachT = reach ? (reach.i ? 1 : -1) * 0.30 * (isX ? xs : 1) : 0;
-    springS(Z, 'twist', clamp((reach ? reachT : one ? (one.i ? 1 : -1) * 0.18 : crossed) + (globalThis.NOOPEN ? 0 : 0.5) * (K.open[0] - K.open[1]), -0.4, 0.4), 0.12, dt);
+    // 교차 중에는 더 크게 비튼다(0.45 — 가슴이 34°쯤 돈다. 0.30으로는 엇갈려 잡은 두 팔뚝이 2.6cm 겹쳤고 다 편 교차는 길이 없었다. 윗몸을 뒤로 물리는 것으로 풀면 팔 길이에 끌려 몸이 딸려 갔다)
+    const XT = globalThis.XT ?? 0.45, crossed = !reach && isX ? xs * ((K.lastReach ?? 1) ? 1 : -1) * XT : 0, reachT = reach ? (reach.i ? 1 : -1) * (isX ? xs * XT : 0.30) : 0;
+    springS(Z, 'twist', clamp((reach ? reachT : one ? (one.i ? 1 : -1) * 0.18 : crossed) + (globalThis.NOOPEN ? 0 : 0.5) * (K.open[0] - K.open[1]), -0.6, 0.6), 0.12, dt);
     let hr = 0; const pl = planted.filter(f => f.load > 0.05);
     if (pl.length) { const c = V(); for (const f of pl) c.add(f.p); c.multiplyScalar(1 / pl.length); hr = clamp(b.pos.clone().sub(c).dot(left) / 0.25, -1, 1) * 0.22; }
     else if (hanging) hr = clamp(b.vel.dot(left) * 0.10, -0.15, 0.15) + side * 0.10;
