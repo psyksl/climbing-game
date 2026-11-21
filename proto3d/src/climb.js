@@ -406,7 +406,7 @@ function limbsStep(S, dt) {
     else { const g = H.goal.clone().sub(sh), gl = g.length(), end = gl > CL.ARM ? sh.clone().addScaledVector(g, CL.ARM / gl) : H.goal;
       // 받쳐진 채 가만히 있을 때만(w = 1) 새 곡선이다: 뛰는 중·떠 있는 중·몸이 초속 0.9m 넘게 움직이는 중에는 전과 같다(w = 0. 뛰어 잡기의 타이밍을 바꾸지 않는다 — 처음에는 가르지 않아 캡처 동작의 뛰어 잡기 장면 둘이 달라졌다)
       const calm = (K.on || S.body.onGround) && !K.push && !(S.inp && S.inp.jump) ? clamp((0.9 - S.body.vel.length()) / 0.6, 0, 1) : 0;
-      const cap = lerp(CL.HAND_V, Math.min(CL.HAND_V, Math.sqrt(2 * CL.HAND_DEC * H.w.distanceTo(end)) + CL.HAND_V1), calm); H.sp = Math.min(cap, (H.sp || 0) + lerp(CL.HAND_ACC, CL.HAND_ACC2, calm) * dt); }
+      const cap = lerp(CL.HAND_V, Math.min(CL.HAND_V, Math.sqrt(2 * CL.HAND_DEC * Math.max(0, H.w.distanceTo(end) - CL.HAND_V * dt * 0.5)) + CL.HAND_V1), calm); H.sp = Math.min(cap, (H.sp || 0) + lerp(CL.HAND_ACC, CL.HAND_ACC2, calm) * dt); }
     // 손목이 제 몸을 비켜 간다(p3d-0.8.5, 손 조작 1·2 공통 — 목표는 그대로 두고 가는 길만 바꾼다): 손목(반지름 3.6cm)이 머리·몸통·다른 팔의 2.5cm 안에 있고 몸 쪽으로 가려 하면,
     // 그 몫을 지우고 겉면을 따라 간다. 겉면에 똑바로 부딪쳐 옆으로 갈 몫이 없으면 위·앞(벽 쪽)으로 비켜 간다. 옮긴 뒤에도 겹쳐 있으면(몸이 손 쪽으로 움직였을 때) 겹친 만큼 밖으로 뺀다.
     // 지형은 이 뒤에 본다(지형이 먼저다). 몸과 벽 사이가 좁아 지나갈 수 없으면 손은 거기서 멈추고(H.selfBlock) 닿지 않은 까닭으로 알린다
@@ -466,7 +466,8 @@ function limbsStep(S, dt) {
     if (H.drag) continue;
     const miss = H.w.distanceTo(H.goal), far = sh.distanceTo(H.goal) - CL.ARM;
     // 이번 걸음에 갈 수 있는 거리의 반(1.3cm) 안이면 닿은 것이다(몸이 움직이는 중에도 놓치지 않게)
-    if (H.edge && miss <= Math.max(CL.CATCH, H.sp * dt * 0.5) && far <= 0.002) { const c = armCheck(S, H.i, sh, H.goal, H.n); if (c) reject(S, H, 'hand', c); else grab(S, H); continue; }
+    // p3d-0.8.8: 이 거리는 손의 지금 빠르기가 아니라 가장 빠른 빠르기(HAND_V)로 잰다 — 다가가며 느려지게 하자 이 거리가 4mm로 줄어, 턱에 막혀 마지막 몇 mm를 가지 못하는 손이 끝내 잡지 못했다(놓았던 손을 턱 A로 되돌리는 장면. 영상의 기록에서 찾음). 0.8.7까지와 같은 1.3cm다
+    if (H.edge && miss <= Math.max(CL.CATCH, (globalThis.OLDHAND ? H.sp : CL.HAND_V) * dt * 0.5) && far <= 0.002) { const c = armCheck(S, H.i, sh, H.goal, H.n); if (c) reject(S, H, 'hand', c); else grab(S, H); continue; }
     // 더 갈 수 없게 된 뒤(팔이 다 펴졌거나 멈춤)로 TRY_T만큼만 더 뻗고 있는다. 그사이 몸이 다가가면 잡는다
     // 팔꿈치가 아직 돌고 있는 동안(팔꿈치 먼저)은 "더 갈 수 없게 된 시간"으로 세지 않는다. 세면 팔꿈치가 다 돌기 전에 0.3초가 차서 닿을 수 있는 턱을 거부한다
     // p3d-0.8.6: 다른 팔에 막혀 서 있는 동안 그 팔이 자리를 내 주느라 팔꿈치를 돌리고 있으면 그것도 세지 않는다
