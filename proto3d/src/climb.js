@@ -318,9 +318,12 @@ function legIK(S, hj, ank, yaw, sx, placed = true) {
     // 거의 편 다리는 무릎의 쪽이 정해지지 않는다(늘어뜨린 발이 조금만 흔들려도 각이 크게 바뀐다) → 접힌 만큼만 발의 자리를 따른다
     const a0 = clamp(26 - 6 * bend + 0.75 * clamp((bend - 0.08) / 0.30, 0, 1) * Math.atan2(ox, Math.max(fz, 0.12)) / deg, -35, 85), list = [0, 12, 24, 36, 48, 60, 75, 90, -15, -30].map(x => a0 + x).filter(a => a <= 115 && a >= -50);
     // 닿지 않는 첫 후보. 모두 닿으면 벽·턱에서 가장 멀리 있는 후보(0.8.8은 마지막 후보 = 안쪽을 썼다 — 벽에 바짝 붙은 자세에서 무릎이 벽 안에 남았다)
-    let best = null;
-    for (const a of list) { const pl = V(sx * Math.sin(a * deg), 0.1, Math.cos(a * deg)).applyAxisAngle(UP, py).normalize(), k2 = twoBone(hj, ank, DIM.thigh, DIM.shin, pl); let m = 0.05; if (!nearBox(S.world, k2.mid, 0.05)) { best = { ik: k2, pole: pl }; break; } while (m > -0.04 && nearBox(S.world, k2.mid, m)) m -= 0.015; if (!best || m > best.m) best = { ik: k2, pole: pl, m }; }
-    return { ik: best.ik, pole: best.pole }; }
+    // 닿지 않는 후보 가운데 "지금 굽어 있는 쪽에 가깝고 바라는 각(a0)에도 가까운 것"을 고른다. 차례대로 첫 후보를 쓰면, 몸이 조금 움직여 앞 후보가 벽에 닿는 순간 반대쪽 후보로 넘어가며 무릎이 벽을 가로질렀다(교차로 디딘 뒤 5걸음 — wall_check 24에서 찾음)
+    const prev = S.poleS && S.poleS['kn' + (sx > 0 ? 'L' : 'R')]; let best = null, clear = null;
+    for (const a of list) { const pl = V(sx * Math.sin(a * deg), 0.1, Math.cos(a * deg)).applyAxisAngle(UP, py).normalize(), k2 = twoBone(hj, ank, DIM.thigh, DIM.shin, pl); let m = 0.05;
+      if (!nearBox(S.world, k2.mid, 0.05)) { const sc = (prev ? 0.35 * prev.angleTo(pl) / deg : 0) + Math.abs(a - a0); if (!clear || sc < clear.sc) clear = { ik: k2, pole: pl, sc }; continue; }
+      while (m > -0.04 && nearBox(S.world, k2.mid, m)) m -= 0.015; if (!best || m > best.m) best = { ik: k2, pole: pl, m }; }
+    return clear ? { ik: clear.ik, pole: clear.pole } : { ik: best.ik, pole: best.pole }; }
   const a0 = lerp(30, 72, bend);
   for (const a of [a0, 60, 80, 95, 110, 10, -15]) { if (a > 0 && a < a0) continue; pole = V(sx * Math.sin(a * deg), 0.1, Math.cos(a * deg)).applyAxisAngle(UP, yaw).normalize(); ik = twoBone(hj, ank, DIM.thigh, DIM.shin, pole); if (!nearBox(S.world, ik.mid, 0.05)) break; }
   return { ik, pole };
