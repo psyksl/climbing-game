@@ -206,6 +206,8 @@ function stateName() {
   return v < 0.12 ? '대기' : sim.motion.prm.runW > 0.5 ? '달리기' : '걷기';
 }
 const LOG_KO = { cancel: '취소', grab: '잡음', reject: '거부', release: '놓음', slip: '놓침', step: '디딤', lift: '발이 떨어짐', enter: '벽 등반 시작', exit: '벽 등반 끝', bump: '부딪힘' };
+// 임시 표시(진단 정보): 최근 300프레임의 실행 성능. 게임 시간 ÷ 실제 시간이 100%보다 낮으면 게임이 실제보다 느리게 가고 있는 것이다(느리게 ×0.25를 켜면 25%)
+function perfLine() { const w = perfWin(); return w ? `<div class=dim>실행(최근 ${w.n}프레임) ${w.fps.toFixed(0)} fps · 가장 긴 프레임 ${w.maxMs.toFixed(0)}ms · 계산 ${w.stepMs.toFixed(1)}ms + 그리기 ${w.drawMs.toFixed(1)}ms · 게임 시간 ÷ 실제 시간 ${(w.simRatio * 100).toFixed(0)}% · 버린 시간 ${w.drop.toFixed(2)}초(전체 ${PERF.drop.toFixed(2)}초)</div>` : ''; }
 function drawHud(fps) {
   if (gal.on) { const c = galClip(); hud.innerHTML = `<div class=ver>3D 모션 시제품 ${VERSION} · 임시 캐릭터(자작)</div><div><b>동작 보기</b> ${gal.i + 1} / ${gal.names.length} &nbsp; <b>${gal.names[gal.i]}</b></div><div><b>분류</b> ${c.cat} &nbsp; <b>지형</b> ${KIND_KO[c.kind] || '-'}${gal.props ? '' : '(숨김)'}${gal.built && gal.built.info.removed ? ` · 맞지 않아 뺀 조각 ${gal.built.info.removed}개` : c.kind !== 'ground' && gal.built && !gal.built.info.pieces ? ' · 조각 없음(손발 자리로는 지형을 정하지 못함)' : ''} &nbsp; <b>시각</b> ${Math.min(gal.t, c.dur).toFixed(2)} / ${c.dur.toFixed(2)}초</div><div class=slow>시연 · 물리 판정 없음</div><div class=dim>받은 동작을 이 캐릭터로 옮겨 지형에 맞춰 튼 것입니다. 잡을 수 있는지·버티는지는 따지지 않습니다(게임 계산은 멈춤).<br>지형은 이 동작에서 손발이 닿는 자리로 만든 임시 조각입니다. 점 = 닿아 있는 손발(붉은색 왼쪽, 푸른색 오른쪽)</div><div class=${slow ? 'slow' : 'real'}>${slow ? '느리게 ×0.25' : '실제 속도'}</div>`; return; }
   const v = Math.hypot(body.vel.x, body.vel.z), st = sim.motion.stats, K = sim.climb;
@@ -217,21 +219,27 @@ function drawHud(fps) {
     + (K.on ? `<div><b>손</b> ${K.hands.map((h, i) => `${i ? '오른손' : '왼손'} ${h.st === 'hold' ? `잡음(${h.edge.box.name}${OPT.diag ? `, 몸무게의 ${(h.loadS || 0).toFixed(1)}배` : ''})` : h.st === 'reach' ? '보내는 중' : '놓음'}`).join(' · ')}</div><div><b>발</b> ${K.feet.map((f, i) => `${i ? '오른발' : '왼발'} ${f.st === 'plant' ? ((f.loadS || 0) > 0.05 ? `디딤(${f.box.name}${OPT.diag ? `, ${(f.loadS || 0).toFixed(1)}배` : ''})` : `닿아만 있음(${f.box.name})`) : f.st === 'move' ? '보내는 중' : '떠 있음'}`).join(' · ')}</div>`
       : `<div><b>발</b> ${sim.motion.legs.map((L, i) => `${L.s === 'L' ? '왼발' : '오른발'} ${footName(L, i)}`).join(' · ')}</div>`)
     + `<div class=log>${K.log.filter(e => e.type !== 'try' && !(e.box === '바닥' && e.auto) && !(e.type === 'lift' && /범위/.test(e.why))).slice(-5).map(e => `<span class=t>${e.t.toFixed(2)}초</span> ${LOG_KO[e.type] || e.type}${e.name ? ' ' + e.name : ''}${e.box ? ' · ' + e.box : ''}${e.why ? ' · ' + e.why : ''}`).join('<br>')}</div>`
+    + (OPT.diag ? perfLine() : '')
     + (OPT.diag ? `<div class=dim>지지 구간 최대 이탈 ${(st.stanceMaxDev * 1000).toFixed(2)} mm · 다리 뻗음 최대 ${(st.maxRatio * 100).toFixed(0)}% · ${fps.toFixed(0)} fps</div>` : '')
     + `<div class=${slow ? 'slow' : 'real'}>${slow ? '느리게 ×0.25' : '실제 속도'}</div>`;
 }
 
+// 실행 성능(p3d-0.8.8, 임시 표시 — 진단 정보 I 키): 실제로 흐른 시간과 게임이 계산한 시간, 0.1초 제한으로 버린 시간, 프레임 간격, 계산·그리기에 든 시간을 따로 센다
+const PERF = { frames: 0, real: 0, sim: 0, drop: 0, maxMs: 0, long: 0, stepMs: 0, drawMs: 0, steps: 0, win: [] };
+const perfWin = () => { const w = PERF.win, n = w.length, sum = k => w.reduce((a, f) => a + f[k], 0); return n ? { n, fps: n / Math.max(1e-6, sum(0)), maxMs: Math.max(...w.map(f => f[0])) * 1000, simRatio: sum(1) / Math.max(1e-6, sum(0)), stepMs: sum(2) / n, drawMs: sum(3) / n, drop: sum(4) } : null; };
 let fpsS = 60, tickInput = null; // tickInput = 시험이 계산 걸음마다 넣는 입력(걸음 번호 → 입력)
 // 한 화면 프레임: ① 누적 시간만큼 고정 걸음 계산(이동·상태·자세 모두 sim.step) ② 확정된 자세를 그린다. 실제 루프와 시험(simFrames)이 같이 쓴다
 function frameCore(dtR, inp, onTick) {
   if (gal.on) { gal.t += dtR * (slow ? 0.25 : 1); if (gal.t > galClip().dur + 0.5) gal.t = 0; galPose(); updateCamera(dtR); renderer.render(scene, camera); drawHud(fpsS); return; } // 동작 보기: 게임 계산을 하지 않는다
-  acc += dtR * (slow ? 0.25 : 1);
-  while (acc >= PHY.DT) { physStep(tickInput ? tickInput(sim.tick) : inp); acc -= PHY.DT; if (onTick) onTick(); }
+  acc += dtR * (slow ? 0.25 : 1); const p0 = performance.now(); let nStep = 0;
+  while (acc >= PHY.DT) { physStep(tickInput ? tickInput(sim.tick) : inp); acc -= PHY.DT; nStep++; if (onTick) onTick(); }
   if (body.pos.y < -8) reset(); // 바닥 밖으로 떨어지면 처음 자리로
+  const p1 = performance.now();
   updateCamera(dtR); renderer.render(scene, camera); drawHud(fpsS); // 그리기는 계산 상태를 바꾸지 않는다
+  PERF.cur = [nStep * PHY.DT, p1 - p0, performance.now() - p1, nStep];
 }
 function frame(now) {
-  const dtR = Math.min(0.1, (now - last) / 1000); last = now; fpsS += (1 / Math.max(dtR, 1e-3) - fpsS) * 0.05;
+  const raw = (now - last) / 1000, dtR = Math.min(0.1, raw); last = now; fpsS += (1 / Math.max(dtR, 1e-3) - fpsS) * 0.05; PERF.cur = null;
   if (lostFocus) { cancelHolds(lostFocus); lostFocus = false; }
   if (input.wasPressed('viewMode')) { viewMode = !viewMode; cancelHolds('viewMode'); }
   input.setMode(gal.on ? 'gallery' : viewMode ? 'view' : sim.climb.on ? 'wall' : 'ground'); drawHelp();
@@ -253,6 +261,8 @@ function frame(now) {
   if (input.wasPressed('gallery') && GALLERY) galOpen(!gal.on);
   if (gal.on) { if (input.wasPressed('galNext')) galGo(1); if (input.wasPressed('galPrev')) galGo(-1); if (input.wasPressed('galCatNext')) galGo(1, true); if (input.wasPressed('galCatPrev')) galGo(-1, true); if (input.wasPressed('galProps')) gal.props = !gal.props; }
   if (!paused) frameCore(dtR, readInput()); else renderer.render(scene, camera);
+  // 실행 성능 기록: 게임 계산을 한 프레임만 센다(멈춤·동작 보기는 빼고). 버린 시간 = 프레임 간격이 0.1초를 넘어 계산에 넣지 않은 몫
+  if (PERF.cur) { const c = PERF.cur, lost = raw - dtR; PERF.frames++; PERF.real += raw; PERF.sim += c[0]; PERF.drop += lost; PERF.maxMs = Math.max(PERF.maxMs, raw * 1000); if (raw > 0.025) PERF.long++; PERF.stepMs += c[1]; PERF.drawMs += c[2]; PERF.steps += c[3]; PERF.win.push([raw, c[0], c[1], c[2], lost]); if (PERF.win.length > 300) PERF.win.shift(); }
   drawTags(); // 시험이 걸음을 직접 진행하는 동안 화면 쪽 계산은 멈춘다
   input.endFrame(); requestAnimationFrame(frame);
 }
@@ -260,7 +270,9 @@ requestAnimationFrame(frame);
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
 
 // 시험용 창구: 입력을 넣고 물리 걸음을 직접 진행한다(그림과 상관없이 같은 결과)
+document.title = `등반 3D 모션 시제품 ${VERSION}${CLIPS ? ' · 캡처 동작' : ''}`;
 window.__p3 = {
+  perf: reset => { const r = { 프레임: PERF.frames, 실제_초: +PERF.real.toFixed(3), 게임_초: +PERF.sim.toFixed(3), 게임_실제_비: +(PERF.sim / Math.max(1e-6, PERF.real)).toFixed(4), 버린_초: +PERF.drop.toFixed(3), 평균_fps: +(PERF.frames / Math.max(1e-6, PERF.real)).toFixed(1), 가장_긴_프레임_ms: +PERF.maxMs.toFixed(1), 프레임_25ms_넘음: PERF.long, 계산_ms_프레임당: +(PERF.stepMs / Math.max(1, PERF.frames)).toFixed(3), 계산_ms_걸음당: +(PERF.stepMs / Math.max(1, PERF.steps)).toFixed(4), 그리기_ms_프레임당: +(PERF.drawMs / Math.max(1, PERF.frames)).toFixed(3), 느리게: slow }; if (reset) Object.assign(PERF, { frames: 0, real: 0, sim: 0, drop: 0, maxMs: 0, long: 0, stepMs: 0, drawMs: 0, steps: 0, win: [] }); return r; },
   VERSION, BIND, conflicts, PHY, rig, gestures: () => gest.log.map(g => ({ ...g })), aimHeld: () => aim.held.map(v => !!v),
   body: () => ({ pos: body.pos.toArray(), vel: body.vel.toArray(), yaw: body.yaw, onGround: body.onGround, charge: body.charge, t: body.t, events: body.events.slice() }),
   state: stateName, stats: () => ({ ...sim.motion.stats, stances: sim.motion.stats.stances.slice() }), resetStats: () => { Object.assign(sim.motion.stats, { maxSlide: 0, slideSum: 0, slideN: 0, maxRatio: 0, kneeFlip: 0, below: 0, stances: [], stanceMaxDev: 0, stanceMaxPath: 0 }); for (const L of sim.motion.legs) L.stance = null; },

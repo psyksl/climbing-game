@@ -37,7 +37,7 @@ const DEFAULT = [
   { id: 'wallStart', ctx: ['any'], keys: ['KeyT'], label: '작은 벽 앞에서 시작' },
   { id: 'reset', ctx: ['any'], keys: ['KeyR'], label: '처음 자리로' },
   { id: 'helpAll', ctx: ['any'], keys: ['KeyK'], label: '조작표 모두 보기·접기' },
-  { id: 'diag', ctx: ['any'], keys: ['KeyI'], dev: true, label: '진단 정보(하중·오차·fps)' },
+  { id: 'diag', ctx: ['any'], keys: ['KeyI'], dev: true, label: '진단 정보(하중·오차·실행 성능)' },
   { id: 'bones', ctx: ['any'], keys: ['KeyB'], dev: true, label: '뼈대 보기' },
   { id: 'slow', ctx: ['any'], keys: ['KeyN'], dev: true, label: '느리게(0.25배)' },
   { id: 'motionMode', ctx: ['any'], keys: ['KeyM'], dev: true, label: '모션 바꾸기(캡처 ↔ 자작)' },
