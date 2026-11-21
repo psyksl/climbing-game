@@ -7,7 +7,7 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import * as THREE from 'three';
 const HERE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), P3 = process.argv[2] ? path.resolve(process.argv[2]) : HERE, imp = f => import(pathToFileURL(path.join(P3, 'src', f)).href);
-const { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js');
+const { buildCharacter, DIM } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js');
 const CLP = path.join(HERE, 'assets_local/clips.json'), useClip = process.env.MODE === 'clip' && fs.existsSync(CLP), clips = useClip ? JSON.parse(fs.readFileSync(CLP, 'utf8')) : null;
 const rig = buildCharacter(), G = rig.mesh.geometry, pos = G.attributes.position, si = G.attributes.skinIndex, sw = G.attributes.skinWeight;
 // 팔뚝·위팔 뼈의 영향을 조금이라도(1% 넘게) 받는 정점 = 팔 통의 표면 전체(손목 끝의 둥근 마감 포함. 이 부분은 손 뼈의 몫이 더 커서 "절반 넘게"로 고르면 빠진다 — GPT의 가장 깊은 정점이 여기였다)
@@ -22,9 +22,18 @@ function meshDepth(st = 'reach', SET = FORE) { rig.root.updateMatrixWorld(true);
   sim.climb.hands.forEach((h, i) => { if (h.st !== st) return; for (const v of SET[i ? 'R' : 'L']) { rig.mesh.getVertexPosition(v, tmp); rig.mesh.localToWorld(tmp);
     for (const b of W.boxes) { if (b.kind === 'floor') continue; const d = Math.min(tmp.x - b.min.x, b.max.x - tmp.x, tmp.y - b.min.y, b.max.y - tmp.y, tmp.z - b.min.z, b.max.z - tmp.z); if (d > 0.001) { n++; if (d > deep) { deep = d; where = b.name; } } } } });
   return { deep, n, where }; }
+// 뻗는 팔뚝의 **중심선**(팔꿈치–손목, 아홉 점)이 제 머리·가슴 안에 든 깊이(p3d-0.8.4, GPT의 p3d-0.8.3 검토: 뻗는 동안의 팔–몸 겹침). 표면으로 재면 팔을 몸 옆에 붙인 보통 자세도 걸린다(팔 통과 가슴 상자가 어깨에서 맞닿게 그려져 있다) — 그래서 중심선이 들어간 것만 센다. 표면은 그보다 팔뚝 반지름(3.6~4.5cm)만큼 더 들어가 있다. 머리 = rig.js의 머리 타원체(반지름 0.11 × (0.9, 1.05, 1)), 가슴 = 가슴 상자(0.36 × 0.24 × 0.21) — 그리는 메시와 같은 치수
+const inv = new THREE.Matrix4(), lp = new THREE.Vector3(), HR = DIM.headR;
+function selfDepth() { rig.root.updateMatrixWorld(true); let deep = 0, where = ''; const a = new THREE.Vector3(), w = new THREE.Vector3();
+  sim.climb.hands.forEach((h, i) => { if (h.st !== 'reach') return; const sd = i ? 'R' : 'L'; rig.bones[`foreArm.${sd}`].getWorldPosition(a); rig.bones[`hand.${sd}`].getWorldPosition(w);
+    for (let k = 0; k <= 8; k++) { tmp.copy(a).lerp(w, k / 8);
+    lp.copy(tmp).applyMatrix4(inv.copy(rig.bones.head.matrixWorld).invert()).sub(new THREE.Vector3(0, HR * 0.9, 0.01)); { const r = Math.hypot(lp.x / (HR * 0.9), lp.y / (HR * 1.05), lp.z / HR), d = (1 - r) * HR * 0.9; if (d > deep) { deep = d; where = '머리'; } }
+    lp.copy(tmp).applyMatrix4(inv.copy(rig.bones.chest.matrixWorld).invert()).sub(new THREE.Vector3(0, 0.11, 0.005)); { const d = Math.min(0.18 - Math.abs(lp.x), 0.12 - Math.abs(lp.y), 0.105 - Math.abs(lp.z)); if (d > deep) { deep = d; where = '가슴'; } } } });
+  return { deep, where }; }
+let selfWorst = { deep: 0, where: '', at: '' }, selfBad = 0, selfSeen = 0;
 let heldWorst = { deep: 0, where: '', at: '' }, upWorst = { deep: 0, where: '', at: '' }, upBad = 0;
 function scene(name, setup, step, steps, every = 1) { start(); setup(); let worst = { deep: 0, n: 0, where: '', k: -1 }, bad = 0, seen = 0, up = { deep: 0, where: '', k: -1 }, upN = 0;
-  for (let k = 0; k < steps; k++) { const s = step(k) || {}; run(1, s.inp || {}, s.cmd || null); if (k % every) continue; if (k % 8 === 0 && sim.climb.hands.some(h => h.st === 'hold')) { for (const SET of [FORE, UPPER]) { const m = meshDepth('hold', SET); if (m.deep > heldWorst.deep) heldWorst = { deep: m.deep, where: m.where + (SET === FORE ? ' · 팔뚝' : ' · 위팔'), at: name.slice(0, 1) + ' @' + sim.tick }; } } if (!sim.climb.hands.some(h => h.st === 'reach')) continue; seen++; const m = meshDepth(); if (m.n) bad++; if (m.deep > worst.deep) worst = { ...m, k: sim.tick }; const u = meshDepth('reach', UPPER); if (u.n) upN++; if (u.deep > up.deep) up = { ...u, k: sim.tick }; }
+  for (let k = 0; k < steps; k++) { const s = step(k) || {}; run(1, s.inp || {}, s.cmd || null); if (k % every) continue; if (k % 8 === 0 && sim.climb.hands.some(h => h.st === 'hold')) { for (const SET of [FORE, UPPER]) { const m = meshDepth('hold', SET); if (m.deep > heldWorst.deep) heldWorst = { deep: m.deep, where: m.where + (SET === FORE ? ' · 팔뚝' : ' · 위팔'), at: name.slice(0, 1) + ' @' + sim.tick }; } } if (!sim.climb.hands.some(h => h.st === 'reach')) continue; seen++; const m = meshDepth(); if (m.n) bad++; if (m.deep > worst.deep) worst = { ...m, k: sim.tick }; { const sd = selfDepth(); selfSeen++; if (sd.deep > 0.001) { selfBad++; if (sd.deep > selfWorst.deep) selfWorst = { ...sd, at: name.slice(0, 1) + ' @' + sim.tick }; } } const u = meshDepth('reach', UPPER); if (u.n) upN++; if (u.deep > up.deep) up = { ...u, k: sim.tick }; }
   const ok = seen > 0 && worst.deep <= 0.001; if (ok) pass++; else fail++;
   if (up.deep > 0.001) { upBad++; if (up.deep > upWorst.deep) upWorst = { deep: up.deep, where: up.where, at: name.slice(0, 1) + ' @' + up.k }; }
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} · 본 걸음 ${seen} · 팔뚝 표면이 지형 안에 든 걸음 ${bad} · 가장 깊이 ${(worst.deep * 100).toFixed(2)}cm${worst.deep > 0.001 ? `(${worst.where} @${worst.k}, 정점 ${worst.n}개)` : ''} ‖ 위팔: ${upN}걸음 · ${(up.deep * 100).toFixed(2)}cm${up.deep > 0.001 ? `(${up.where} @${up.k})` : ''}`); }
@@ -47,6 +56,8 @@ scene('⑧ 땅에서 뛰며 턱 위 벽면으로', () => run(30), k => ({ inp: {
 scene('⑨ 턱 A → 턱 F로 오른손 보내기(발 선택 장면)', () => { both(); run(260, {}, [{ type: 'foot', i: 1, p: [-0.3, 0.5, -2.93] }]); run(240, { cy: 1 }); }, k => ({ inp: { cy: 1 }, cmd: k === 0 ? [{ type: 'hand', i: 1, p: [-0.3, 2.15, -2.86] }] : null }), 120);
 // 위팔은 따로 센다: 손을 멈추는 데 쓰지 않으므로(굽는 쪽을 고르는 데만 쓴다) 겹침이 남을 수 있다. 남으면 실패로 적는다
 { const ok = upBad === 0; if (ok) pass++; else fail++; console.log(`${ok ? 'PASS' : 'FAIL'}  위의 장면들에서 뻗는 팔의 위팔 표면이 지형에 들어가지 않는다 · 들어간 장면 ${upBad}개${upBad ? ` · 가장 깊이 ${(upWorst.deep * 100).toFixed(2)}cm(${upWorst.where}, 장면 ${upWorst.at})` : ''}`); }
+// 뻗는 팔뚝이 제 머리·가슴을 지나가는가(p3d-0.8.4에 새로 잰다. 앞 판에는 이 검사가 없었다 — 뻗는 동안의 팔–몸 겹침은 물리 쪽에서 막지 않는다)
+{ const ok = selfBad === 0; if (ok) pass++; else fail++; console.log(`${ok ? 'PASS' : 'FAIL'}  위의 장면들에서 뻗는 팔뚝의 중심선이 제 머리·가슴 안에 들지 않는다(1mm 넘게. 표면은 반지름만큼 더 들어간다) · 본 걸음 ${selfSeen} · 들어간 걸음 ${selfBad}${selfBad ? ` · 가장 깊이 ${(selfWorst.deep * 100).toFixed(2)}cm(${selfWorst.where}, 장면 ${selfWorst.at})` : ''}`); }
 // 잡고 있는 팔은 통과·실패로 보지 않고 적어만 둔다(잡은 팔은 팔꿈치 한 점만 검사한다. 팔뚝이 턱에 얹히는 자세가 있을 수 있다)
 console.log(`(자료) 같은 장면들에서 잡고 있는 팔의 팔뚝·위팔 표면이 지형 안에 든 가장 깊은 깊이: ${(heldWorst.deep * 100).toFixed(2)}cm${heldWorst.deep > 0.001 ? `(${heldWorst.where}, 장면 ${heldWorst.at})` : ''}`);
 console.log(`통과 ${pass} · 실패 ${fail}`); process.exit(fail ? 1 : 0);

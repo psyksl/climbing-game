@@ -154,13 +154,15 @@ function sphereBox(p, r, x) {
   const e = [[p.x - x.min.x, -1, 0, 0], [x.max.x - p.x, 1, 0, 0], [p.y - x.min.y, 0, -1, 0], [x.max.y - p.y, 0, 1, 0], [p.z - x.min.z, 0, 0, -1], [x.max.z - p.z, 0, 0, 1]].reduce((u, v) => (v[0] < u[0] ? v : u));
   return { d: e[0] + r, n: V(e[1], e[2], e[3]) };
 }
-function armHit(world, sh, ik, tb = null) {
+// 되돌린 시도(p3d-0.8.4): 제 머리(공)·몸통 가운데(캡슐)를 팔뚝의 장애물로 넣어 보았다. 손 조작 2로 손을 끌어 몸 앞을 가로지르는 장면에서 팔뚝 중심선이 머리·가슴에 드는 걸음이 123 → 142로 늘고,
+// 당겨 올라간 자세에서는 몸에서 밀려난 팔뚝이 벽에 1.7cm 들어갔다. 팔꿈치 방향만으로는 풀리지 않는다 — 손이 가는 길 자체가 몸을 비켜 가야 한다(다음 판). 겹침은 test/arm_mesh.mjs가 잰다
+function armHit(world, sh, ik, tb = null, extra = 0) {
   let worst = null;
   const test = (p, r0, t) => { for (const x of world.boxes) { if (x.kind === 'floor') continue; const h = sphereBox(p, r0 + (x === tb ? ARM_PAD_GRIP : ARM_PAD), x); if (h && (!worst || h.d > worst.d)) worst = { d: h.d, n: h.n, t }; } };
   for (const [t, r] of ARM_PTS) test(ik.mid.clone().lerp(ik.end, t), r, t);
   const fore = worst;
-  for (const [t, r] of ARM_UP) test(sh.clone().lerp(ik.mid, t), r, -1);
-  if (worst) worst.f = fore; // f = 팔뚝만의 가장 깊은 겹침(없으면 null). 손을 멈추거나 빼내는 것은 이것으로만 한다(아래 limbsStep)
+  let up = null; { const keep = worst; worst = null; for (const [t, r] of ARM_UP) test(sh.clone().lerp(ik.mid, t), r + extra, -1); up = worst; worst = up && (!keep || up.d > keep.d) ? up : keep; }
+  if (worst) { worst.f = fore; worst.u = up; } // f = 팔뚝만의 가장 깊은 겹침(손을 멈추거나 빼내는 것은 이것으로만 한다). u = 위팔만의 가장 깊은 겹침(p3d-0.8.4. 가슴이 비켜 주는 데 쓴다) // f = 팔뚝만의 가장 깊은 겹침(없으면 null). 손을 멈추거나 빼내는 것은 이것으로만 한다(아래 limbsStep)
   return worst;
 }
 
@@ -319,7 +321,8 @@ function limbsStep(S, dt) {
         // (0.8.2는 "겹친 면의 바깥쪽으로, 깊이 ÷ t만큼"이었다. 팔을 접은 자세에서 팔꿈치 쪽이 겹쳤을 때 그렇게 밀면 손목이 어깨에 가까워지며 팔꿈치가 오히려 벽 속으로 들어갔다 — 표면으로 재니 5cm)
         for (let it = 0, left = 0.012 + shMv; it < 2 && fd(A) > 0 && left > 1e-4; it++) { const st = Math.min(left, Math.max(0.004, fd(A))); let best = null;
           for (const dir of [A.hit.f.n, V(1, 0, 0), V(-1, 0, 0), V(0, 1, 0), V(0, -1, 0), V(0, 0, 1), V(0, 0, -1)]) { const w = H.w.clone().addScaledVector(dir, st), R2 = tryAt(w, H.poleWant), d = fd(R2); if (!best || d < best.d - 1e-5) best = { d, w, R2 }; if (!d) break; }
-          if (!best || best.d >= fd(A) - 1e-5) break; H.w.copy(best.w); A = best.R2; left -= st; } } }
+          if (!best || best.d >= fd(A) - 1e-5) break; H.w.copy(best.w); A = best.R2; left -= st; } }
+      H.up = A.hit && A.hit.u ? { d: A.hit.u.d, n: A.hit.u.n.clone() } : null; }
     if (H.armBlock) { const d2 = H.w.clone().sub(sh); if (d2.length() > CL.ARM) H.w.copy(sh).addScaledVector(d2.normalize(), CL.ARM); }
     // 막힌 채 이어진 시간(손목이 지형에 닿아 멈췄거나 팔뚝이 걸려 기다리는 중). 화면의 "팔 경로 막힘"과 거부 까닭은 0.12초 넘게 이어졌을 때만 쓴다(스치는 한두 걸음에 깜박이지 않게)
     H.blockT = H.armBlock || wristHit ? (H.blockT || 0) + dt : 0;
@@ -484,7 +487,8 @@ export function stepClimb(S, inp, dt) {
   const swingRoll = held.length && !planted.some(f => f.load > 0.1);
   if (swingRoll) { const c = V(); for (const h of held) c.add(h.goal); c.multiplyScalar(1 / held.length); rollT += clamp(Math.atan2(b.pos.clone().sub(c).dot(left), c.y - b.pos.y - DIM.hipY), -0.6, 0.6); }
   // 발로 받치고 있을 때도 윗몸은 잡은 손 쪽으로 기운다(엉덩이가 옆으로 가면 몸통이 손을 향해 눕는다. 실제 영상에서 몸통 기울기는 −10~38°를 오간다 — 품질 검토 13절). 발이 받치는 만큼 덜 기운다
-  else if (held.length) { const c = V(); for (const h of held) c.add(h.goal); c.multiplyScalar(1 / held.length); rollT += 0.75 * clamp(Math.atan2(b.pos.clone().sub(c).dot(left), Math.max(0.25, c.y - b.pos.y - DIM.hipY)), -0.6, 0.6); }
+  // p3d-0.8.4(몸 연결): 뻗는 손이 가는 자리도 함께 본다. 전에는 손을 떼어 뻗는 순간 "잡은 손"이 하나로 줄어 윗몸이 남은 손 쪽으로(= 뻗는 목표의 반대쪽으로) 더 기울었다 — 턱 A → 턱 F에서 뻗는 어깨가 목표에서 12cm 멀어졌다
+  else if (held.length) { const c = V(), rs = globalThis.NOLEAN ? [] : K.hands.filter(h => h.st === 'reach' && h.edge); for (const h of [...held, ...rs]) c.add(h.goal); c.multiplyScalar(1 / (held.length + rs.length)); rollT += 0.75 * clamp(Math.atan2(b.pos.clone().sub(c).dot(left), Math.max(0.25, c.y - b.pos.y - DIM.hipY)), -0.6, 0.6); }
   // 머리 위(25cm 안)에 턱이 있으면 머리가 그 앞으로 지나가게 윗몸을 젖힌다(필요한 만큼만)
   let need = 0; const hx = b.pos.x, hz = b.pos.z, hy = b.pos.y + DIM.hipY + DIM.spine + 0.60, back = fwd.clone().negate();
   for (const x of W.boxes) { if (x.kind === 'floor' || x.min.y > hy + CL.R_HEAD + 0.25 || x.max.y < hy - CL.R_HEAD) continue; if (Math.hypot(hx - clamp(hx, x.min.x, x.max.x), hz - clamp(hz, x.min.z, x.max.z)) >= CL.R_HEAD + 0.02) continue; const supp = Math.max(x.min.x * back.x, x.max.x * back.x) + Math.max(x.min.z * back.z, x.max.z * back.z); need = Math.max(need, supp + CL.R_HEAD + 0.03 - (hx * back.x + hz * back.z)); }
@@ -499,7 +503,14 @@ export function stepClimb(S, inp, dt) {
   const hanging = held.length && !planted.some(f => f.load > 0.1), side = -(inp.cx || 0) * (inp.cxSign || 1);
   // 몸의 층 갱신(스프링으로 뒤따른다. 그리기에서는 읽기만 한다)
   { const Z = K.pz, reach = K.hands.find(h => h.st === 'reach'), one = held.length === 1 && !reach ? held[0] : null;
-    springS(Z, 'twist', reach ? (reach.i ? 1 : -1) * 0.30 : one ? (one.i ? 1 : -1) * 0.18 : 0, 0.12, dt);
+    // p3d-0.8.4(몸 연결): 위팔이 턱·벽에 겹치면 그 어깨가 벽에서 멀어지게 가슴을 연다(K.open). 전에는 뻗는 쪽 어깨를 언제나 벽 쪽으로 0.30 돌려, 턱 바로 아래에서 뻗으면 어깨가 턱 앞면 2cm 앞까지 가서 위팔(반지름 5.5cm)이 턱에 겹쳤다.
+    //   겹친 깊이만큼 열고, 여유(1.5cm)를 두고도 겹치지 않을 때만 천천히 되돌린다(그 사이에서는 그대로 둔다 — 열었다 닫았다 떨지 않게). 손은 이 때문에 멈추지 않는다(손을 멈추는 것은 팔뚝의 겹침뿐)
+    { const fw = V(Math.sin(b.yaw), 0, Math.cos(b.yaw)), Tn = K.T || torso(b, K); K.open = K.open || [0, 0]; K.upHit = K.upHit || [0, 0];
+      for (const h of K.hands) { let d = 0, loose = true;
+        if (h.st !== 'free' && S.poleS && S.poleS['el' + h.s]) { const tgt = h.st === 'hold' ? h.goal : h.w, ik = twoBone(Tn.sh[h.i], tgt, DIM.upperArm, DIM.foreArm, S.poleS['el' + h.s]), tb = h.edge ? h.edge.box : null, u = (armHit(W, Tn.sh[h.i], ik, tb) || {}).u, u2 = (armHit(W, Tn.sh[h.i], ik, tb, 0.015) || {}).u;
+          if (u && u.n.dot(fw) < -0.3) d = u.d; loose = !(u2 && u2.n.dot(fw) < -0.3); }
+        K.upHit[h.i] = d; K.open[h.i] = clamp(K.open[h.i] + (d > 0 ? Math.min(d / 0.01, 2) * 5 * dt : loose ? -0.8 * dt : 0), 0, 1); } }
+    springS(Z, 'twist', clamp((reach ? (reach.i ? 1 : -1) * 0.30 : one ? (one.i ? 1 : -1) * 0.18 : 0) + (globalThis.NOOPEN ? 0 : 0.5) * (K.open[0] - K.open[1]), -0.4, 0.4), 0.12, dt);
     let hr = 0; const pl = planted.filter(f => f.load > 0.05);
     if (pl.length) { const c = V(); for (const f of pl) c.add(f.p); c.multiplyScalar(1 / pl.length); hr = clamp(b.pos.clone().sub(c).dot(left) / 0.25, -1, 1) * 0.22; }
     else if (hanging) hr = clamp(b.vel.dot(left) * 0.10, -0.15, 0.15) + side * 0.10;
@@ -802,6 +813,6 @@ export function afterPose(S) {
 }
 export const limbState = K => ({
   on: K.on,
-  hands: K.hands.map(h => ({ s: h.s, st: h.st, armBlock: h.st === 'reach' && (h.blockT || 0) > 0.12, load: h.load, act: h.act || 0, pas: h.pas || 0, loadS: h.loadS || 0, cap: h.cap || 0, why: h.why, grip: h.st === 'free' ? null : h.grip.toArray(), w: h.w.toArray(), box: h.st !== 'free' && h.edge ? h.edge.box.name : '' })),
+  hands: K.hands.map(h => ({ s: h.s, st: h.st, armBlock: h.st === 'reach' && (h.blockT || 0) > 0.12, up: h.st === 'reach' && h.up ? { d: h.up.d, n: h.up.n.toArray() } : null, load: h.load, act: h.act || 0, pas: h.pas || 0, loadS: h.loadS || 0, cap: h.cap || 0, why: h.why, grip: h.st === 'free' ? null : h.grip.toArray(), w: h.w.toArray(), box: h.st !== 'free' && h.edge ? h.edge.box.name : '' })),
   feet: K.feet.map(f => ({ s: f.s, st: f.st, load: f.load, loadS: f.loadS || 0, cap: f.cap || 0, ok: f.ok, kind: f.kind, auto: f.auto, why: f.why, p: f.st === 'free' ? null : f.p.toArray(), box: f.st !== 'free' && f.box ? f.box.name : '' })),
 });
