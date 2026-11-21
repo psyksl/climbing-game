@@ -66,6 +66,23 @@ let fail = 0, pass = 0; const check = (name, ok, detail = '') => { console.log(`
     const L3 = (await log()).slice(n1), g3 = (await G()).slice(-1)[0] || {}, e3 = await P(() => __p3.climb().hands.map(h => h.st));
     check('취소 뒤 새로 누르면 듣고(뻗음), 뻗는 중에 화면을 벗어나면 거둔다. 누름 기록: 문맥·대상·명령 1번·취소가 한 줄에 남는다', re && g2 && g2.issued === 1 && n(L3, /^cancel 오른손/) === 1 && n(L3, /^grab 오른손/) === 0 && e3[1] === 'free' && e3[0] === 'hold' && g3.issued === 1 && g3.cancelled === 'mouseleave' && g3.ctx === 'wall' && g3.limb === 'hand', `다시 눌러 뻗음 ${re} · ${show(L3)} · 누름 기록 ${JSON.stringify({ ctx: g3.ctx, limb: g3.limb, issued: g3.issued, cancelled: g3.cancelled })}`);
     await P(() => __p3.opt({ handMode: 1 })); }
+  { // ⑧ 화면 밖에서 뗀 뒤의 재진입(GPT의 p3d-0.8.3 검토 P1): 취소된 뒤 문서에 mouseup이 오지 않은 채로 돌아온다. 원시 DOM 이벤트를 페이지 안에서 낸다(실제 마우스는 뗌을 늘 페이지에 전하므로 이 경계를 만들 수 없다). 사람 손이 아니다
+    // 순서: 누름 → (프레임 뒤 또는 앞에) 화면 벗어남 = 취소 → [mouseup 없음] → 누른 채 돌아옴(buttons에 그 단추가 남음): 명령 없음 → 실제 새 누름: 첫 번부터 뻗어야 한다
+    await P(() => __p3.opt({ handMode: 2 })); const G = () => P(() => (__p3.gestures ? __p3.gestures() : []));
+    const ev = (type, btn, held, xy) => pg.evaluate(([type, btn, held, x, y]) => { const el = document.querySelector('canvas'), o = { button: btn, buttons: held, clientX: x, clientY: y, bubbles: true, cancelable: true }; if (type === 'mouseleave' || type === 'mouseenter') document.documentElement.dispatchEvent(new MouseEvent(type, { ...o, bubbles: false })); else (type === 'mouseup' ? window : el).dispatchEvent(new MouseEvent(type, o)); }, [type, btn, held, xy.x, xy.y]);
+    for (const [nm, hi, keep, before] of [['오른손 · 프레임 뒤에 벗어남', 1, 0, false], ['오른손 · 프레임 전에 벗어남', 1, 0, true], ['왼손 · 프레임 뒤에 벗어남', 0, 1, false]]) {
+      const btn = hi ? 2 : 0, mask = hi ? 2 : 1, tgt = hi ? A.R : A.L, oth = hi ? A.L : A.R, hn = hi ? '오른손' : '왼손';
+      await wallStart(); await at(oth); await pg.mouse.down({ button: hi ? 'left' : 'right' }); await wait(120); await pg.mouse.up({ button: hi ? 'left' : 'right' }); const held0 = await until(new Function(`return __p3.climb().hands[${keep}].st === 'hold'`), 5000); await until(() => __p3.input().mode === 'wall', 3000); await until(() => Math.hypot(...__p3.body().vel) < 0.3, 4000);
+      const xy = await at(tgt), n0 = (await log()).length, g0 = (await G()).length, tries = async () => n((await log()).slice(n0), new RegExp('^try ' + hn)), stOf = () => P(() => __p3.climb().hands.map(h => h.st));
+      if (before) await pg.evaluate(([b, m, x, y]) => { const el = document.querySelector('canvas'); el.dispatchEvent(new MouseEvent('mousedown', { button: b, buttons: m, clientX: x, clientY: y, bubbles: true, cancelable: true })); document.documentElement.dispatchEvent(new MouseEvent('mouseleave', { buttons: m })); }, [btn, mask, xy.x, xy.y]);
+      else { await ev('mousedown', btn, mask, xy); await until(new Function(`return __p3.climb().hands[${hi}].st === 'reach'`), 3000); await ev('mouseleave', btn, mask, xy); }
+      await wait(350); const t1 = await tries(), s1 = await stOf();
+      await ev('mouseenter', btn, mask, xy); await ev('mousemove', btn, mask, xy); await wait(350); const t2 = await tries(), s2 = await stOf();
+      await ev('mousedown', btn, mask, xy); const re = await until(new Function(`return __p3.climb().hands[${hi}].st === 'reach'`), 2500), t3 = await tries(), s3 = await stOf();
+      await ev('mouseup', btn, 0, xy); const grabbed = await until(new Function(`return __p3.climb().hands[${hi}].st === 'hold'`), 4000), gs = (await G()).slice(g0).map(g => `${g.ctx}/${g.limb}/명령 ${g.issued}${g.cancelled ? '/취소 ' + g.cancelled : ''}`);
+      check(`재진입(${nm}): 취소 뒤 뗌이 전해지지 않아도 — 누른 채 돌아오면 명령 없음, 새로 누르면 첫 번에 뻗고 떼면 잡는다. 다른 손은 그대로`, held0 && t1 === (before ? 0 : 1) && s1[hi] === 'free' && t2 === t1 && s2[hi] === 'free' && re && t3 === t1 + 1 && grabbed && s3[keep] === 'hold', `취소 뒤 시도 ${t1}번·${s1[hi]} → 누른 채 돌아옴 ${t2}번·${s2[hi]} → 새 누름 ${t3}번·${s3[hi]}${re ? '' : '(뻗지 않음)'} → 뗌 ${grabbed ? '잡음' : '못 잡음'} · 다른 손 ${s3[keep]} · 누름 기록 [${gs.join(' → ')}]`);
+      await pg.keyboard.press('KeyQ'); await pg.keyboard.press('KeyE'); await until(() => __p3.body().onGround && !__p3.climb().on); await wait(300); }
+    await P(() => __p3.opt({ handMode: 1 })); }
   check('페이지 오류 없음', errs.length === 0, errs.join(' | '));
   console.log(`통과 ${pass} · 실패 ${fail}`); await b.close(); process.exit(fail ? 1 : 0);
 })();

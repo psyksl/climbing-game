@@ -62,14 +62,20 @@ export const TAP = { PX: 6, T: 0.35 };
 export function makeInput(el) {
   // down: 키 → 누른 순간의 { mode, x, y, t, moved }. pressed·released: 이번 화면 프레임에 새로 눌린·떼어진 키
   const down = new Map(), pressed = new Map(), released = new Map(), st = { mdx: 0, mdy: 0, wheel: 0, mx: 0, my: 0, moved: false, mode: 'ground', has: false };
-  const press = code => { if (!down.has(code)) { const rec = { mode: st.mode, x: st.mx, y: st.my, t: performance.now(), moved: 0, with: new Map([...down].map(([c, r]) => [c, r.mode])) }; pressed.set(code, rec); down.set(code, rec); } }; // with = 이 키를 누른 순간(이벤트 시각)에 눌려 있던 다른 키와 그 키를 누른 문맥
+  // fresh = 실제로 새로 도착한 누름(마우스 단추의 mousedown, 반복이 아닌 keydown). 그 키가 아직 "눌린 채"로 남아 있으면(밖에서 떼어 뗌을 듣지 못했거나, 취소로 버린 누름이 남아 있거나)
+  // 옛 기록을 치우고 새 누름으로 받는다(p3d-0.8.4, GPT P1: 취소 뒤 화면 밖에서 떼고 돌아와 누른 첫 클릭이 사라졌다). 키보드의 자동 반복(e.repeat)은 새 누름이 아니다
+  const press = (code, fresh = false) => { const old = down.get(code); if (old && fresh) { if (!old.dead) { old.dur = (performance.now() - old.t) / 1000; released.set(code, old); } down.delete(code); } if (!down.has(code)) { const rec = { mode: st.mode, x: st.mx, y: st.my, t: performance.now(), moved: 0, with: new Map([...down].map(([c, r]) => [c, r.mode])) }; pressed.set(code, rec); down.set(code, rec); } }; // with = 이 키를 누른 순간(이벤트 시각)에 눌려 있던 다른 키와 그 키를 누른 문맥
   const lift = code => { const rec = down.get(code); if (rec) { rec.dur = (performance.now() - rec.t) / 1000; released.set(code, rec); down.delete(code); } };
-  addEventListener('keydown', e => { if (e.code === 'Space' || e.code === 'Tab') e.preventDefault(); press(e.code); });
+  addEventListener('keydown', e => { if (e.code === 'Space' || e.code === 'Tab') e.preventDefault(); press(e.code, !e.repeat); });
   addEventListener('keyup', e => { lift(e.code); });
   const drop = () => { down.clear(); pressed.clear(); released.clear(); };
   addEventListener('blur', drop); document.addEventListener('visibilitychange', () => { if (document.hidden) drop(); });
-  el.addEventListener('mousemove', e => { st.mdx += e.movementX || 0; st.mdy += e.movementY || 0; st.mx = e.clientX; st.my = e.clientY; st.has = true; st.moved = true; for (const rec of down.values()) rec.moved = Math.max(rec.moved, Math.hypot(e.clientX - rec.x, e.clientY - rec.y)); });
-  el.addEventListener('mousedown', e => { e.preventDefault(); st.mx = e.clientX; st.my = e.clientY; st.has = true; press(`Mouse${e.button}`); });
+  // 돌아왔을 때의 단추 상태(e.buttons): 눌린 것으로 남아 있는 마우스 단추가 실제로는 떼어져 있으면 그 기록을 치운다. 버린 누름(dead)은 조용히, 살아 있는 누름은 보통의 뗌으로.
+  // 누른 채 돌아온 것(buttons에 그 단추가 남아 있음)은 그대로 둔다 — 버린 누름은 버린 채로 남아 새 명령이 되지 않는다
+  const MASK = [1, 4, 2, 8, 16], syncButtons = e => { if (typeof e.buttons !== 'number') return; for (let b = 0; b < 5; b++) { const code = `Mouse${b}`, rec = down.get(code); if (rec && !(e.buttons & MASK[b])) { if (rec.dead) down.delete(code); else lift(code); } } };
+  document.documentElement.addEventListener('mouseenter', syncButtons);
+  el.addEventListener('mousemove', e => { st.mdx += e.movementX || 0; st.mdy += e.movementY || 0; st.mx = e.clientX; st.my = e.clientY; st.has = true; st.moved = true; for (const rec of down.values()) rec.moved = Math.max(rec.moved, Math.hypot(e.clientX - rec.x, e.clientY - rec.y)); syncButtons(e); });
+  el.addEventListener('mousedown', e => { e.preventDefault(); st.mx = e.clientX; st.my = e.clientY; st.has = true; press(`Mouse${e.button}`, true); });
   addEventListener('mouseup', e => { lift(`Mouse${e.button}`); });
   el.addEventListener('contextmenu', e => e.preventDefault());
   el.addEventListener('wheel', e => { e.preventDefault(); st.wheel += Math.sign(e.deltaY); }, { passive: false });
