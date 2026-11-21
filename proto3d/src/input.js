@@ -34,6 +34,7 @@ const DEFAULT = [
   { id: 'handMode', ctx: ['any'], keys: ['KeyH'], label: '손 조작 방식 바꾸기(눌러 보내기 ↔ 누르는 동안 뻗기)' },
   { id: 'footAssist', ctx: ['any'], keys: ['KeyF'], label: '발 보조 켬·끔' },
   { id: 'wallRest', ctx: ['any'], keys: ['KeyJ'], dev: true, label: '실험: 벽 딛기(매달리면 발을 벽에 대고 버팀) 켬·끔 · 기본 끔' },
+  { id: 'poseMode', ctx: ['any'], keys: ['KeyO'], dev: true, label: '비교: 몸 자세(새 = 골반·무릎·발의 길이 함께 ↔ 옛 0.8.8) · 기본 새 것' },
   { id: 'wallStart', ctx: ['any'], keys: ['KeyT'], label: '작은 벽 앞에서 시작' },
   { id: 'reset', ctx: ['any'], keys: ['KeyR'], label: '처음 자리로' },
   { id: 'helpAll', ctx: ['any'], keys: ['KeyK'], label: '조작표 모두 보기·접기' },

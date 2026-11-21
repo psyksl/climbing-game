@@ -28,7 +28,7 @@ export const CL = {
   //   PO_W = 골반 쪽 무게 ÷ 윗몸 쪽 무게(골반·넓적다리 뿌리 0.22 : 가슴·머리·팔 0.48로 어림. 발에 붙은 다리의 나머지는 세지 않는다), PO_H = 골반에서 윗몸 무게중심까지의 높이.
   //   골반이 P만큼 가면 윗몸의 무게중심은 −PO_W × P만큼 간다(두 점의 무게를 단 평균이 물리의 기준 자리에 남는다 — 몸의 자리를 몰래 옮기지 않는다. 전신 균형을 검증한 것은 아니다)
   //   PO_SIDE = 받치는 발 쪽으로 가는 정도(발이 몸 가운데에서 벗어난 거리 × 이 값, PO_SIDE_MAX까지), PO_BACK = 깊이 접은 다리를 위해 엉덩이를 벽에서 빼는 거리(가장 클 때), PO_YAW = 발을 엇갈려 디딜 때 골반이 도는 각(가장 클 때), PO_REACH = 팔을 거의 다 펴야 닿는 손을 뻗을 때 골반이 반대쪽으로 가는 거리(가장 클 때. 윗몸이 그만큼 목표 쪽으로 간다 = 닿는 거리가 는다 → 고정 수치는 비교 측정 뒤)
-  PO_W: 0.46, PO_H: 0.33, PO_SIDE: 0.30, PO_SIDE_MAX: 0.035, PO_BACK: 0.09, PO_YAW: 0.60, PO_REACH: 0.03,
+  PO_W: 0.46, PO_H: 0.33, PO_SIDE: 0.30, PO_SIDE_MAX: 0.035, PO_BACK: 0.09, PO_YAW: 0.60, PO_REACH: 0, // PO_REACH는 0으로 둔다: 재 보니(test/reach_bound.mjs) 골반을 반대로 보내도 어깨가 목표에 가까워지지 않았다(0 ~ −1cm. 윗몸이 기울며 뻗는 어깨가 내려간다). 값은 실험용으로 남겨 둔다
   ARM_F: 0.65, LEG_F: 1.5, LEG_PERP: 0.35, MU_TOP: 0.9, MU_WALL: 1.0, COM_H: 1.0, MOM: 8,
   GRIP_ANG: 50 * deg, GRIP_MIN: 0.15, SLIP_T: 0.10, SHOCK_V: 1.5,
   KP: 60, KD: 14, ACC_MAX: 7, DAMP: 0.6, SHIFT_V: 0.5, REF_LAG: 0.08,
@@ -316,7 +316,7 @@ function legIK(S, hj, ank, yaw, sx, placed = true) {
   let ik, pole;
   if (np) { const py = yaw + K.po.yaw, d = ank.clone().sub(hj), ox = sx * (d.x * Math.cos(py) - d.z * Math.sin(py)), fz = d.x * Math.sin(py) + d.z * Math.cos(py);
     // 거의 편 다리는 무릎의 쪽이 정해지지 않는다(늘어뜨린 발이 조금만 흔들려도 각이 크게 바뀐다) → 접힌 만큼만 발의 자리를 따른다
-    const a0 = clamp(26 + 10 * bend + 0.75 * clamp((bend - 0.08) / 0.30, 0, 1) * Math.atan2(ox, Math.max(fz, 0.12)) / deg, -35, 85), list = [0, 12, 24, 36, 48, 60, 75, 90, -15, -30].map(x => a0 + x).filter(a => a <= 115 && a >= -50);
+    const a0 = clamp(26 - 6 * bend + 0.75 * clamp((bend - 0.08) / 0.30, 0, 1) * Math.atan2(ox, Math.max(fz, 0.12)) / deg, -35, 85), list = [0, 12, 24, 36, 48, 60, 75, 90, -15, -30].map(x => a0 + x).filter(a => a <= 115 && a >= -50);
     // 닿지 않는 첫 후보. 모두 닿으면 벽·턱에서 가장 멀리 있는 후보(0.8.8은 마지막 후보 = 안쪽을 썼다 — 벽에 바짝 붙은 자세에서 무릎이 벽 안에 남았다)
     let best = null;
     for (const a of list) { const pl = V(sx * Math.sin(a * deg), 0.1, Math.cos(a * deg)).applyAxisAngle(UP, py).normalize(), k2 = twoBone(hj, ank, DIM.thigh, DIM.shin, pl); let m = 0.05; if (!nearBox(S.world, k2.mid, 0.05)) { best = { ik: k2, pole: pl }; break; } while (m > -0.04 && nearBox(S.world, k2.mid, m)) m -= 0.015; if (!best || m > best.m) best = { ik: k2, pole: pl, m }; }
@@ -746,7 +746,9 @@ export function stepClimb(S, inp, dt) {
   { const P = K.po, Tn = K.T || torso(b, K); let tx = 0, tz = 0, ty = 0;
     if (poseOn(K) && held.length && !K.push) {
       const mv = K.feet.find(f => f.st === 'move'), sup = planted.filter(f => f.load > 0.05);
-      if (sup.length) { let c = 0, w = 0; for (const f of sup) { c += f.ank.clone().sub(b.pos).dot(left) * f.load; w += f.load; } tx += clamp(c / w * CL.PO_SIDE * (mv ? 1.4 : 1), -CL.PO_SIDE_MAX, CL.PO_SIDE_MAX); }
+      // 쓰는 때: 발을 옮기는 동안, 또는 발판 위의 한 발이 하중의 60%를 넘게 받는 만큼(그 발로 올라서는 중). 바닥에 서 있을 때는(두 발이든 한 발이든) 옮기지 않는다 — 바닥에 선 자세의 어깨 자리가 0.8.8과 달라지지 않게.
+      //   처음에는 가리지 않았다. 그랬더니 바닥에 서서 옆으로 뻗는 손이 3cm 덜 닿았고, 팔을 다 편 교차(1.6cm 기준에 걸쳐 있는 아슬아슬한 장면)가 어깨 1~2cm 차이로 "다른 팔에 막힘"이 됐다
+      if (sup.length) { let c = 0, w = 0, top = null; for (const f of sup) { c += f.ank.clone().sub(b.pos).dot(left) * f.load; w += f.load; if (!top || f.load > top.load) top = f; } const one = mv ? 1 : top.box.kind !== 'floor' ? clamp((top.load / w - 0.6) / 0.25, 0, 1) : 0; tx += one * clamp(c / w * CL.PO_SIDE * (mv ? 1.4 : 1), -CL.PO_SIDE_MAX, CL.PO_SIDE_MAX); }
       for (const f of K.feet) { if (f.st === 'free' || f.kind !== 'top' || (f.st === 'plant' && f.box.kind === 'floor')) continue; const hj = Tn.hj[f.i], d = f.ank.clone().sub(hj), sx = f.i ? -1 : 1;
         const fold = clamp((0.66 - d.length() / DIM.leg) / 0.26, 0, 1), front = clamp((d.dot(fwd) - 0.08) / 0.12, 0, 1); tz = Math.min(tz, -CL.PO_BACK * fold * front);
         ty += -sx * CL.PO_YAW * clamp((-sx * d.dot(left) - 0.05) / 0.20, 0, 1); }
