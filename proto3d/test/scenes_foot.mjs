@@ -54,3 +54,9 @@ export const SCENES_HV = [
   ['m3 좌우 반전 h3: W 0.12초 → 왼손 턱 A의 왼쪽 끝(옆면)', (sim, put, rep) => { mstart(rep); rep(15, { cy: 1 }); rep(90); rep(300, {}, [hand(0, ALEND)]); }, false, 1, MSTART],
   ['m5 좌우 반전 h5: 왼손으로 턱 A 왼쪽 끝을 잡았다가 놓고 다시', (sim, put, rep) => { mstart(rep); rep(120, { cy: 1 }); rep(120); rep(240, {}, [hand(0, ALEND)]); rep(120, {}, [rel('hand', 0)]); rep(300, {}, [hand(0, ALEND)]); }, false, 1, MSTART],
 ];
+
+// 매달리기·흔들기·당겨 오르기(p3d-0.11.0, 전신 자세 풀이를 눈으로 보는 데 쓴다): 턱 B 앞에서 뛰어 두 손으로 잡는다 → 2초 매달림 → 흔들기(오른쪽 0.5초·왼쪽 0.5초 두 번) → W 1초 → 오른손 놓고 1초 → 다시 잡기
+const BL = [0.5, 2.32, -2.86], BR = [0.9, 2.32, -2.86], JSTART = [0.7, 0, -2.65];
+export const SCENES_J = [
+  ['j1 뛰어 잡기 → 매달림 → 흔들기 → 당겨 오르기 → 한 손 놓고 다시', (sim, put, rep) => { rep(30); rep(1, { jump: true }, [hand(0, BL), hand(1, BR)]); rep(59, { jump: true }); rep(240); for (let i = 0; i < 2; i++) { rep(60, { cx: 1 }); rep(60, { cx: -1 }); } rep(180); rep(120, { cy: 1 }); rep(60); rep(120, {}, [rel('hand', 1)]); rep(240, {}, [hand(1, BR)]); }, false, 1, JSTART],
+];

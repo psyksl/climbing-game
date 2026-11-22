@@ -18,7 +18,7 @@ const out = { note: '스크립트 입력(사람 손 아님). 모션 = ' + (useCl
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${detail}`); out.checks.push({ name, ok, detail }); if (!ok) fails++; };
 // p3d-0.10.3(GPT의 0.10.2 검토 5번): 옛 몸 치수에 묶인 숫자 기대는 새 몸에서 "이력"으로 옮긴다(결과는 그대로 적고 실패로 세지 않는다). 그 요구는 새 몸의 실제 경계에서 대체 시험(아래 '새 몸 경계')으로 지킨다. 옛 몸에서는 그대로 시험이다
 const OLDBODY = process.env.BODY === 'old', histOrCheck = (name, ok, detail = '') => { if (OLDBODY) return check(name, ok, detail); console.log(`이력  ${name} — 새 몸에서는 이력(옛 몸 치수의 숫자 기대. 대체 시험: 새 몸 경계) — ${ok ? '통과' : '실패'} ${detail}`); out.checks.push({ name, ok, detail, 이력: true }); };
-const start = (pos, yaw = Math.PI, extra = []) => { const w = makeWorld(); for (const [name, min, max] of extra) w.boxes.push({ name, min: new THREE.Vector3(...min), max: new THREE.Vector3(...max), kind: 'block' }); sim = makeSim(rig, w, clips); sim.reset({ pos, yaw }); rec = []; run(30); };
+const start = (pos, yaw = Math.PI, extra = []) => { const w = makeWorld(); for (const [name, min, max] of extra) w.boxes.push({ name, min: new THREE.Vector3(...min), max: new THREE.Vector3(...max), kind: 'block' }); sim = makeSim(rig, w, clips); if (process.env.VARIANT) sim.opt.posture = process.env.VARIANT; sim.reset({ pos, yaw }); rec = []; run(30); };
 function run(n, inp = {}, cmd = null) {
   for (let i = 0; i < n; i++) {
     const v0 = sim.body.vel.clone(), on0 = sim.climb.on;

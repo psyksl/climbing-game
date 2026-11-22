@@ -8,6 +8,7 @@ import { groundAt, pushOut, rayHit } from './world.js';
 import { PHY } from './controller.js';
 import { aimBone, setWorldQuat, twoBone, worldPos } from './ik.js';
 import { featOf, lookup } from './refpose.js';
+import { fk as fbFK, makeFB, stepFB, FBI, FBW } from './fbik.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z), Q = () => new THREE.Quaternion(), clamp = THREE.MathUtils.clamp, lerp = THREE.MathUtils.lerp, UP = V(0, 1, 0), X = V(1, 0, 0), deg = Math.PI / 180;
 const mj = u => u * u * u * (10 - 15 * u + 6 * u * u);
@@ -133,6 +134,8 @@ function note(S, type, limb, i, why = '', extra = {}) {
 // ── 몸통의 틀: 어깨·고관절 자리. 물리와 그림이 같은 함수를 쓴다(손이 잡은 자리와 그림이 어긋나지 않게) ──
 // 몸통 자세의 층을 쓰는가: 비교 스위치 OLDPOSE(시험)·K.oldPose(화면의 실험 설정)가 켜져 있으면 0.8.8의 몸통 그대로다
 export const poseOn = K => !globalThis.OLDPOSE && !K.oldPose && !!K.po;
+// 전신 자세 풀이를 쓰는가(사람형 몸에서만)
+export const fbOn = K => K.post === 'fb' && !!K.fb && DIM.boxCollide && poseOn(K);
 export function torso(b, K) {
   // 몸의 층(p3d-0.8.0, K.pz — 계산 걸음에서만 바뀐다): 가슴 비틀기(뻗는 손·잡은 손 쪽 어깨가 벽으로)와 골반의 반대 비틀기, 골반 기울기(체중이 실린 쪽이 올라가고 어깨 선은 반대로), 머리가 목표(옮기는 발 > 뻗는 손 > 겨눈 곳)를 보고 몸이 옆으로 기울어도 머리는 덜 기운다, 뛰는 동안 윗몸을 젖히고 위를 봄, 숨
   const Z = K.pz, br = 0.02 * Math.sin(Z.breath * 1.9), tk = clamp(Z.tuck, 0, 1);
@@ -142,11 +145,18 @@ export function torso(b, K) {
   const tq = { hips: Q().setFromAxisAngle(UP, b.yaw - Z.twist * 0.3).multiply(Q().setFromAxisAngle(V(0, 0, 1), K.lean.z * 0.4 + Z.hipRoll)), spine: Q().setFromEuler(new THREE.Euler(K.lean.x - 0.16 * tk, 0, K.lean.z * 0.6 - Z.hipRoll * 1.2, 'ZXY')), chest: Q().setFromAxisAngle(UP, Z.twist * 1.3),
     neck: Q().setFromAxisAngle(X, K.hands.some(h => h.st === 'hold') ? -0.18 : 0).multiply(Q().setFromEuler(new THREE.Euler(Z.lookP * 0.4 - 0.12 * tk + hgx, Z.lookY * 0.4, -K.lean.z * 0.4 + hgz, 'YXZ'))), head: Q().setFromEuler(new THREE.Euler(Z.lookP * 0.6 - 0.14 * tk + hgx * 0.5, Z.lookY * 0.6, -K.lean.z * 0.4 + hgz * 0.5, 'YXZ')),
     'shoulder.L': Q().setFromAxisAngle(V(0, 0, 1), K.shrug[0] + br), 'shoulder.R': Q().setFromAxisAngle(V(0, 0, 1), -K.shrug[1] - br) };
+  // 전신 자세 풀이(p3d-0.11.0, K.post === 'fb'): 골반·척추·가슴·빗장뼈의 회전과 골반의 자리는 풀이 값(K.fb.x — 계산 걸음에서만 바뀐다)에서 온다. 목·머리는 위의 식 그대로(옆 기울기만 가슴의 것으로). 아래의 어깨·고관절 계산은 같다
+  const FB = fbOn(K) ? K.fb : null;
+  if (FB) { const x = FB.x, g = fbFK(x, [b.pos.x, b.pos.y, b.pos.z], b.yaw), qa = a => new THREE.Quaternion(a[0], a[1], a[2], a[3]), qH = qa(g.qH), qS = qa(g.qS), lz = x[FBI.RC] - K.lean.z;
+    tq.hips = qH; tq.spine = qH.clone().invert().multiply(qS); tq.chest = qS.clone().invert().multiply(qa(g.qC));
+    tq['shoulder.L'] = Q().setFromAxisAngle(V(0, 0, 1), x[FBI.SL] + br); tq['shoulder.R'] = Q().setFromAxisAngle(V(0, 0, 1), -x[FBI.SR] - br);
+    tq.neck.multiply(Q().setFromAxisAngle(V(0, 0, 1), -lz * 0.4)); tq.head.multiply(Q().setFromAxisAngle(V(0, 0, 1), -lz * 0.4)); }
   if (K.blend) { const k = mj(clamp(K.blend.t / CL.BLEND_T, 0, 1)); for (const n of TORSO) tq[n] = K.blend.q[n].clone().slerp(tq[n], k); }
   const hip = V(b.pos.x, b.pos.y + DIM.hipY, b.pos.z), qS = tq.hips.clone().multiply(tq.spine);
   // p3d-0.9.0 몸통 자세의 층(K.po — 계산 걸음에서만 바뀐다): 골반이 기준 자리에서 옆(x, 왼쪽이 +)·앞뒤(z, 벽 쪽이 +)로 벗어나고 제 축으로 돈다(yaw). 윗몸은 골반을 축으로 반대로 기울어 무게를 되받는다.
   //   윗몸의 무게중심(골반 위 PO_H)이 −(1 + PO_W) × P만큼 가도록 척추를 돌린다(가장 작은 회전). 골반이 도는 것은 고관절의 자리와 골반의 그림에만 들어가고 가슴·어깨의 방향은 그대로다(척추가 되돌린다).
-  const P = poseOn(K) ? K.po : null;
+  const P = poseOn(K) && !FB ? K.po : null;
+  if (FB) { const kb = K.blend ? mj(clamp(K.blend.t / CL.BLEND_T, 0, 1)) : 1, x = FB.x; hip.add(V(Math.cos(b.yaw), 0, -Math.sin(b.yaw)).multiplyScalar(x[FBI.PX] * kb)).add(V(Math.sin(b.yaw), 0, Math.cos(b.yaw)).multiplyScalar(x[FBI.PZ] * kb)); hip.y += x[FBI.PY] * kb; qS.copy(tq.hips).multiply(tq.spine); }
   if (P && (P.x || P.z || P.yaw)) { const kb = K.blend ? mj(clamp(K.blend.t / CL.BLEND_T, 0, 1)) : 1, off = V(Math.cos(b.yaw), 0, -Math.sin(b.yaw)).multiplyScalar(P.x * kb).add(V(Math.sin(b.yaw), 0, Math.cos(b.yaw)).multiplyScalar(P.z * kb));
     hip.add(off); const L = V(0, CL.PO_H, 0).applyQuaternion(qS), w = L.clone().cross(off.multiplyScalar(-(1 + CL.PO_W))).multiplyScalar(1 / L.lengthSq()), a = w.length();
     if (a > 1e-6) qS.premultiply(Q().setFromAxisAngle(w.multiplyScalar(1 / a), Math.min(a, 0.6)));
@@ -724,6 +734,7 @@ function enter(S, why) {
   for (const s of SIDES) { seedBend(S, 'kn' + s, `upLeg.${s}`, `leg.${s}`, `foot.${s}`); if (K.hands[s === 'L' ? 0 : 1].st === 'free') seedBend(S, 'el' + s, `upperArm.${s}`, `foreArm.${s}`, `hand.${s}`); }
   const wasGround = b.onGround, gy = b.ground;
   b.pos.set(hip.x, hip.y - DIM.hipY, hip.z); b.push = null; b.charging = false; b.charge = 0; b.onGround = false; K.ref.copy(b.pos); K.lean.x = 0; K.lean.z = 0;
+  K.fb = null; K.post = DIM.boxCollide ? ((S.opt && S.opt.posture) || 'rule') : 'base'; if (K.post === 'fb') K.fb = makeFB();
   K.T = torso(b, K);
   for (const F of K.feet) {
     const ank = worldPos(B[`foot.${F.s}`]), toe = worldPos(B[`toe.${F.s}`]), q = B[`foot.${F.s}`].getWorldQuaternion(Q());
@@ -820,11 +831,37 @@ function heldPole(S, s, sh, goal, yaw, sx, qC) {
 }
 
 // ── 벽 문맥의 한 걸음 ──
+// 전신 자세 풀이의 한 걸음(p3d-0.11.0): 붙은 손발·가는 손발·하중·지형을 모아 풀이에 넘긴다(src/fbik.js). 풀이 값은 torso()를 거쳐 물리와 그림에 함께 들어간다
+const boxArr = x => x._a || (x._a = { min: [x.min.x, x.min.y, x.min.z], max: [x.max.x, x.max.y, x.max.z] });
+function fbUpdate(S, inp, dt, held, planted, left, fwd) {
+  const b = S.body, K = S.climb, fb = K.fb, BW = CL.MASS * PHY.G, pos = [b.pos.x, b.pos.y, b.pos.z], a3 = v => [v.x, v.y, v.z];
+  const boxes = []; for (const x of S.world.boxes) { if (x.kind === 'floor' || x.max.x < pos[0] - 1.3 || x.min.x > pos[0] + 1.3 || x.max.z < pos[2] - 1.3 || x.min.z > pos[2] + 1.3 || x.max.y < pos[1] - 0.3 || x.min.y > pos[1] + 2.5) continue; boxes.push(boxArr(x)); }
+  // 손이 받는 몫(세로 힘 기준, 천천히 바뀐다)과 발판 위에 섰는가
+  let hl = 0, fl = 0; for (const h of held) hl += Math.max(0, h.F ? h.F.y / BW : h.load || 0); for (const f of planted) fl += Math.max(0, f.F ? f.F.y / BW : f.load || 0);
+  const hangT = held.length ? (planted.length ? hl / (hl + fl + 1e-3) : 1) : 0, supT = held.length && planted.some(f => f.load > 0.1 && f.box.kind !== 'floor') ? 1 : 0, kS = 1 - Math.exp(-7 * dt);
+  fb.hang += (hangT - fb.hang) * kS; fb.sup += (supT - fb.sup) * kS;
+  // 몸통의 축이 향할 쪽: 발로 서면 위(발판 위에서는 벽에서 조금 뒤로), 손에 매달리면 무게중심 → 잡은 손들의 가운데
+  const lean = held.length ? 0.05 + 0.15 * fb.sup : 0, ax = V(0, 1, 0).addScaledVector(fwd, -lean).normalize();
+  if (held.length) { const c = V(); for (const h of held) c.add(h.goal); c.multiplyScalar(1 / held.length).sub(V(b.pos.x, b.pos.y + DIM.hipY + 0.15, b.pos.z)); if (c.lengthSq() > 1e-4) ax.multiplyScalar(1 - fb.hang).addScaledVector(c.normalize(), fb.hang).normalize(); }
+  // 팔을 엇갈려 잡을 때(나중에 건너간 팔의 어깨가 벽 쪽) 가슴이 돌아 있으려는 쪽 — 두 팔이 서로를 지나가지 않게(p3d-0.8.5의 규칙을 풀이의 바람으로)
+  const gOf = h => (h.st === 'hold' || (h.st === 'reach' && h.edge) ? h.goal : null), g0 = gOf(K.hands[0]), g1 = gOf(K.hands[1]), isX = !!g0 && !!g1 && g0.clone().sub(g1).dot(left) < -0.02, rch = K.hands.find(h => h.st === 'reach');
+  const twist = isX ? (((rch ? rch.i : (K.lastReach ?? 1)) ? 1 : -1) * 0.45) : 0, up = (inp.cy || 0) > 0;
+  // 가슴이 향하려는 쪽: 잡은 손들의 가운데(몸이 보는 쪽에서 옆으로 치우친 만큼, 끝 ±0.5rad). 두 손을 나란히 잡으면 0 — 가슴이 까닭 없이 한쪽으로 틀어지지 않게
+  let yawT = 0; if (held.length) { const cH = V(); for (const h of held) cH.add(h.goal); cH.multiplyScalar(1 / held.length).sub(V(b.pos.x, b.pos.y, b.pos.z)); yawT = clamp(Math.atan2(cH.dot(left), Math.max(0.15, cH.dot(fwd))) * 0.6, -0.5, 0.5); }
+  const c = { pos, yaw: b.yaw, boxes, ARM: CL.ARM, LEG: CL.LEG, LEGMIN: 0.30, kneeClr: DIM.kneeClr, axis: a3(ax), pitch: -0.12 * clamp(K.pz.tuck, 0, 1), twist, yawT,
+    arms: K.hands.map(h => ({ st: h.st === 'hold' ? 1 : h.st === 'reach' ? 2 : 0, goal: a3(h.goal), w: 1 })),
+    legs: K.feet.map(f => ({ st: f.st === 'plant' ? 1 : f.st === 'move' ? 2 : 0, ank: a3(f.ank), w: 1, load: f.st === 'plant' && f.box && f.box.kind !== 'floor' ? clamp(f.F ? f.F.y / BW : f.load || 0, 0, 1) : 0 })),
+    shr: K.hands.map(h => (h.st === 'reach' && h.goal.y > b.pos.y + 1.4 ? 0.40 : h.st === 'hold' && (h.load || 0) > 0.5 && !up && !rch ? 0.28 : 0)), iters: fb.cost > 3 ? 2 : 1 };
+  c.boxesHead = boxes.map(x => ({ min: [x.min[0], x.min[1] - 0.15, x.min[2]], max: x.max }));
+  stepFB(fb, c, dt); fb.ctx = c;
+  K.po.x = 0; K.po.z = 0; K.po.yaw = fb.x[FBI.YH]; K.po.xV = 0; K.po.zV = 0; K.po.yawV = 0;
+}
 export function stepClimb(S, inp, dt) {
   const b = S.body, K = S.climb, W = S.world, m = CL.MASS, BW = m * PHY.G;
   b.events.length = 0; b.t += dt;
   // 자세 규칙(p3d-0.10.1, GPT의 0.10.0 검토 "㉮와 참고 자세 선택 + 접촉 IK를 대표 장면에서 비교"): 'rule' = 사람형 몸의 새 규칙(기본), 'base' = 0.10.0, 'ref' = 참고 자세 색인(캡처 빌드의 실험 설정)
   K.post = DIM.boxCollide ? (S.opt.posture || 'rule') : 'base';
+  if (K.post === 'fb' && !K.fb) K.fb = makeFB();
   if (K.post === 'ref' && S.ref && K.tick % 4 === 0 && K.T) { const B = S.rig.bones, P2 = CL.PALM, pts = [B['hand.L'].localToWorld(V(0, -P2, 0)), B['hand.R'].localToWorld(V(0, -P2, 0)), worldPos(B['foot.L']), worldPos(B['foot.R'])];
     const r = lookup(S.ref, featOf(pts, worldPos(B.hips), b.yaw), [K.hands[0].st === 'hold', K.hands[1].st === 'hold', K.feet[0].st === 'plant', K.feet[1].st === 'plant']);
     K.refT = r ? { w: clamp(1 - (r.dist - 0.4) / 0.6, 0, 1), yaw: r.pelvis.yaw * deg, knee: r.knee, dist: r.dist, clips: r.clips } : null; }
@@ -944,9 +981,12 @@ export function stepClimb(S, inp, dt) {
     }
     const slow = K.post !== 'base' && DIM.boxCollide && !globalThis.PO_FAST ? 2 : 1; // PO_FAST = 시험용 비교 스위치(0.15초로 따라감)
     // 새 규칙(p3d-0.10.1)은 골반이 두 배 천천히 따라간다 — 골반 돌림·엉덩이 빼기가 0.15초로 따라가면 어깨가 함께 움직여 잡은 팔이 초속 300°를 넘는 걸음이 늘었다(718 → 1,052)
-    K.poT = { x: tx, z: tz, yaw: ty }; if (K.post === 'solve' && poseOn(K)) solvePose(S, K, { x: tx, z: tz, yaw: clamp(ty, -0.7, 0.7) }, held, dt); else { K.knA = null; springS(P, 'x', tx, 0.13 * slow, dt); springS(P, 'z', tz, 0.15 * slow, dt); springS(P, 'yaw', clamp(ty, -0.7, 0.7), 0.15 * slow, dt); } }
+    K.poT = { x: tx, z: tz, yaw: ty }; if (fbOn(K)) { K.knA = null; fbUpdate(S, inp, dt, held, planted, left, fwd); } else if (K.post === 'solve' && poseOn(K)) solvePose(S, K, { x: tx, z: tz, yaw: clamp(ty, -0.7, 0.7) }, held, dt); else { K.knA = null; springS(P, 'x', tx, 0.13 * slow, dt); springS(P, 'z', tz, 0.15 * slow, dt); springS(P, 'yaw', clamp(ty, -0.7, 0.7), 0.15 * slow, dt); } }
   if (hanging) { K.ref.x = b.pos.x; K.ref.z = b.pos.z; } else K.ref.addScaledVector(left, side * CL.SHIFT_V * dt);
   if (!K.push) K.ref.y += (inp.cy || 0) * CL.SHIFT_V * dt;
+  // 전신 자세 풀이(p3d-0.11.0, 임시 — 조작에 닿는 것이라 기획 확인 대상): 발이 받치지 않는 매달림에서 위·아래 입력이 없으면 팔이 거의 펴질 때까지(96%) 몸이 천천히 가라앉는다(쉬는 매달림은 팔을 편다).
+  //   0.10.x까지는 뛰어 잡은 높이에 팔을 굽힌 채 끝없이 머물렀다(피로가 없어서). 당겨 올라간 채 다른 손을 보내려면 W를 누르고 있어야 한다. 끄기: S.opt.hangSink = false
+  if (fbOn(K) && hanging && !K.push && !(inp.cy || 0) && !(S.opt && S.opt.hangSink === false) && K.T) { let slack = 9; for (const h of held) slack = Math.min(slack, 0.96 * CL.ARM - K.T.sh[h.i].distanceTo(h.goal)); if (slack > 0.004 && slack < 9) K.ref.y -= Math.min(0.30, slack * 4) * dt; }
   // 벽에서 뛰기: 누르는 순간 밀기 시작(모으기 없음, 지상 점프와 같다). 방향 = 위 + 좌우(A/D) + 벽에서 조금 떨어지는 쪽. S를 누르고 있으면 벽을 차고 뒤로
   const jumpPress = !!inp.jump && !K.jumpHeld; K.jumpHeld = !!inp.jump;
   if (jumpPress && !K.push && (held.length || planted.length)) {

@@ -19,7 +19,7 @@ const nameOf = p => CORNER ? (p[1] < 1 ? (p[0] > -0.02 ? 'B 발판(벽 B)' : 'A 
 function inputLog(list) { const ev = [], prev = { cy: 0, cx: 0 }; list.forEach((x, k) => { for (const a of ['cy', 'cx']) { const v = x[a] || 0; if (v !== prev[a]) { if (prev[a]) ev.push({ k, text: KEY[a][prev[a] > 0 ? 0 : 1] + ' 뗌' }); if (v) ev.push({ k, text: KEY[a][v > 0 ? 0 : 1] + ' 누름' }); prev[a] = v; } }
   for (const c of x.cmd || []) { const side = c.i ? '오른' : '왼'; if (c.type === 'hand') ev.push({ k, text: `${side}손 ${c.hold ? '누르고 있음' : '클릭'} → ${nameOf(c.p)}` }); else if (c.type === 'foot') ev.push({ k, text: `${side}발 보내기 → ${nameOf(c.p)}` }); else if (c.type === 'release') ev.push({ k, text: `${side}${c.limb === 'foot' ? '발' : '손'} 놓기` }); else if (c.type === 'handUp') ev.push({ k, text: `${side}손 단추 뗌` }); } }); return ev; }
 import { SCENES } from './scenes_foot.mjs';
-import { SCENES_FOOT, SCENES_H } from './scenes_foot.mjs';
+import { SCENES_FOOT, SCENES_H, SCENES_J } from './scenes_foot.mjs';
 import { SCENES_C } from './scenes_corner.mjs';
 if (out) {
   fs.mkdirSync(out, { recursive: true });
@@ -28,7 +28,7 @@ if (out) {
   pg.on('pageerror', e => errs.push(e.message)); await pg.goto('file://' + build + '?noshadow' + (process.env.QUERY ? '&' + process.env.QUERY : '')); await pg.waitForTimeout(1200);
   await pg.evaluate(m => { if (m) __p3.setMode(m); document.getElementById('help').style.display = 'none'; }, clip ? 'clip' : '');
   // 시점 둘: 사용자 화면과 같은 시점(T로 시작했을 때의 뒤쪽 비스듬한 시점), 옆
-  for (const [view, yaw, pitch, dist] of [['뒤에서(사용자 화면과 같은 시점)', 0.25, 0.12, 3.6], ['옆에서', Math.PI * 1.5, 0.10, 3.6]]) for (const [title0, fn, assist, mode, st0, yaw0] of (process.env.SET === 'foot' ? SCENES_FOOT : process.env.SET === 'human' ? SCENES_H : CORNER ? SCENES_C.map(c => [c[0] + ' ' + c[1], ...c.slice(2)]) : SCENES).filter((x, i) => !process.env.ONLY || process.env.ONLY.includes(String(i + 1)))) {
+  for (const [view, yaw, pitch, dist] of [['뒤에서(사용자 화면과 같은 시점)', 0.25, 0.12, 3.6], ['옆에서', Math.PI * 1.5, 0.10, 3.6]]) for (const [title0, fn, assist, mode, st0, yaw0] of (process.env.SET === 'foot' ? SCENES_FOOT : process.env.SET === 'human' ? SCENES_H : process.env.SET === 'jump' ? SCENES_J : CORNER ? SCENES_C.map(c => [c[0] + ' ' + c[1], ...c.slice(2)]) : SCENES).filter((x, i) => !process.env.ONLY || process.env.ONLY.includes(String(i + 1)))) {
     const START1 = st0 || START, Y0 = yaw0 ?? Math.PI, inputs = make(START1, fn, assist, Y0), title = title0 + ' · ' + view, evs = inputLog(inputs);
     // 입력과 시간을 영상에 함께 보인다(녹화 도구가 얹는 칸이라 옛 빌드에도 같은 모양으로 나온다): 실제로 흐른 시간, 게임이 계산한 시간, 스크립트가 넣은 입력과 그 시각
     await pg.evaluate(([title, pos, inputs, yaw, pitch, dist, assist, mode, evs, Y0]) => { __p3.opt({ handMode: mode || 1, footAssist: assist, wallRest: false, diag: false, helpAll: false }); __p3.reset({ pos, yaw: Y0 }); __p3.setCam({ yaw, pitch, dist, follow: null }); __p3.setBanner(title + ' — 스크립트 입력(사람 손 아님)');
