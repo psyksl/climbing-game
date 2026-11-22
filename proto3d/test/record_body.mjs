@@ -10,8 +10,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url)), require = createRequi
 const out = process.argv[2]; if (!out) { console.log('사용: node test/record_body.mjs <출력 폴더>'); process.exit(1); }
 fs.mkdirSync(out, { recursive: true });
 const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-const pg = await b.newPage({ viewport: { width: 1200, height: 560 } }), errs = []; pg.on('pageerror', e => errs.push(e.message));
-await pg.goto('file://' + path.join(HERE, '..', 'body3d.html') + '?test' + (process.env.SKEL ? '&skel' : '') + (process.env.QUERY ? '&' + process.env.QUERY : '')); await pg.waitForTimeout(2000);
+const pg = await b.newPage({ viewport: { width: 960, height: 448 } }), errs = []; pg.on('pageerror', e => errs.push(e.message));
+await pg.goto('file://' + path.join(HERE, '..', 'body3d.html') + '?test&noshadow' + (process.env.SKEL ? '&skel' : '') + (process.env.QUERY ? '&' + process.env.QUERY : '')); await pg.waitForTimeout(2000);
 const info = await pg.evaluate(() => ({ TOTAL: __bv.TOTAL, clips: __bv.clips, ver: __bv.VERSION }));
 const tag = process.env.SKEL ? '_skel' : '';
 async function rec(name, list) { const dir = path.join(out, 'f_' + name); fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir);
@@ -24,4 +24,6 @@ await rec('body_clips' + tag, L);
 // 앞·옆·뒤 그림(쉬는 자세, 원본 T자 자세)
 await pg.evaluate(() => __bv.at(0.5, 'joints')); await pg.screenshot({ path: path.join(out, `body_rest${tag}.png`) });
 await pg.evaluate(() => __bv.at(0.1, 'clip', 'A_TPose')); await pg.screenshot({ path: path.join(out, `body_tpose${tag}.png`) });
+// 뼈대를 겹친 그림(메시를 반투명으로): 쉬는 자세, 깊게 앉기, 낮은 발판
+await pg.evaluate(() => __bv.skel(true)); for (const [n, t] of [['rest', 0.5], ['squat', 13.5], ['step', 16.3]]) { await pg.evaluate(t => __bv.at(t, 'joints'), t); await pg.screenshot({ path: path.join(out, `body_skel_${n}.png`) }); }
 console.log(info.ver, errs.join(' | ') || '오류 없음'); await b.close();
