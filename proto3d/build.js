@@ -23,4 +23,7 @@ const page = js => `<!doctype html><html lang="ko"><head><meta charset="utf-8"><
 const html = page(js);
 fs.writeFileSync(path.join(__dirname, 'climb3d.html'), html);
 console.log('climb3d.html', html.length, 'bytes · three', three);
+// 몸 보기(p3d-0.10.0): 사람형 몸·뼈대를 앞·옆·뒤에서 보고 기본 관절 동작과 원본 동작을 튼다
+{ const bv = esbuild.buildSync({ entryPoints: [path.join(src, 'bodyview.js')], bundle: true, format: 'iife', minify: true, write: false, target: 'es2020', legalComments: 'none' }).outputFiles[0].text;
+  const h3 = page(bv).replace('<title>등반 3D 모션 시제품</title>', '<title>몸 보기</title>'); fs.writeFileSync(path.join(__dirname, 'body3d.html'), h3); console.log('body3d.html', h3.length, 'bytes'); }
 if (hasClips) { const h2 = page(bundle(true)); fs.writeFileSync(path.join(__dirname, 'climb3d_mocap.html'), h2); console.log('climb3d_mocap.html', h2.length, 'bytes · 캡처 동작 포함(저장소에 넣지 않음)'); }

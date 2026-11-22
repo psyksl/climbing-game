@@ -73,7 +73,7 @@ export function resolveGrip(world, pt) {
 }
 // 손목이 가야 할 자리: 손바닥(손목에서 8cm)이 모서리에 걸리도록 모서리 아래·조금 앞
 // 잡을 때의 손목 자리: 모서리에서 턱 바깥으로 GRIP_OUT, 손바닥 길이만큼 아래. p3d-0.8.3: 바깥으로 2cm → 4cm(팔뚝 끝의 실제 반지름 3.6cm가 턱 앞면에 들어가지 않게. 2cm일 때는 잡고 있는 자세에서 팔뚝 끝 표면이 턱 안 1.5cm였다)
-const GRIP_OUT = 0.04, anchorOf = g => g.p.clone().add(V(0, -Math.sqrt(CL.PALM * CL.PALM - GRIP_OUT * GRIP_OUT), 0)).addScaledVector(g.n, GRIP_OUT);
+const GRIP_OUT = DIM.armR.fore[1] + 0.004, anchorOf = g => g.p.clone().add(V(0, -Math.sqrt(CL.PALM * CL.PALM - GRIP_OUT * GRIP_OUT), 0)).addScaledVector(g.n, GRIP_OUT);
 // 발을 디딜 면: 윗면(올라서는 면) 또는 옆면(벽에 대고 누르는 면). 얇은 턱은 앞면을 겨눠도 윗면으로 본다
 export function resolveFoot(world, pt, yaw) {
   let best = null;
@@ -83,6 +83,9 @@ export function resolveFoot(world, pt, yaw) {
     const thin = b.max.y - b.min.y < 0.12, dTop = Math.abs(pt.y - b.max.y);
     if (dTop <= m || thin || b.kind === 'floor') {
       const p = V(clamp(pt.x, b.min.x + 0.01, b.max.x - 0.01), b.max.y, clamp(pt.z, b.min.z + 0.01, b.max.z - 0.01)), d = p.distanceTo(pt);
+      // 사람형 몸(p3d-0.10.0): 발이 길다(발볼에서 발끝까지 9.2cm). 발끝이 벽·다른 상자에 들지 않게 발볼 자리를 몸 쪽으로 물린다(1cm씩 12cm까지, 그 윗면 안에서만). 옛 몸은 하지 않는다(0.9.1과 같게)
+      if (DIM.boxCollide && b.kind !== 'floor' && yaw !== undefined) { const fw = V(Math.sin(yaw), 0, Math.cos(yaw)), tip = () => p.clone().addScaledVector(fw, DIM.toeZ - DIM.ballZ).add(V(0, 0.025, 0));
+        for (let k = 0; k < 12 && insideAny(world, tip(), b); k++) { p.addScaledVector(fw, -0.01); p.x = clamp(p.x, b.min.x + 0.01, b.max.x - 0.01); p.z = clamp(p.z, b.min.z + 0.01, b.max.z - 0.01); } }
       if (!insideAny(world, p.clone().add(V(0, 0.05, 0)), b) && (!best || d < best.d)) best = { d, p, n: UP.clone(), kind: 'top', box: b };
       continue;
     }
@@ -138,10 +141,10 @@ export function torso(b, K) {
     if (a > 1e-6) qS.premultiply(Q().setFromAxisAngle(w.multiplyScalar(1 / a), Math.min(a, 0.6)));
     tq.hips = tq.hips.clone().multiply(Q().setFromAxisAngle(UP, P.yaw * kb)); tq.spine = tq.hips.clone().invert().multiply(qS); }
   const qH = tq.hips, qC = qS.clone().multiply(tq.chest);
-  const chest = hip.clone().add(V(0, DIM.spine, 0).applyQuaternion(qH)).add(V(0, DIM.chest, 0).applyQuaternion(qS));
-  const sh = SIDES.map((s, i) => { const sx = i ? -1 : 1, qSh = qC.clone().multiply(tq[`shoulder.${s}`]); return chest.clone().add(V(sx * DIM.clavX, DIM.clavY, 0).applyQuaternion(qC)).add(V(sx * DIM.shoulderX, 0, 0).applyQuaternion(qSh)); });
-  const hj = SIDES.map((s, i) => hip.clone().add(V((i ? -1 : 1) * DIM.hipW, -DIM.hipDrop, 0).applyQuaternion(qH)));
-  const head = chest.clone().add(V(0, DIM.neck + DIM.head + DIM.headR * 0.9, 0).applyQuaternion(qC));
+  const chest = hip.clone().add(V(...DIM.oSpine).applyQuaternion(qH)).add(V(...DIM.oChest).applyQuaternion(qS));
+  const sh = SIDES.map((s, i) => { const sx = i ? -1 : 1, qSh = qC.clone().multiply(tq[`shoulder.${s}`]); return chest.clone().add(V(sx * DIM.oClav[0], DIM.oClav[1], DIM.oClav[2]).applyQuaternion(qC)).add(V(sx * DIM.oSh[0], DIM.oSh[1], DIM.oSh[2]).applyQuaternion(qSh)); });
+  const hj = SIDES.map((s, i) => hip.clone().add(V((i ? -1 : 1) * DIM.oHip[0], DIM.oHip[1], DIM.oHip[2]).applyQuaternion(qH)));
+  const head = chest.clone().add(V(...DIM.oNeck).add(V(...DIM.oHead)).add(V(...DIM.headCT)).applyQuaternion(qC));
   return { tq, hip, sh, hj, chest, head, qC };
 }
 const joints = S => (S.climb.on && S.climb.T ? S.climb.T : { sh: SIDES.map(s => worldPos(S.rig.bones[`upperArm.${s}`])), hj: SIDES.map(s => worldPos(S.rig.bones[`upLeg.${s}`])) });
@@ -163,7 +166,7 @@ function armIK(world, sh, tgt, yaw, sx, q = null, full = false, tb = null) {
 // 팔뚝 = 팔꿈치~손목의 열한 점(2.7cm 간격. 공 사이의 골은 여유 ARM_PAD로 덮는다), 위팔 = 팔꿈치 쪽 여섯 점(어깨 쪽은 몸통과 같이 벽 앞에 있다).
 // 돌려주는 값 { d = 겹친 깊이, n = 가장 얕게 빠지는 쪽, t = 팔뚝에서 손목 쪽 몫(위팔이면 -1), f = 팔뚝만의 겹침 } 또는 null. 바닥은 보지 않는다
 // tb = 잡으러 가는 턱(있으면): 그 턱에는 여유를 1mm만 둔다. 잡을 때의 손목 자리는 턱 앞면에서 4cm 앞이고 팔뚝 끝의 반지름이 3.6cm라, 여유 4mm를 다 두면 잡는 자리에 들어가지 못한다(표면은 겹치지 않는다)
-export const ARM_R = { fore: [0.045, 0.036], upper: [0.055, 0.045] }, ARM_PAD = 0.004, ARM_PAD_GRIP = 0.001;
+export const ARM_R = { fore: DIM.armR.fore, upper: DIM.armR.upper }, ARM_PAD = 0.004, ARM_PAD_GRIP = 0.001;
 export const ARM_PTS = Array.from({ length: 11 }, (_, k) => [k / 10, lerp(ARM_R.fore[0], ARM_R.fore[1], k / 10)]), ARM_UP = [0.45, 0.56, 0.67, 0.78, 0.89, 1].map(t => [t, lerp(ARM_R.upper[0], ARM_R.upper[1], t)]);
 // 공(가운데 p, 반지름 r)이 상자에 겹친 깊이와 빠지는 쪽. 모서리는 둥글게 잰다(상자를 r만큼 부풀린 네모로 재면 모서리 앞에서 겹치지 않는데도 겹쳤다고 본다 —
 // 당겨 올라가 어깨가 턱 앞 아래에 있을 때 위팔이 늘 "겹침"이 되어 손이 끝내 가지 못했다)
@@ -184,12 +187,12 @@ function selfBody(S) {
   const K = S.climb; if (globalThis.NOSELF) return null;
   // 지상(땅에 서서·뛰며 뻗는 팔): 앞 걸음에 확정된 자세의 뼈에서 읽는다(지상 문맥의 어깨 자리도 그렇게 읽는다 — joints)
   if (!K.on || !K.T) { const Bn = S.rig.bones, wq = n => Bn[n].getWorldQuaternion(Q()), qHd = wq('head'), qC = wq('chest'), qH = wq('hips');
-    return { head: { c: worldPos(Bn.head).add(V(0, DIM.headR * 0.9, 0.01).applyQuaternion(qHd)), r: DIM.headR },
-      boxes: [{ c: worldPos(Bn.chest).add(V(0, 0.11, 0.005).applyQuaternion(qC)), q: qC, qi: qC.clone().invert(), h: V(0.18, 0.12, 0.105) }, { c: worldPos(Bn.hips).add(V(0, 0.07, 0).applyQuaternion(qH)), q: qH, qi: qH.clone().invert(), h: V(0.15, 0.17, 0.095) }] }; }
+    return { head: { c: worldPos(Bn.head).add(V(...DIM.headC).applyQuaternion(qHd)), r: DIM.headR },
+      boxes: [{ c: worldPos(Bn.chest).add(V(...DIM.boxChest.c).applyQuaternion(qC)), q: qC, qi: qC.clone().invert(), h: V(...DIM.boxChest.h) }, { c: worldPos(Bn.hips).add(V(...DIM.boxHip.c).applyQuaternion(qH)), q: qH, qi: qH.clone().invert(), h: V(...DIM.boxHip.h) }] }; }
   const T = K.T, tq = T.tq, qH = tq.hips, qC = T.qC, qN = qC.clone().multiply(tq.neck), qHd = qN.clone().multiply(tq.head);
-  const hb = T.chest.clone().add(V(0, DIM.neck, 0).applyQuaternion(qC)).add(V(0, DIM.head, 0).applyQuaternion(qN));
-  return { head: { c: hb.add(V(0, DIM.headR * 0.9, 0.01).applyQuaternion(qHd)), r: DIM.headR },
-    boxes: [{ c: T.chest.clone().add(V(0, 0.11, 0.005).applyQuaternion(qC)), q: qC, qi: qC.clone().invert(), h: V(0.18, 0.12, 0.105) }, { c: T.hip.clone().add(V(0, 0.07, 0).applyQuaternion(qH)), q: qH, qi: qH.clone().invert(), h: V(0.15, 0.17, 0.095) }] };
+  const hb = T.chest.clone().add(V(...DIM.oNeck).applyQuaternion(qC)).add(V(...DIM.oHead).applyQuaternion(qN));
+  return { head: { c: hb.add(V(...DIM.headC).applyQuaternion(qHd)), r: DIM.headR },
+    boxes: [{ c: T.chest.clone().add(V(...DIM.boxChest.c).applyQuaternion(qC)), q: qC, qi: qC.clone().invert(), h: V(...DIM.boxChest.h) }, { c: T.hip.clone().add(V(...DIM.boxHip.c).applyQuaternion(qH)), q: qH, qi: qH.clone().invert(), h: V(...DIM.boxHip.h) }] };
 }
 // 반지름 r의 공(p)이 제 몸에 겹친 가장 깊은 곳 { d, n(빠져나가는 쪽) } 또는 null
 // 반지름 r의 공(p)이 제 몸에 겹친 곳. **머리·몸통(body)과 다른 팔(arm)을 따로 돌려준다**(p3d-0.8.6):
@@ -323,8 +326,8 @@ function legIK(S, hj, ank, yaw, sx, placed = true) {
     //   처음에는 "닿지 않는 후보(5cm) 가운데 고르고, 없으면 가장 덜 닿는 것"이었다. 발판에 올라서며 엉덩이가 벽 10cm까지 다가가면 모든 후보가 5cm 안이 되고, 후보끼리 거의 같아 걸음마다 먼 쪽으로 바뀌어
     //   무릎이 0.06초 사이에 반대쪽으로 넘어갔다(초속 11m — 사용자가 영상 21초쯤에서 짚었다. 장면을 0.1초 간격으로 뽑아 본 그림에서는 놓쳤다). 지금 쪽에서 먼 만큼을 값에 넣어 이어지게 한다
     const PS0 = S.poleS && S.poleS['kn' + (sx > 0 ? 'L' : 'R') + 'p'], aCur = PS0 ? (() => { const l = PS0.clone().applyAxisAngle(UP, -py); return Math.atan2(sx * l.x, l.z) / deg; })() : a0; let best = null;
-    for (let a = -50; a <= 115; a += 5) { const pl = V(sx * Math.sin(a * deg), 0.1, Math.cos(a * deg)).applyAxisAngle(UP, py).normalize(), k2 = twoBone(hj, ank, DIM.thigh, DIM.shin, pl), dist = boxDist(S.world, k2.mid);
-      const sc = Math.abs(a - a0) + 0.6 * Math.abs(a - aCur) + 800 * Math.max(0, 0.06 - dist); if (!best || sc < best.sc) best = { ik: k2, pole: pl, sc }; }
+    for (let a = -50; a <= 115; a += 5) { const pl = V(sx * Math.sin(a * deg), 0.1, Math.cos(a * deg)).applyAxisAngle(UP, py).normalize(), k2 = twoBone(hj, ank, DIM.thigh, DIM.shin, pl), dist = DIM.boxCollide ? Math.min(...[0.45, 0.7, 1].map(t => boxDist(S.world, hj.clone().lerp(k2.mid, t))), boxDist(S.world, k2.mid.clone().lerp(k2.end, 0.25))) : boxDist(S.world, k2.mid);
+      const sc = Math.abs(a - a0) + 0.6 * Math.abs(a - aCur) + 800 * Math.max(0, DIM.kneeClr - dist); if (!best || sc < best.sc) best = { ik: k2, pole: pl, sc }; }
     return { ik: best.ik, pole: best.pole }; }
   const a0 = lerp(30, 72, bend);
   for (const a of [a0, 60, 80, 95, 110, 10, -15]) { if (a > 0 && a < a0) continue; pole = V(sx * Math.sin(a * deg), 0.1, Math.cos(a * deg)).applyAxisAngle(UP, yaw).normalize(); ik = twoBone(hj, ank, DIM.thigh, DIM.shin, pole); if (!nearBox(S.world, ik.mid, 0.05)) break; }
@@ -551,7 +554,8 @@ function limbsStep(S, dt) {
       // 벽·턱의 옆면만 본다(발이 윗면 위에 있거나 바닥에 가까운 것은 아래의 "닿은 발"이 다룬다). 들어간 만큼만 가장 얕은 쪽(옆 또는 위)으로 빼내고(한 걸음에 5cm까지), 그쪽으로 들어가던 속도는 지운다
       // (전에는 언제나 뒤로 3cm씩 밀어, 바닥·윗면 가까이에서는 걸음마다 30cm씩 날아갔고 옆의 발판에 닿으면 3cm 단위로 떨었다)
       { const fw = V(Math.sin(S.body.yaw), 0, Math.cos(S.body.yaw)), out = (q, m, top) => { let n = null; for (const x of S.world.boxes) { if (x.kind === 'floor' || q.y >= x.max.y + top || q.y <= x.min.y - m) continue; const d = [[q.x - x.min.x + m, -1, 0, 0], [x.max.x + m - q.x, 1, 0, 0], [q.z - x.min.z + m, 0, 0, -1], [x.max.z + m - q.z, 0, 0, 1]]; if (d.some(e => e[0] <= 0)) continue; d.push([x.max.y + top - q.y, 0, 1, 0]); const o = d.sort((a, c) => a[0] - c[0])[0], k = Math.min(o[0], 0.05); n = V(o[1] * k, o[2] * k, o[3] * k); q.add(n); } return n; };
-        for (const [off, m, top] of [[V(), 0.03, -0.02], [fw.clone().multiplyScalar(0.13).add(V(0, -0.05, 0)), 0.01, 0.01]]) { const q = F.a.clone().add(off), n = out(q, m, top); if (n) { F.a.add(n); F.rel.add(n); if (F.relV) { const u = n.clone().normalize(); F.relV.addScaledVector(u, -Math.min(0, F.relV.dot(u))); } } } }
+        // 발끝 점: 사람형 몸은 발이 길다(발목에서 발끝 24cm) — 그 끝으로 잰다
+        for (const [off, m, top] of [[V(), 0.03, -0.02], [DIM.boxCollide ? fw.clone().multiplyScalar(DIM.toeZ - 0.01).add(V(0, -(DIM.ankleY - 0.03), 0)) : fw.clone().multiplyScalar(0.13).add(V(0, -0.05, 0)), 0.01, 0.01]]) { const q = F.a.clone().add(off), n = out(q, m, top); if (n) { F.a.add(n); F.rel.add(n); if (F.relV) { const u = n.clone().normalize(); F.relV.addScaledVector(u, -Math.min(0, F.relV.dot(u))); } } } }
       const g = groundAt(S.world, F.a.x, F.a.z, F.a.y - DIM.ankleY + 0.04, 0, 0), g2 = groundAt(S.world, F.a.x, F.a.z, F.a.y + 0.05, 0, 0.12);
       F.clear = g2.box ? Math.max(0, F.a.y - DIM.ankleY - g2.y) : 9;
       if (g.box && F.a.y - DIM.ankleY <= g.y) {
@@ -605,7 +609,12 @@ function exit(S, standing, g) {
 // 몸통(엉덩이~어깨의 원기둥)과 머리(공)를 상자와 맞댄다. 한 걸음에 크게 밀려나지 않게 가장 얕은 쪽으로만 민다
 function collide(S, T) {
   const b = S.body, K = S.climb;
-  const parts = [{ n: '몸통', x: b.pos.x, z: b.pos.z, y0: b.pos.y + 0.85, y1: b.pos.y + 1.50, r: CL.R_TORSO }, { n: '머리', x: T.head.x, z: T.head.z, y0: T.head.y - CL.R_HEAD, y1: T.head.y + CL.R_HEAD, r: CL.R_HEAD }];
+  // 사람형 몸(p3d-0.10.0): 몸통 = 골반·가슴 두 원기둥. 자리·높이는 그리는 메시를 잰 상자(DIM.boxHip·boxChest)를 따라 기울고 돌며, 반지름 = 상자의 앞뒤 반 두께.
+  //   옛 몸의 원기둥(몸 원점 둘레 반지름 12cm)으로는 새 몸의 골반·가슴 앞면(몸 원점에서 17cm 앞)이 벽에 5cm 넘게 들어갔다(test/human_check.mjs)
+  const torsoParts = DIM.boxCollide ? [['골반', T.hip, T.tq.hips, DIM.boxHip], ['가슴', T.chest, T.qC, DIM.boxChest]].map(([n, o, q, bx]) => { const c = o.clone().add(V(...bx.c).applyQuaternion(q)); return { n: '몸통', part: n, x: c.x, z: c.z, y0: c.y - bx.h[1], y1: c.y + bx.h[1], r: bx.h[2] }; })
+    : [{ n: '몸통', x: b.pos.x, z: b.pos.z, y0: b.pos.y + 0.85, y1: b.pos.y + 1.50, r: CL.R_TORSO }];
+  const parts = [...torsoParts, { n: '머리', x: T.head.x, z: T.head.z, y0: T.head.y - CL.R_HEAD, y1: T.head.y + CL.R_HEAD, r: DIM.boxCollide ? DIM.headR : CL.R_HEAD }];
+  const shift = (dx, dy, dz) => { for (const Q2 of parts) { Q2.x += dx; Q2.z += dz; Q2.y0 += dy; Q2.y1 += dy; } };
   let bump = '';
   for (const P of parts) for (const x of S.world.boxes) {
     if (x.kind === 'floor' || P.y1 <= x.min.y || P.y0 >= x.max.y) continue;
@@ -615,9 +624,9 @@ function collide(S, T) {
     if (d > 1e-6) { nx = dx / d; nz = dz / d; ph = P.r - d; }
     else { const o = [[P.x - x.min.x + P.r, -1, 0], [x.max.x - P.x + P.r, 1, 0], [P.z - x.min.z + P.r, 0, -1], [x.max.z - P.z + P.r, 0, 1]].sort((a, c) => a[0] - c[0])[0]; ph = o[0]; nx = o[1]; nz = o[2]; }
     const pDown = P.y1 - x.min.y, pUp = x.max.y - P.y0, mid = (P.y0 + P.y1) / 2 < (x.min.y + x.max.y) / 2;
-    if (mid && pDown < ph) { b.pos.y -= pDown; P.y0 -= pDown; P.y1 -= pDown; if (b.vel.y > 0) b.vel.y = 0; bump = `${P.n}: ${x.name} 아래에 닿음`; }
-    else if (!mid && pUp < ph) { b.pos.y += pUp; P.y0 += pUp; P.y1 += pUp; if (b.vel.y < 0) b.vel.y = 0; }
-    else { b.pos.x += nx * ph; b.pos.z += nz * ph; P.x += nx * ph; P.z += nz * ph; const vn = b.vel.x * nx + b.vel.z * nz; if (vn < 0) { b.vel.x -= vn * nx; b.vel.z -= vn * nz; K.stats.wallHit = Math.max(K.stats.wallHit, -vn); } }
+    if (mid && pDown < ph) { b.pos.y -= pDown; if (DIM.boxCollide) shift(0, -pDown, 0); else { P.y0 -= pDown; P.y1 -= pDown; } if (b.vel.y > 0) b.vel.y = 0; bump = `${P.n}: ${x.name} 아래에 닿음`; }
+    else if (!mid && pUp < ph) { b.pos.y += pUp; if (DIM.boxCollide) shift(0, pUp, 0); else { P.y0 += pUp; P.y1 += pUp; } if (b.vel.y < 0) b.vel.y = 0; }
+    else { b.pos.x += nx * ph; b.pos.z += nz * ph; if (DIM.boxCollide) shift(nx * ph, 0, nz * ph); else { P.x += nx * ph; P.z += nz * ph; } const vn = b.vel.x * nx + b.vel.z * nz; if (vn < 0) { b.vel.x -= vn * nx; b.vel.z -= vn * nz; K.stats.wallHit = Math.max(K.stats.wallHit, -vn); } }
   }
   if (bump && K.tick - K.bumpT > 120) { note(S, 'bump', null, 0, bump); K.bumpT = K.tick; }
   // 엉덩이는 바닥·윗면 아래로 내려가지 않는다(주저앉은 높이까지)

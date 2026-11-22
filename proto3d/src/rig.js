@@ -4,33 +4,62 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
-// 몸 치수(키 약 1.77m). 다리 = 넓적다리 0.43 + 정강이 0.41, 팔 = 위팔 0.30 + 아래팔 0.27
-export const DIM = {
+// 몸 치수. 두 가지 몸이 있다(p3d-0.10.0):
+//   human = 사람형 몸(Quaternius UAL2 남성 마네킹, CC0)의 뼈 자리를 잰 값. 키 1.83m. 기본
+//   old   = p3d-0.9.1까지의 자작 몸(키 약 1.77m). 비교용: 주소에 ?body=old, node 시험은 BODY=old
+// 물리·자세(climb.js·motion.js)는 아래 치수의 뼈대(제어 뼈대, 21개 뼈)로 계산하고, human 몸은 그 뼈대를 따라 65개 뼈의 모델을 움직인다(human.js).
+// 벡터 값(o…)은 부모 뼈 기준의 자리(왼쪽 = +x, 오른쪽은 x를 뒤집는다). 쉬는 자세의 관절 자리가 새 모델의 관절 자리와 같도록 잰 값이다.
+const BODY_OLD = {
   hipY: 0.95, hipW: 0.09, hipDrop: 0.04, thigh: 0.43, shin: 0.41, ankleY: 0.07,
   spine: 0.10, chest: 0.18, neck: 0.22, head: 0.10, headR: 0.11,
   clavX: 0.06, clavY: 0.18, shoulderX: 0.13, upperArm: 0.30, foreArm: 0.27, hand: 0.17,
   toeZ: 0.15, heelZ: -0.06, ballZ: 0.105, // ballZ = 발볼(발가락 관절) 자리: 뒤꿈치를 들 때 발이 이 점을 축으로 돈다. 발가락 뼈가 여기서 시작한다
 };
+// 재는 법: tools/quaternius_convert.mjs가 옮긴 쉬는 자세(src/human_data.json)에서 관절의 세계 자리를 읽어 뺐다(골반 = 제어 뼈대의 hips, spine_01 = spine, spine_03 = chest, clavicle = shoulder, upperarm = upperArm …).
+// 팔다리 길이는 관절 사이의 곧은 거리. 발: 발목에서 발바닥까지 0.104, 발볼 0.149 앞, 발끝 0.241 앞, 뒤꿈치 0.062 뒤(메시의 끝).
+const BODY_HUMAN = {
+  hipY: 0.917, hipW: 0.089, hipDrop: -0.015, hipZ: 0.051, thigh: 0.400, shin: 0.429, ankleY: 0.104,
+  spine: 0.134, chest: 0.264, neck: 0.173, head: 0.081, headR: 0.115,
+  clavX: 0.019, clavY: 0.143, shoulderX: 0.173, upperArm: 0.274, foreArm: 0.273, hand: 0.232,
+  toeZ: 0.241, heelZ: -0.062, ballZ: 0.149,
+  oSpine: [0, 0.134, 0.034], oChest: [0, 0.264, 0.011], oClav: [0.019, 0.143, 0.076], oSh: [0.173, -0.017, -0.136], oNeck: [0, 0.173, -0.006], oHead: [0, 0.081, 0.016],
+  headC: [0, 0.121, -0.002],
+  // 제 몸 충돌의 상자(가슴 = chest 뼈 기준, 골반 = hips 뼈 기준): 중심과 반 크기. 마네킹 메시의 정점(그 뼈의 몫이 가장 큰 것)으로 잰 값
+  boxChest: { c: [0, 0.035, -0.013], h: [0.165, 0.165, 0.14] }, boxHip: { c: [0, 0.096, 0.052], h: [0.135, 0.17, 0.12] },
+  // 팔의 그려지는 굵기(어깨 쪽, 끝 쪽): 마네킹 메시에서 뼈 축까지의 거리
+  armR: { upper: [0.075, 0.062], fore: [0.068, 0.05] },
+  boxCollide: true, // 몸통과 지형의 충돌을 위 두 상자(골반·가슴)로 한다(climb.js collide). 옛 몸은 몸 원점 둘레의 원기둥 하나
+  kneeClr: 0.10, // 디딘 다리의 무릎 방향을 고를 때 무릎과 벽·턱 사이에 두려는 거리(climb.js legIK). 새 몸의 무릎 둘레 반지름(약 10cm)
+};
+const envBody = () => { try { if (typeof location !== 'undefined' && location.search) { const m = /[?&]body=(\w+)/.exec(location.search); if (m) return m[1]; } } catch (e) { /* 없음 */ } try { return globalThis.process?.env?.BODY || ''; } catch (e) { return ''; } };
+export const BODY = envBody() === 'old' ? 'old' : 'human';
+export const DIM = { ...(BODY === 'old' ? BODY_OLD : BODY_HUMAN) };
+// 벡터 값이 없는 몸(old)은 숫자 값에서 만든다 — p3d-0.9.1과 같은 자리
+DIM.hipZ ??= 0; DIM.oSpine ??= [0, DIM.spine, 0]; DIM.oChest ??= [0, DIM.chest, 0]; DIM.oClav ??= [DIM.clavX, DIM.clavY, 0]; DIM.oSh ??= [DIM.shoulderX, 0, 0]; DIM.oNeck ??= [0, DIM.neck, 0]; DIM.oHead ??= [0, DIM.head, 0];
+DIM.oHip = [DIM.hipW, -DIM.hipDrop, DIM.hipZ]; DIM.oToe = [0, -(DIM.ankleY - 0.02), DIM.ballZ];
+DIM.headCT = DIM.headC ?? [0, DIM.headR * 0.9, 0]; DIM.headC ??= [0, DIM.headR * 0.9, 0.01]; // headCT = 몸통 계산(torso)의 머리 중심. 옛 몸은 0.9.1까지 torso에서만 앞쪽 1cm를 빼고 썼다(그대로 둔다)
+DIM.boxChest ??= { c: [0, 0.11, 0.005], h: [0.18, 0.12, 0.105] }; DIM.boxHip ??= { c: [0, 0.07, 0], h: [0.15, 0.17, 0.095] };
+DIM.armR ??= { upper: [0.055, 0.045], fore: [0.045, 0.036] }; DIM.kneeClr ??= 0.06;
 DIM.leg = DIM.thigh + DIM.shin;
 DIM.arm = DIM.upperArm + DIM.foreArm;
-
 // [이름, 부모, 쉬는 자세의 부모 기준 위치]
 function boneDefs() {
   const d = DIM, L = [];
+  const mx = (v, sx) => [sx * v[0], v[1], v[2]];
   L.push(['hips', null, [0, d.hipY, 0]]);
-  L.push(['spine', 'hips', [0, d.spine, 0]]);
-  L.push(['chest', 'spine', [0, d.chest, 0]]);
-  L.push(['neck', 'chest', [0, d.neck, 0]]);
-  L.push(['head', 'neck', [0, d.head, 0]]);
+  L.push(['spine', 'hips', d.oSpine]);
+  L.push(['chest', 'spine', d.oChest]);
+  L.push(['neck', 'chest', d.oNeck]);
+  L.push(['head', 'neck', d.oHead]);
   for (const [s, sx] of [['L', 1], ['R', -1]]) {
-    L.push([`shoulder.${s}`, 'chest', [sx * d.clavX, d.clavY, 0]]);
-    L.push([`upperArm.${s}`, `shoulder.${s}`, [sx * d.shoulderX, 0, 0]]);
+    L.push([`shoulder.${s}`, 'chest', mx(d.oClav, sx)]);
+    L.push([`upperArm.${s}`, `shoulder.${s}`, mx(d.oSh, sx)]);
     L.push([`foreArm.${s}`, `upperArm.${s}`, [0, -d.upperArm, 0]]);
     L.push([`hand.${s}`, `foreArm.${s}`, [0, -d.foreArm, 0]]);
-    L.push([`upLeg.${s}`, 'hips', [sx * d.hipW, -d.hipDrop, 0]]);
+    L.push([`upLeg.${s}`, 'hips', mx(d.oHip, sx)]);
     L.push([`leg.${s}`, `upLeg.${s}`, [0, -d.thigh, 0]]);
     L.push([`foot.${s}`, `leg.${s}`, [0, -d.shin, 0]]);
-    L.push([`toe.${s}`, `foot.${s}`, [0, -(d.ankleY - 0.02), d.ballZ]]);
+    L.push([`toe.${s}`, `foot.${s}`, d.oToe]);
   }
   return L;
 }

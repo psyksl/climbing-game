@@ -22,15 +22,19 @@ export function makeSim(rig, world, clips = null) {
     else { poseProc(S.motion, S.body); if (S.clip) poseClip(S.clip, S.motion, S.body, world, groundAt, dt); outBlend(S, dt); torsoClear(S, dt); groundHands(S, dt); measure(S.motion, S.body); }
     afterPose(S);
   };
-  S.reset = o => { S.body = o ? makeBody(new THREE.Vector3(...o.pos), o.yaw ?? 0) : makeBody(); S.climb = makeClimb(); ground(); S.tick = 0; S.pw = null; S.poleS = null; S.tc = null; pose(0); };
+  S.reset = o => { S.body = o ? makeBody(new THREE.Vector3(...o.pos), o.yaw ?? 0) : makeBody(); S.climb = makeClimb(); ground(); S.tick = 0; S.pw = null; S.poleS = null; S.tc = null; S.fing = [0.3, 0.3]; S.pron = [1, 1]; pose(0); };
   S.step = inp => {
     const K = S.climb; K.events.length = 0; K.tick = S.tick; K.exited = false; S.inp = inp;
     for (const c of inp.cmd || []) command(S, c);
     if (K.on) { stepClimb(S, inp, PHY.DT); if (K.exited) ground(); }
     // B3: 웅크린 채 점프도 0.08초에 뜬다. 자작 모션은 p3d-0.8.0, 캡처 모션은 p3d-0.8.2(엉덩이 오름을 늦추는 처리, clipmotion.js)에서 풀었다
     else { stepBody(S.body, inp, world); stepMotion(S.motion, S.body, inp, world, groundAt, PHY.DT); if (S.clip) stepClip(S.clip, S.motion, S.body, inp, PHY.DT, S.useClip); }
-    pose(PHY.DT); S.tick++;
+    pose(PHY.DT); fingStep(PHY.DT); S.tick++;
   };
+  // 손가락의 굽힘(0 = 편 손, 0.3 = 쉬는 손, 1 = 잡은 손). 제어 뼈대에는 손가락이 없어 그림(human.js)이 이 값을 읽는다. 계산 걸음에서만 바뀐다(그리기 빈도와 무관)
+  // S.pron = 놓인 손의 아래팔 비틀기(0 = 손바닥이 팔꿈치 안쪽 쪽 = 잡을 때의 방향, 1 = 손바닥이 몸 쪽 = 늘어뜨린 손의 편한 방향). 제어 뼈대의 손은 늘 앞 방향이라 그림에서만 돌린다
+  const fingStep = dt => { const K = S.climb; for (let i = 0; i < 2; i++) { const st = K.hands[i].st, want = st === 'hold' ? 1 : st === 'reach' ? 0 : 0.3, r = want > S.fing[i] ? 28 : 10; S.fing[i] += (want - S.fing[i]) * (1 - Math.exp(-r * dt));
+    const pw = st === 'free' ? 1 : 0; S.pron[i] += (pw - S.pron[i]) * (1 - Math.exp(-(pw > S.pron[i] ? 5 : 14) * dt)); } };
   S.reset();
   return S;
 }

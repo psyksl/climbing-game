@@ -24,7 +24,7 @@ if (out) {
   fs.mkdirSync(out, { recursive: true });
   const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const ctx = await b.newContext({ viewport: { width: 1120, height: 630 }, recordVideo: { dir: out, size: { width: 1120, height: 630 } } }), pg = await ctx.newPage(), errs = [], info = [];
-  pg.on('pageerror', e => errs.push(e.message)); await pg.goto('file://' + build + '?noshadow'); await pg.waitForTimeout(1200);
+  pg.on('pageerror', e => errs.push(e.message)); await pg.goto('file://' + build + '?noshadow' + (process.env.QUERY ? '&' + process.env.QUERY : '')); await pg.waitForTimeout(1200);
   await pg.evaluate(m => { if (m) __p3.setMode(m); document.getElementById('help').style.display = 'none'; }, clip ? 'clip' : '');
   // 시점 둘: 사용자 화면과 같은 시점(T로 시작했을 때의 뒤쪽 비스듬한 시점), 옆
   for (const [view, yaw, pitch, dist] of [['뒤에서(사용자 화면과 같은 시점)', 0.25, 0.12, 3.6], ['옆에서', Math.PI * 1.5, 0.10, 3.6]]) for (const [title0, fn, assist, mode, st0] of (process.env.SET === 'foot' ? SCENES_FOOT : SCENES).filter((x, i) => !process.env.ONLY || process.env.ONLY.includes(String(i + 1)))) {

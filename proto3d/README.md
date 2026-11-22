@@ -1,4 +1,4 @@
-# 등반 게임 3D 모션 시제품 (proto3d) — p3d-0.7.0: 벽에서 반동·뛰기 (앞 판 p3d-0.6.0, p3d-0.5.0, p3d-0.4.1, p3d-0.4.0, p3d-0.3.0, p3d-0.2.0, p3d-0.1.1, p3d-0.1.0)
+# 등반 게임 3D 모션 시제품 (proto3d) — 최신 p3d-0.10.0(사람형 몸). 첫 판들의 설명: p3d-0.7.0: 벽에서 반동·뛰기 (앞 판 p3d-0.6.0, p3d-0.5.0, p3d-0.4.1, p3d-0.4.0, p3d-0.3.0, p3d-0.2.0, p3d-0.1.1, p3d-0.1.0)
 
 통합 지시서 `Climb_Combined_Work_Order_v0.16.1_to_3D_v1` 2장의 작은 빌드입니다. 2D 기준판(`../lab/baseline/climb_lab_v0.16.4.html`)은 건드리지 않았습니다.
 
@@ -8,6 +8,18 @@
 - **이번 판에 없는 것**: 코스(시작·도착·두 경로), 손으로 눌러 올라서기(맨틀), 키 설정 화면.
 
 > 2026-11-20: GPT의 p3d-0.7.0 품질 검토를 확인하고 다른 게임·문헌·기법을 조사했다 → `docs/품질_검토_p3d-0.7.0.md`. 게임 코드는 바뀌지 않았다(진단 도구 `test/pose_freeze.mjs`만 더함).
+
+## p3d-0.10.0 — 사람형 몸과 기준 뼈대 (2026-11-22)
+
+지시: GPT 개정 2판 지시서(`Climb_Body_Rig_Claude_v2_20261122.zip`). 결과 문서: `docs/사람형_몸_p3d-0.10.0.md`. 상태: 기술 반영, 시각/사람 확인 대기.
+
+- **기본 몸 = 사람형 몸**(Quaternius Universal Animation Library 2 Standard의 남성 마네킹, CC0 1.0, https://quaternius.itch.io/universal-animation-library-2). 옛 자작 몸은 주소에 `?body=old`(node 시험은 `BODY=old`).
+- 저장소에는 원본 GLB 대신 옮긴 값 `src/human_data.json`(메시·65개 뼈의 쉬는 자세·동작 6개, 479KB)과 변환 도구 `tools/quaternius_convert.mjs`, 원본 이용조건 `assets/quaternius/License.txt`를 둔다. 원본 GLB의 SHA-256은 JSON의 `source.files`.
+- 구조: 물리·접촉·자세는 지금까지의 제어 뼈대(21개 뼈)가 계산하고, 새 몸은 그 자세를 옮겨 그린다(`src/human.js`). 치수(`rig.js`의 `BODY_HUMAN`)는 쉬는 자세에서 두 뼈대의 관절이 같은 곳에 오도록 잰 값이다. 손가락·놓인 손의 아래팔 비틀기·어깨뼈 리듬은 그림에서 만든다(계산 걸음에서 정한 값만 읽음).
+- 새 몸의 부피에 맞춘 물리(새 몸에서만): 몸통–지형 충돌을 골반·가슴 두 원기둥으로, 제 몸 충돌 상자·팔 굵기·잡는 손목 자리를 메시에서 잰 값으로, 무릎 방향을 넓적다리 전체의 여유로, 긴 발의 발끝이 벽에 들지 않게.
+- 몸 보기: `body3d.html`(앞·옆·뒤 세 시점, 기본 관절 동작 9가지, 원본 동작 비교 ClimbUp_1m·RM판·NinjaJump 셋). 영상 `node test/record_body.mjs <폴더>`.
+- 시험: `node test/human_check.mjs`(새 몸의 손바닥·발목이 제어 뼈대와 맞는지, 새 몸 뼈의 빠르기, 메시 관통). 옛 몸의 회귀는 0.9.1과 같다(`BODY=old node test/wall_check.mjs` 82/1). 새 몸의 회귀는 70/13(자작), 67/16(캡처) — 달라진 까닭의 분류는 결과 문서 5.2절.
+- 영상 도구에 `QUERY=`(주소에 덧붙일 값, 예: `QUERY=body=old`)를 더했다(`test/record_reach.mjs`).
 
 ## p3d-0.9.1 — 디딘 무릎이 반대쪽으로 넘어가던 튐 + 걸음마다 재는 도구 (2026-11-22)
 
