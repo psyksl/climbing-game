@@ -1,7 +1,7 @@
 // 정해 준 구간을 빠짐없이 찍어 한 장에 늘어놓는다(p3d-0.9.0). motion_scan.mjs가 찾은 사건을 눈으로 확인하는 데 쓴다.
 // 영상(초당 25장)이나 0.1초 간격 장면으로는 0.03~0.06초짜리 튐이 한두 장에만 걸리거나 빠진다 → 계산 걸음을 직접 진행하며 1/60초(기본)마다 찍는다.
 // 무릎·팔꿈치·손목·발목이 지나간 자리를 점으로 겹쳐 그린다(자취) — 한 장에서 튄 자리가 보인다. 스크립트 입력(사람 손 아님).
-// 사용: node test/dense_strip.mjs <출력.png> <장면 id(foot3, reach3 …)> <시작 초> <끝 초> [간격 걸음=2]   다른 빌드: BUILD=<html>   캡처 동작: MODE=clip
+// 사용: node test/dense_strip.mjs <출력.png> <장면 id(foot3, reach3, h1 …)> <시작 초> <끝 초> [간격 걸음=2]   다른 빌드: BUILD=<html>   캡처 동작: MODE=clip   자세 규칙: POSTURE=base|rule|ref
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -19,7 +19,7 @@ await pg.goto('file://' + build + '?test&noshadow'); await pg.waitForTimeout(180
 const ver = await pg.evaluate(m => { __p3.pause(true); if (m) __p3.setMode(m); for (const i of ['help', 'hud']) document.getElementById(i).style.display = 'none'; return __p3.VERSION; }, clip ? 'clip' : '');
 const rows = [], k0 = Math.round(t0 * 120), k1 = Math.round(t1 * 120);
 for (const [vname, off] of [['뒤에서', Math.PI], ['옆에서', -Math.PI / 2]]) {
-  await pg.evaluate(([st, assist, mode]) => { __p3.opt({ handMode: mode || 1, footAssist: !!assist, wallRest: false, diag: false }); __p3.reset({ pos: st, yaw: Math.PI }); }, [st0 || START, assist, mode]);
+  await pg.evaluate(([st, assist, mode, post]) => { __p3.opt({ handMode: mode || 1, footAssist: !!assist, wallRest: false, diag: false }); if (post) __p3.posture(post); __p3.reset({ pos: st, yaw: Math.PI }); }, [st0 || START, assist, mode, process.env.POSTURE || '']);
   // 시작 전까지 진행
   await pg.evaluate(([part]) => { for (const x of part) { for (const c of x.cmd || []) __p3.cmd(c); __p3.run(1, x); } }, [inputs.slice(0, k0)]);
   const cells = [], trail = [];

@@ -811,7 +811,8 @@ export function stepClimb(S, inp, dt) {
       if (K.post === 'ref' && K.refT) ty = ty * (1 - K.refT.w) + K.refT.yaw * K.refT.w; // 참고 자세: 가까운 참고 장면의 골반 돌림을 그 거리만큼(0.4m 안 = 다 따름, 1m 밖 = 따르지 않음)
       const rch = K.hands.find(h => h.st === 'reach'); if (rch && K.stretch.s > 0.01) { const d = rch.goal.clone().sub(Tn.sh[rch.i]); tx += -CL.PO_REACH * K.stretch.s * clamp(d.dot(left) / Math.max(d.length(), 1e-6) * 1.6, -1, 1); }
     }
-    springS(P, 'x', tx, 0.13, dt); springS(P, 'z', tz, 0.15, dt); springS(P, 'yaw', clamp(ty, -0.7, 0.7), 0.15, dt); }
+    const slow = K.post !== 'base' && DIM.boxCollide ? 2 : 1; // 새 규칙(p3d-0.10.1)은 골반이 두 배 천천히 따라간다 — 골반 돌림·엉덩이 빼기가 0.15초로 따라가면 어깨가 함께 움직여 잡은 팔이 초속 300°를 넘는 걸음이 늘었다(718 → 1,052)
+    springS(P, 'x', tx, 0.13 * slow, dt); springS(P, 'z', tz, 0.15 * slow, dt); springS(P, 'yaw', clamp(ty, -0.7, 0.7), 0.15 * slow, dt); }
   if (hanging) { K.ref.x = b.pos.x; K.ref.z = b.pos.z; } else K.ref.addScaledVector(left, side * CL.SHIFT_V * dt);
   if (!K.push) K.ref.y += (inp.cy || 0) * CL.SHIFT_V * dt;
   // 벽에서 뛰기: 누르는 순간 밀기 시작(모으기 없음, 지상 점프와 같다). 방향 = 위 + 좌우(A/D) + 벽에서 조금 떨어지는 쪽. S를 누르고 있으면 벽을 차고 뒤로
