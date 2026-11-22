@@ -273,6 +273,13 @@ function armHit(world, sh, ik, tb = null, extra = 0) {
 }
 
 // ── 판정(미리보기와 실제가 같은 함수를 쓴다) ──
+// 손이 가는 길(p3d-0.10.4): 한 경유점(목표 면의 바깥 10cm)으로 막히면, 지금 잡은 면의 바깥 + 목표 면의 바깥 쪽으로 더 멀리(10 · 16 · 22cm) 돌아가는 길도 본다 — 같은 턱의 앞면을 잡은 손을 그 턱의 끝(옆면)으로 옮길 때
+//   곧은 길이 턱 모서리를 가로질러 "길이 막힘"으로 거부됐다(다른 벽 시험 지형). 실제 손은 목표 쪽 띄움과 지형 미끄러짐으로 돌아간다(limbsStep). 모두 막히면 막힘
+function handPathBlocked(world, H, goal, g) { if (!pathBlocked(world, H.w, viaOf(H.w, goal, g.n, 0.10), goal)) return false; if (globalThis.OLDHANDPATH) return true;
+  const n2 = g.n.clone(); if (H.st === 'hold' && H.n) n2.add(H.n); if (n2.lengthSq() < 1e-6) return true; n2.normalize();
+  for (const lift of [0.10, 0.16, 0.22]) if (!pathBlocked(world, H.w, viaOf(H.w, goal, n2, lift), goal)) return false;
+  // 목표 면의 바깥 12 · 20cm 자리를 거쳐 가는 꺾인 길(다른 턱의 끝 옆면으로 — 가운데 경유점은 두 자리의 가운데라 볼록한 모서리를 돌아가지 못한다)
+  const nh = H.st === 'hold' && H.n ? H.n : null; for (const out of [0.12, 0.20]) for (const side of nh ? [0, 0.08, 0.14] : [0]) { const v = goal.clone().addScaledVector(g.n, out); if (side) v.addScaledVector(nh, side); if (rayHit(world, H.w, v) >= 1 && rayHit(world, v, goal) >= 1) return false; } return true; } // side = 지금 잡은 면의 바깥으로 더(그 면 앞을 지나 돌아간다)
 function pathBlocked(world, from, via, goal) { const mid = from.clone().multiplyScalar(0.25).addScaledVector(via, 0.5).addScaledVector(goal, 0.25); return rayHit(world, from, mid) < 1 || rayHit(world, mid, goal) < 1; }
 const viaOf = (from, goal, n, lift) => from.clone().add(goal).multiplyScalar(0.5).addScaledVector(n, lift);
 // 두 선분의 가장 가까운 점들 { a(첫 선분 위), b(둘째 선분 위), t(둘째 선분의 몫 0~1) }
@@ -408,9 +415,14 @@ function solvePose(S, K, T, held, dt) {
 }
 // 상자가 보는 쪽(p3d-0.10.3): 다른 상자에 막히지 않은 옆면 가운데 가장 넓은 면의 바깥 법선(수평). 턱 A는 앞면(+z), 모서리 벽은 −x 면. 고른 면이 잡은 면의 법선과 반대쪽이면(뒤에서 잡음) 잡은 면을 쓴다
 const FACING = new WeakMap();
-function boxFacing(world, box, fallback) { if (FACING.has(box)) return FACING.get(box).clone(); const c = box.min.clone().add(box.max).multiplyScalar(0.5), sz = box.max.clone().sub(box.min), cand = [];
+function boxFacing(world, box, fallback, from = null) { if (box.face && !globalThis.NOBOXFACE) return box.face.clone(); if (FACING.has(box)) return FACING.get(box).clone(); // box.face = 지형 자료에 적은 벽의 방향(p3d-0.10.4)
+  const c = box.min.clone().add(box.max).multiplyScalar(0.5), sz = box.max.clone().sub(box.min), cand = [];
   for (const [n, a] of [[V(1, 0, 0), sz.z * sz.y], [V(-1, 0, 0), sz.z * sz.y], [V(0, 0, 1), sz.x * sz.y], [V(0, 0, -1), sz.x * sz.y]]) { const p = c.clone().add(V(n.x * (sz.x / 2 + 0.02), 0, n.z * (sz.z / 2 + 0.02))); if (!world.boxes.some(b => b !== box && b.kind !== 'floor' && p.x > b.min.x && p.x < b.max.x && p.y > b.min.y && p.y < b.max.y && p.z > b.min.z && p.z < b.max.z)) cand.push([n, a]); }
-  const fb = fallback.clone().setY(0); cand.sort((a, b) => b[1] - a[1] || b[0].dot(fb) - a[0].dot(fb)); const f = cand.length ? cand[0][0] : fb.normalize(); if (cand.length < 2 || cand[0][1] > cand[1][1] + 1e-9) FACING.set(box, f); return f.clone(); } // 넓이가 같은 면이 둘이면(양쪽이 열린 벽) 잡은 면 쪽을 고르고 기억하지 않는다
+  // p3d-0.10.4: 넓이가 같으면 몸이 있는 쪽 면(from = 몸 자리) → 잡은 면 쪽 순서
+  //   네 옆면이 모두 열린 상자(붙은 벽이 없는 혼자 선 턱·기둥)는 넓이로 정하지 않고 몸이 있는 쪽 면을 본다(p3d-0.10.4 — 붙은 벽이 없으니 "벽이 보는 쪽"이 없다. 끝에 서서 끝을 잡으면 끝 쪽을 본다)
+  const fb = fallback.clone().setY(0), fr = from ? from.clone().sub(c).setY(0) : null;
+  if (cand.length === 4 && fr && fr.lengthSq() > 1e-6 && !globalThis.OLDTIE) { const fn = fr.clone().normalize(), hx = sz.x / 2, hz = sz.z / 2, side = n => (n.x ? Math.max(0, Math.abs(fr.x) - hx) * Math.sign(fr.x) * n.x : Math.max(0, Math.abs(fr.z) - hz) * Math.sign(fr.z) * n.z); cand.sort((a, b) => side(b[0]) - side(a[0]) || b[0].dot(fn) - a[0].dot(fn)); return cand[0][0].clone(); }
+  cand.sort((a, b) => b[1] - a[1] || (fr && !globalThis.OLDTIE ? b[0].dot(fr) - a[0].dot(fr) : 0) || b[0].dot(fb) - a[0].dot(fb)); const f = cand.length ? cand[0][0] : fb.normalize(); if (cand.length < 2 || cand[0][1] > cand[1][1] + 1e-9) FACING.set(box, f); return f.clone(); } // 넓이가 같은 면이 둘이면(양쪽이 열린 벽) 잡은 면 쪽을 고르고 기억하지 않는다
 function legCheck(S, i, hj, ank) {
   const { ik } = legIK(S, hj, ank, S.body.yaw, i ? -1 : 1);
   return nearBox(S.world, ik.mid, 0.03) || rayHit(S.world, hj.clone().lerp(ik.mid, 0.2), ik.mid) < 1 || rayHit(S.world, ik.mid, ik.mid.clone().lerp(ik.end, 0.85)) < 1 ? '다리가 벽·턱을 지나감' : '';
@@ -420,7 +432,7 @@ export function probeHand(S, i, pt) {
   const g = resolveGrip(S.world, pt), H = S.climb.hands[i];
   if (!g) return { ok: false, why: '잡을 수 있는 턱이 아님', sure: true };
   const goal = anchorOf(g), sh = joints(S).sh[i], d = sh.distanceTo(goal), sure = S.body.vel.length() < 0.3, base = { grip: g.p.toArray(), name: g.edge.box.name, sure };
-  if (pathBlocked(S.world, H.w, viaOf(H.w, goal, g.n, 0.10), goal)) return { ...base, ok: false, why: '손이 가는 길이 막힘' };
+  if (handPathBlocked(S.world, H, goal, g)) return { ...base, ok: false, why: '손이 가는 길이 막힘' };
   if (d > CL.ARM) return { ...base, ok: false, short: d - CL.ARM, why: `닿지 않음(${short(d - CL.ARM)} 모자람)` };
   const c = armCheck(S, i, sh, goal, g.n);
   return c ? { ...base, ok: false, why: c } : { ...base, ok: true, why: '' };
@@ -457,7 +469,7 @@ export function command(S, c) {
     if (!g) { deny(S, H, 'hand', '잡을 수 있는 턱이 아님'); return; }
     const goal = anchorOf(g);
     if (H.st === 'hold' && g.p.distanceTo(H.grip) < 0.04) { deny(S, H, 'hand', '이미 잡고 있는 자리'); return; }
-    if (pathBlocked(S.world, H.w, viaOf(H.w, goal, g.n, 0.10), goal)) { deny(S, H, 'hand', '손이 가는 길이 막힘'); return; }
+    if (handPathBlocked(S.world, H, goal, g)) { deny(S, H, 'hand', '손이 가는 길이 막힘'); return; }
     if (H.st === 'hold') releaseHand(S, c.i, '옮기려고 놓음');
     Object.assign(H, { st: 'reach', drag: false, edge: g.edge, t: 0, T: 2.5, wait: 0, best: undefined, stall: 0, lock: null, lockN: 0, lockBest: undefined, selfTot: 0, armTot: 0, blockT: 0, sp: 0, shPrev: null, ov: 1, why: '' });
     H.from.copy(H.w); H.goal.copy(goal); H.grip.copy(g.p); H.n.copy(g.n);
@@ -808,8 +820,12 @@ export function stepClimb(S, inp, dt) {
   // p3d-0.10.2(새 규칙): 턱의 옆면(끝)을 잡으면 그 법선이 벽과 나란해 몸이 45°를 초속 200°로 가속·감속 없이 돌았다(h3·m1·m3·m5). 옆면의 몫을 SIDE_FACE로 줄이고, 도는 빠르기에 가속 한계(TURN_ACC)를 둔다 — 최대 빠르기(TURN)는 그대로. 실험값
   // p3d-0.10.3(새 규칙, GPT의 0.10.2 검토 2번 "손목 방향과 몸 전체 방향을 분리"): 몸이 보는 쪽은 잡은 **면**의 법선이 아니라 그 턱이 붙은 **벽이 보는 쪽**(boxFacing: 상자의 열린 옆면 가운데 가장 넓은 것)으로 정한다.
   //   같은 벽의 얇은 턱 끝(옆면)을 잡으면 몸은 돌지 않고 손목만 그 면을 따른다(그림). 다른 벽(모서리 벽 등)에 있는 잡을 곳이면 그 벽 쪽으로 돈다. 0.10.2까지는 옆면 법선을 평균해 몸이 45° 돌았다. 비교: YAWMODE=face(0.10.2)
-  const nr = K.post !== 'base' && DIM.boxCollide, yawWall = nr && globalThis.YAWMODE !== 'face', nW = V(); for (const h of held) { if (yawWall && h.edge) nW.add(boxFacing(S.world, h.edge.box, h.n)); else nW.addScaledVector(h.n, nr && Math.abs(h.n.y) < 0.5 && Math.abs(h.n.x) > 0.7 ? CL.SIDE_FACE : 1); }
-  if (nW.lengthSq() > 0.01) { nW.normalize(); const d0 = Math.atan2(-nW.x, -nW.z) - b.yaw, d = Math.atan2(Math.sin(d0), Math.cos(d0));
+  const nr = K.post !== 'base' && DIM.boxCollide, yawWall = nr && globalThis.YAWMODE !== 'face', nW = V(); for (const h of held) { if (yawWall && h.edge) nW.add(boxFacing(S.world, h.edge.box, h.n, b.pos)); else nW.addScaledVector(h.n, nr && Math.abs(h.n.y) < 0.5 && Math.abs(h.n.x) > 0.7 ? CL.SIDE_FACE : 1); }
+  // p3d-0.10.4: 몸은 잡은 손이 등 뒤로 가는 쪽으로는 돌지 않는다(다른 벽 시험 지형: 모서리에서 벽 A의 손을 놓자 남은 벽 B의 손 쪽으로 몸이 90° 돌아, 몸이 아직 벽 A 앞에 있는데 벽 B의 손이 등 뒤가 되어 놓쳤다).
+  //   목표 쪽으로 가는 길에서, 잡은 손마다 어깨 → 잡은 자리가 몸의 앞쪽(armCheck의 등 뒤 기준 + 0.15)에 남는 데까지만 간다. 몸이 모서리를 돌아가면 더 돈다. 끄기: YAWFREE=1
+  const yawOk = (y) => { const c = Math.cos(y - b.yaw), sn = Math.sin(y - b.yaw), f = V(Math.sin(y), 0, Math.cos(y)); for (const h of held) { if (!K.T) return true; const r = K.T.sh[h.i].clone().sub(b.pos), sh = V(r.x * c + r.z * sn, r.y, -r.x * sn + r.z * c).add(b.pos), dir = h.goal.clone().sub(sh); dir.y *= 0.5; if (dir.normalize().dot(f) < CL.SHOULDER_BACK + 0.15) return false; } return true; };
+  if (nW.lengthSq() > 0.01) { nW.normalize(); const d0 = Math.atan2(-nW.x, -nW.z) - b.yaw; let d = Math.atan2(Math.sin(d0), Math.cos(d0));
+    if (nr && yawWall && !globalThis.YAWFREE && Math.abs(d) > 0.02 && !yawOk(b.yaw + d)) { let ok = 0; for (let j = 1; j <= 16; j++) { if (yawOk(b.yaw + d * j / 16)) ok = j; else break; } d = d * ok / 16; }
     if (nr) { const want = clamp(d * 8, -CL.TURN, CL.TURN), w0 = K.yawW || 0; K.yawW = w0 + clamp(want - w0, -CL.TURN_ACC * dt, CL.TURN_ACC * dt); b.yaw += clamp(K.yawW * dt, -Math.abs(d), Math.abs(d)); }
     else b.yaw += clamp(d, -CL.TURN * dt, CL.TURN * dt); } else K.yawW = 0;
   // 기울기(편한 기본 자세의 임시 규칙): 발로 버티면 윗몸을 조금 뒤로. 손으로만 매달리면 잡은 손의 어깨가 올라가고 엉덩이가 그 손 아래로 온다(한 손 매달림)
