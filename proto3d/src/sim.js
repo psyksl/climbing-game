@@ -22,7 +22,7 @@ export function makeSim(rig, world, clips = null) {
     else { poseProc(S.motion, S.body); if (S.clip) poseClip(S.clip, S.motion, S.body, world, groundAt, dt); outBlend(S, dt); torsoClear(S, dt); groundHands(S, dt); measure(S.motion, S.body); }
     afterPose(S);
   };
-  S.reset = o => { S.body = o ? makeBody(new THREE.Vector3(...o.pos), o.yaw ?? 0) : makeBody(); S.climb = makeClimb(); ground(); S.tick = 0; S.pw = null; S.poleS = null; S.tc = null; S.fing = [0.3, 0.3]; S.pron = [1, 1]; pose(0); };
+  S.reset = o => { S.body = o ? makeBody(new THREE.Vector3(...o.pos), o.yaw ?? 0) : makeBody(); S.climb = makeClimb(); ground(); S.tick = 0; S.pw = null; S.poleS = null; S.tc = null; S.fing = [0.3, 0.3]; S.pron = [1, 1]; S.gw = [0, 0]; pose(0); };
   S.step = inp => {
     const K = S.climb; K.events.length = 0; K.tick = S.tick; K.exited = false; S.inp = inp;
     for (const c of inp.cmd || []) command(S, c);
@@ -34,7 +34,10 @@ export function makeSim(rig, world, clips = null) {
   // 손가락의 굽힘(0 = 편 손, 0.3 = 쉬는 손, 1 = 잡은 손). 제어 뼈대에는 손가락이 없어 그림(human.js)이 이 값을 읽는다. 계산 걸음에서만 바뀐다(그리기 빈도와 무관)
   // S.pron = 놓인 손의 아래팔 비틀기(0 = 손바닥이 팔꿈치 안쪽 쪽 = 잡을 때의 방향, 1 = 손바닥이 몸 쪽 = 늘어뜨린 손의 편한 방향). 제어 뼈대의 손은 늘 앞 방향이라 그림에서만 돌린다
   const fingStep = dt => { const K = S.climb; for (let i = 0; i < 2; i++) { const st = K.hands[i].st, want = st === 'hold' ? 1 : st === 'reach' ? 0 : 0.3, r = want > S.fing[i] ? 28 : 10; S.fing[i] += (want - S.fing[i]) * (1 - Math.exp(-r * dt));
-    const pw = st === 'free' ? 1 : 0; S.pron[i] += (pw - S.pron[i]) * (1 - Math.exp(-(pw > S.pron[i] ? 5 : 14) * dt)); } };
+    const pw = st === 'free' ? 1 : 0; S.pron[i] += (pw - S.pron[i]) * (1 - Math.exp(-(pw > S.pron[i] ? 5 : 14) * dt));
+    // 잡은 손을 턱 앞면에 맞춰 세우는 정도(그림, human.js). 0.4초쯤에 오른다 — 손가락(0.1초)만큼 빨리 세우면 잡는 걸음 둘레에서 아래팔이 초속 1,000° 넘게 돌았다
+    // 뻗는 손은 턱에 30cm 안으로 다가가면 미리 세운다(닿기 전에 손 모양을 만든다)
+    const Hh = K.hands[i], gwT = st === 'hold' ? 1 : st === 'reach' && Hh.edge ? Math.min(1, Math.max(0, 1 - (Hh.w.distanceTo(Hh.goal) - 0.03) / 0.27)) : 0; S.gw[i] += (gwT - S.gw[i]) * (1 - Math.exp(-(gwT > S.gw[i] ? 12 : 20) * dt)); } };
   S.reset();
   return S;
 }

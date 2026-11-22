@@ -6,7 +6,7 @@ import { buildCharacter, DIM, BODY } from './rig.js';
 import { buildHuman, makeRetarget, playClip, restPose } from './human.js';
 import { aimBone, setWorldQuat, twoBone, worldPos } from './ik.js';
 
-const VERSION = 'p3d-0.10.0';
+const VERSION = 'p3d-0.10.1';
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z), Q = () => new THREE.Quaternion(), D = Math.PI / 180;
 const params = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: params.has('test') });
@@ -20,6 +20,9 @@ const grid = new THREE.GridHelper(12, 60, 0x7d8774, 0x93a08a); grid.position.y =
 // 발판 두 개(낮은 30cm, 높은 55cm) — 발 올리기 장면에서만 보인다
 const box = (w, h, d, x, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color: '#c8a46a', roughness: 0.9 })); m.position.set(x, h / 2, z); m.castShadow = m.receiveShadow = true; m.visible = false; scene.add(m); return m; };
 const stepLow = box(0.30, 0.30, 0.30, 0.10, 0.36), stepHigh = box(0.30, 0.55, 0.30, -0.10, 0.36);
+// 1m 턱(p3d-0.10.1, GPT 지적: 원본 ClimbUp 비교에 턱을 함께). RM판에서 손이 짚는 자리로 잰 값: 윗면 1.0m, 앞면 몸 앞 0.40m. 일반판(몸 이동이 빠진 것)은 두 판의 골반 차이만큼 턱을 반대로 옮겨 손이 같은 자리에 오게 한다
+const ledge1m = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.0, 1.6), new THREE.MeshStandardMaterial({ color: '#9aa3a8', roughness: 0.95 })); ledge1m.castShadow = ledge1m.receiveShadow = true; ledge1m.visible = false; scene.add(ledge1m);
+const LEDGE_BASE = V(0, 0.5, 0.40 + 0.8);
 
 const rig = buildCharacter(); scene.add(rig.root); rig.mesh.visible = BODY === 'old';
 const H = BODY === 'human' ? buildHuman() : null, R = H ? makeRetarget(rig, H) : null; if (H) scene.add(H.root);
@@ -70,10 +73,15 @@ const DEMOS = [
 ];
 const TOTAL = DEMOS.reduce((a, d) => a + d[1], 0);
 const CLIPS = H ? H.clips : [];
-let CAMD = 4.6, CAMY = null, mode = params.get('mode') || 'joints', clipName = params.get('clip') || 'ClimbUp_1m', T0 = performance.now(), tFixed = null;
+let CAMD = 5.4, CAMY = null, mode = params.get('mode') || 'joints', clipName = params.get('clip') || 'ClimbUp_1m', T0 = performance.now(), tFixed = null;
 function poseAt(t) {
   stepLow.visible = stepHigh.visible = false;
-  if (mode === 'clip' && H) { const c = CLIPS.find(x => x.name === clipName) || CLIPS[0], tt = t % (c.dur + 0.6); restPose(H); playClip(H, c, Math.min(tt, c.dur)); return { label: `원본 동작 그대로: ${c.name} (${c.dur.toFixed(2)}초${/_RM$/.test(c.name) ? ' · 몸의 이동 포함판' : ''}) — 새 몸의 뼈에 바로 틂, 물리 없음`, t: Math.min(tt, c.dur) }; }
+  ledge1m.visible = false;
+  if (mode === 'clip' && H) { const c = CLIPS.find(x => x.name === clipName) || CLIPS[0], tt = t % (c.dur + 0.6);
+    if (/^ClimbUp_1m/.test(c.name)) { const rm = CLIPS.find(x => x.name === 'ClimbUp_1m_RM'), std = CLIPS.find(x => x.name === 'ClimbUp_1m'), tc = Math.min(tt, c.dur);
+      restPose(H); playClip(H, rm, tc); const pR = H.bones.pelvis.getWorldPosition(V()); restPose(H); playClip(H, std, tc); const pS = H.bones.pelvis.getWorldPosition(V());
+      ledge1m.position.copy(LEDGE_BASE); if (c === std) ledge1m.position.add(pS.sub(pR)); ledge1m.visible = true; }
+    restPose(H); playClip(H, c, Math.min(tt, c.dur)); return { label: `원본 동작 그대로: ${c.name} (${c.dur.toFixed(2)}초${/_RM$/.test(c.name) ? ' · 몸의 이동 포함판' : ''}) — 새 몸의 뼈에 바로 틂, 물리 없음${/^ClimbUp/.test(c.name) ? ' · 회색 상자 = 1m 턱(손이 짚는 자리에 맞춰 놓음)' : ''}`, t: Math.min(tt, c.dur) }; }
   let tt = t % TOTAL, i = 0; while (tt > DEMOS[i][1]) { tt -= DEMOS[i][1]; i++; }
   restRig(); const r = DEMOS[i][2](tt) || {}; rig.root.updateMatrixWorld(true);
   if (H) R.apply([r.fing ?? 0.3, r.fing ?? 0.3], [r.pron ?? 1, r.pron ?? 1]);
@@ -81,17 +89,19 @@ function poseAt(t) {
 }
 // 세 시점(앞·옆·뒤). 같은 크기·같은 거리
 const cams = [['앞', 0], ['옆(왼쪽)', Math.PI / 2], ['뒤', Math.PI]].map(([n, a]) => ({ n, a, cam: new THREE.PerspectiveCamera(32, 1, 0.05, 50) }));
-const hud = document.createElement('div'); hud.style.cssText = 'position:fixed;left:10px;top:8px;background:rgba(28,35,29,.86);color:#f3ecd6;padding:6px 10px;border-radius:7px;font:13px/1.5 system-ui,sans-serif;pointer-events:none'; document.body.appendChild(hud);
+const hud = document.createElement('div'); hud.style.cssText = 'position:fixed;left:10px;bottom:4px;background:rgba(28,35,29,.86);color:#f3ecd6;padding:6px 10px;border-radius:7px;font:13px/1.5 system-ui,sans-serif;pointer-events:none'; document.body.appendChild(hud);
 const labs = cams.map(() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;bottom:8px;color:#1c231d;font:700 13px system-ui,sans-serif;background:rgba(243,236,214,.85);padding:1px 8px;border-radius:5px'; document.body.appendChild(d); return d; });
-function render(info) {
-  const w = innerWidth, h = innerHeight, cw = Math.floor(w / 3), c = H ? H.bones.pelvis.getWorldPosition(V()) : worldPos(B.hips), tgt = V(c.x, CAMY ?? (mode === 'clip' ? Math.max(0.9, c.y) : 0.92), c.z);
+let render = function (info) {
+  const BAR = 62, w = innerWidth, h = innerHeight - BAR, cw = Math.floor(w / 3), c = H ? H.bones.pelvis.getWorldPosition(V()) : worldPos(B.hips), tgt = V(c.x, CAMY ?? (mode === 'clip' ? Math.max(1.05, c.y + 0.1) : 1.05), c.z); // 안내 칸은 아래 띠(BAR)에 — 0.10.0은 위에 두어 팔을 다 든 손끝을 가렸다
   cams.forEach((o, k) => { o.cam.aspect = cw / h; o.cam.updateProjectionMatrix(); o.cam.position.set(tgt.x + Math.sin(o.a) * CAMD, tgt.y + 0.15, tgt.z + Math.cos(o.a) * CAMD); o.cam.lookAt(tgt);
-    renderer.setViewport(k * cw, 0, cw, h); renderer.setScissor(k * cw, 0, cw, h); renderer.render(scene, o.cam); labs[k].textContent = o.n; labs[k].style.left = (k * cw + 8) + 'px'; });
+    renderer.setViewport(k * cw, BAR, cw, h); renderer.setScissor(k * cw, BAR, cw, h); renderer.render(scene, o.cam); labs[k].textContent = o.n; labs[k].style.left = (k * cw + 8) + 'px'; labs[k].style.bottom = (BAR + 6) + 'px'; });
+  renderer.setViewport(0, 0, w, BAR); renderer.setScissor(0, 0, w, BAR); renderer.setClearColor('#1c231d'); renderer.clear(); renderer.setClearColor('#cfd6dc');
   hud.innerHTML = `<b>몸 보기</b> ${VERSION} · ${BODY === 'human' ? '사람형 몸: Quaternius UAL2 남성 마네킹(CC0) · 뼈 65개(끝 표시 포함) · 키 1.83m' : '옛 몸(자작)'}<br>${info.label} · ${info.t.toFixed(2)}초<br><span style="font-size:11.5px;color:#bbc4b2">정해 둔 스크립트 동작(사람 손 아님) · 물리 판정 없음 · ${mode === 'joints' ? '제어 뼈대(21개 뼈)에 자세를 주고 새 몸에 옮김' : '원본 동작 비교'}${skelH.visible ? ' · 뼈대 보임' : ''} · 키: 1 기본 관절 / 2 원본 동작(N 다음) / B 뼈대</span>`;
 }
 addEventListener('resize', () => renderer.setSize(innerWidth, innerHeight));
 addEventListener('keydown', e => { if (e.code === 'Digit1') { mode = 'joints'; T0 = performance.now(); } if (e.code === 'Digit2') { mode = 'clip'; T0 = performance.now(); } if (e.code === 'KeyN') { const i = CLIPS.findIndex(c => c.name === clipName); clipName = CLIPS[(i + 1) % CLIPS.length].name; T0 = performance.now(); } if (e.code === 'KeyB') setSkel(!skelH.visible); });
-function loop() { const t = tFixed ?? (performance.now() - T0) / 1000; render(poseAt(t)); requestAnimationFrame(loop); }
+let frozen = false; function loop() { if (!frozen) { const t = tFixed ?? (performance.now() - T0) / 1000; render(poseAt(t)); } requestAnimationFrame(loop); }
 document.title = `몸 보기 ${VERSION}${BODY === 'old' ? ' · 옛 몸' : ''}`;
-window.__bv = { VERSION, DEMOS: DEMOS.map(d => [d[0], d[1]]), TOTAL, clips: CLIPS.map(c => [c.name, c.dur]), cam(d, y) { CAMD = d ?? 4.6; CAMY = y ?? null; }, at(t, m, c) { if (m) mode = m; if (c) clipName = c; tFixed = t; const info = poseAt(t); render(info); return info; }, live() { tFixed = null; T0 = performance.now(); }, skel: setSkel, H, rig };
+let lastInfo = null; const _render = render; render = info => { lastInfo = info; _render(info); };
+window.__bv = { renderNow(label) { _render({ ...(lastInfo || { t: 0 }), label: label || (lastInfo && lastInfo.label) || '' }); }, freeze() { frozen = true; }, VERSION, DEMOS: DEMOS.map(d => [d[0], d[1]]), TOTAL, clips: CLIPS.map(c => [c.name, c.dur]), cam(d, y) { CAMD = d ?? 5.4; CAMY = y ?? null; }, at(t, m, c) { frozen = false; if (m) mode = m; if (c) clipName = c; tFixed = t; const info = poseAt(t); render(info); return info; }, live() { tFixed = null; T0 = performance.now(); }, skel: setSkel, H, rig };
 loop();

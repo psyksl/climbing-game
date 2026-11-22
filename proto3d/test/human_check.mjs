@@ -6,6 +6,7 @@
 //   ④ 새 몸의 메시가 지형에 들어간 깊이(12걸음마다, 정점 전부). 손바닥·발바닥이 닿는 곳은 접촉이므로 손·손가락·발 정점은 따로 센다
 // 통과·실패: ①이 1cm 안, ②가 5mm 안, ③의 붙은 팔다리 사건이 없다. ④는 기록(기준을 정하지 않았다).
 // 사용: node test/human_check.mjs [JSON]   캡처 동작: MODE=clip   장면 고르기: ONLY=foot2,reach2
+// 자세 규칙 비교: VARIANT=base|rule|ref(사람형 몸의 자세 규칙 — rule이 기본)
 // 옛 몸과 견주기: BODY=old — 옛 몸의 메시(제어 뼈대에 바로 붙은 것)로 ③④만 잰다(①②는 옮기는 단계가 없어 0)
 import fs from 'fs';
 import path from 'path';
@@ -37,14 +38,19 @@ const PEN_EVERY = +(process.env.PEN_EVERY || 6);
 const out = { mode: clip ? 'clip' : 'proc', body: OLD ? 'old' : 'human', scenes: {} }, tot = { palm: 0, ankle: 0, gap: 0, att: [], fast: [], penBody: { d: 0 }, penContact: { d: 0 }, part: {}, coord: 0 };
 for (const [id, title, fn, assist, mode, st0] of all) {
   const world = makeWorld(), sim = makeSim(rig, world, clips); sim.reset({ pos: st0 || START, yaw: Math.PI }); sim.opt.wallRest = false; sim.opt.footAssist = !!assist;
+  if (process.env.VARIANT) { sim.opt.posture = process.env.VARIANT; if (process.env.VARIANT === 'ref') sim.ref = JSON.parse(fs.readFileSync(path.resolve(HERE, '../assets_local/ref_index.json'), 'utf8')); }
   const inputs = [], put = (inp = {}, cmd = []) => inputs.push({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd }), rep = (n, inp, cmd) => { for (let i = 0; i < n; i++) put(inp, i ? [] : cmd); };
   fn(sim, put, rep);
   const prev = new Map(), r = { palm: 0, ankle: 0, gap: 0, att: [], fast: [], penBody: { d: 0 }, penContact: { d: 0 }, part: {}, coord: null }, v = V();
   for (let k = 0; k < inputs.length; k++) {
-    sim.step(inputs[k]); R.apply(sim.fing, sim.pron); const K = sim.climb, t = (k + 1) / 120, P = OLD ? null : humanPoints(H, CL.PALM);
+    sim.step(inputs[k]); R.apply(sim.fing, sim.pron, sim.climb, world, sim.gw); const K = sim.climb, t = (k + 1) / 120, P = OLD ? null : humanPoints(H, CL.PALM);
     r.gap = Math.max(r.gap, R.info.maxIKGap);
     if (K.on && !OLD) for (let i = 0; i < 2; i++) { const s = i ? 'R' : 'L';
-      if (K.hands[i].st === 'hold') r.palm = Math.max(r.palm, P[`palm.${s}`].distanceTo(rig.bones[`hand.${s}`].localToWorld(V().set(0, -CL.PALM, 0))));
+      // p3d-0.10.1: 잡은 손은 손바닥이 턱 앞면을 보게 세우므로(human.js) 손바닥 자리는 제어 뼈대의 손바닥 자리와 다르다(기록만). 접촉의 맞음은 손목 자리 + 손·손가락 메시의 관통·닿음으로 본다
+      if (K.hands[i].st === 'hold') { r.palm = Math.max(r.palm, H.bones[`hand_${i ? 'r' : 'l'}`].getWorldPosition(V()).distanceTo(rig.bones[`hand.${s}`].getWorldPosition(V())));
+        r.palmPt = Math.max(r.palmPt || 0, P[`palm.${s}`].distanceTo(rig.bones[`hand.${s}`].localToWorld(V().set(0, -CL.PALM, 0))));
+        const bx = K.hands[i].edge.box, tips = ['index', 'middle', 'ring', 'pinky'].map(f => H.bones[`${f}_04_leaf_${i ? 'r' : 'l'}`].getWorldPosition(V())), gap = Math.min(...tips.map(p => Math.max(bx.min.x - p.x, 0, p.x - bx.max.x) ** 2 + Math.max(bx.min.y - p.y, 0, p.y - bx.max.y) ** 2 + Math.max(bx.min.z - p.z, 0, p.z - bx.max.z) ** 2).map(Math.sqrt));
+        if (sim.gw[i] >= 0.9) r.tipGap = Math.max(r.tipGap || 0, gap); } // 손끝–턱은 손을 다 세운 뒤(세우는 정도 0.9 넘음)만 잰다
       if (K.feet[i].st === 'plant') r.ankle = Math.max(r.ankle, P[`ankle.${s}`].distanceTo(rig.bones[`foot.${s}`].getWorldPosition(V()))); }
     for (const b of H.list) { const bn = nm0(b); if (FING.test(bn) || /leaf/.test(bn)) continue; const q = b.getWorldQuaternion(new THREE.Quaternion()), p = prev.get(bn); prev.set(bn, q); if (!p || k < 2) continue;
       const w = p.angleTo(q) * 180 / Math.PI * 120, L = LIMB[bn], att = L && K.on && (L[0] === 'foot' ? K.feet[L[1]].st === 'plant' : K.hands[L[1]].st === 'hold');
@@ -52,17 +58,18 @@ for (const [id, title, fn, assist, mode, st0] of all) {
     if (k % PEN_EVERY === 0) { const pen = penetration(world); for (const k2 of Object.keys(pen)) { const slot = k2 === 'contact' ? r.penContact : r.penBody, x = pen[k2]; if (x.d > slot.d) Object.assign(slot, { ...x, t: +t.toFixed(3) }); if (x.d > (r.part[k2]?.d ?? 0)) r.part[k2] = { ...x, t: +t.toFixed(3) }; }
       if (k === 0) { const c = centroid(); r.coord = +Math.hypot(c.x - sim.body.pos.x, c.z - sim.body.pos.z).toFixed(3); } }
   }
-  const R2 = { 제목: title, 손바닥_어긋남_mm: +(r.palm * 1000).toFixed(2), 발목_어긋남_mm: +(r.ankle * 1000).toFixed(2), IK_못_닿음_mm: +(r.gap * 1000).toFixed(2), 붙은_팔다리_300도_넘음: r.att.length, 그_목록: r.att.slice(0, 6), 뼈_900도_넘음: r.fast.length, 빠른_목록: r.fast.slice(0, 6),
+  const R2 = { 제목: title, 손목_어긋남_mm: +(r.palm * 1000).toFixed(2), 손가락끝_턱까지_mm: +((r.tipGap || 0) * 1000).toFixed(1), 발목_어긋남_mm: +(r.ankle * 1000).toFixed(2), IK_못_닿음_mm: +(r.gap * 1000).toFixed(2), 붙은_팔다리_300도_넘음: r.att.length, 그_목록: r.att.slice(0, 6), 뼈_900도_넘음: r.fast.length, 빠른_목록: r.fast.slice(0, 6),
     메시_관통_몸통팔다리_cm: +(r.penBody.d * 100).toFixed(1), 그때: r.penBody.bone ? `${r.penBody.t}초 ${r.penBody.bone} → ${r.penBody.box}` : '', 메시_관통_손발_cm: +(r.penContact.d * 100).toFixed(1), 그때_손발: r.penContact.bone ? `${r.penContact.t}초 ${r.penContact.bone} → ${r.penContact.box}` : '' };
   R2.부위별_관통_cm = Object.fromEntries(Object.entries(r.part).map(([k2, x]) => [k2, `${(x.d * 100).toFixed(1)} (${x.t}초 ${x.bone} → ${x.box})`])); R2.메시_중심과_몸_원점_수평_m = r.coord;
   for (const [k2, x] of Object.entries(r.part)) if (x.d > (tot.part[k2]?.d ?? 0)) tot.part[k2] = { ...x, id }; tot.coord = Math.max(tot.coord, r.coord ?? 0);
-  out.scenes[id] = R2; tot.palm = Math.max(tot.palm, r.palm); tot.ankle = Math.max(tot.ankle, r.ankle); tot.gap = Math.max(tot.gap, r.gap); tot.att.push(...r.att.map(x => id + ' ' + x)); tot.fast.push(...r.fast.map(x => id + ' ' + x));
+  out.scenes[id] = R2; tot.palm = Math.max(tot.palm, r.palm); tot.tipGap = Math.max(tot.tipGap || 0, r.tipGap || 0); tot.palmPt = Math.max(tot.palmPt || 0, r.palmPt || 0); tot.ankle = Math.max(tot.ankle, r.ankle); tot.gap = Math.max(tot.gap, r.gap); tot.att.push(...r.att.map(x => id + ' ' + x)); tot.fast.push(...r.fast.map(x => id + ' ' + x));
   for (const k of ['penBody', 'penContact']) if (r[k].d > tot[k].d) tot[k] = { ...r[k], id };
-  console.log(`■ ${id} ${title.slice(0, 40)}… 손바닥 ${R2.손바닥_어긋남_mm}mm · 발목 ${R2.발목_어긋남_mm}mm · IK 못 닿음 ${R2.IK_못_닿음_mm}mm · 붙은 팔다리 300°/s 넘음 ${r.att.length} · 900°/s 넘음 ${r.fast.length} · 관통 몸 ${R2.메시_관통_몸통팔다리_cm}cm(${R2.그때}) 손발 ${R2.메시_관통_손발_cm}cm(${R2.그때_손발})`);
+  console.log(`■ ${id} ${title.slice(0, 40)}… 손목 ${R2.손목_어긋남_mm}mm · 손끝–턱 ${R2.손가락끝_턱까지_mm}mm · 발목 ${R2.발목_어긋남_mm}mm · IK 못 닿음 ${R2.IK_못_닿음_mm}mm · 붙은 팔다리 300°/s 넘음 ${r.att.length} · 900°/s 넘음 ${r.fast.length} · 관통 몸 ${R2.메시_관통_몸통팔다리_cm}cm(${R2.그때}) 손발 ${R2.메시_관통_손발_cm}cm(${R2.그때_손발})`);
 }
 const ok = (c, m) => console.log(`${c ? 'PASS' : 'FAIL'}  ${m}`);
 console.log(`\n[${out.mode} · ${out.body}] 장면 ${all.length}개`);
-ok(tot.palm < 0.01, `잡은 손: 새 몸의 손바닥 자리가 제어 뼈대의 손바닥 자리에서 1cm 안 — 가장 큰 ${(tot.palm * 1000).toFixed(2)}mm`);
+ok(tot.palm < 0.01, `잡은 손: 새 몸의 손목이 제어 뼈대의 손목에서 1cm 안 — 가장 큰 ${(tot.palm * 1000).toFixed(2)}mm`);
+ok(tot.tipGap < 0.02, `잡은 손: 손가락 끝(넷 중 가장 가까운 것)이 잡은 턱에서 2cm 안 — 가장 먼 ${(tot.tipGap * 1000).toFixed(1)}mm · (기록) 손바닥 자리가 제어 뼈대의 손바닥 자리와 다른 거리 ${(tot.palmPt * 1000).toFixed(1)}mm`);
 ok(tot.ankle < 0.01, `디딘 발: 새 몸의 발목이 제어 뼈대의 발목에서 1cm 안 — 가장 큰 ${(tot.ankle * 1000).toFixed(2)}mm`);
 ok(tot.gap < 0.005, `새 몸의 팔다리가 제어 뼈대의 손목·발목에 닿는다(못 닿은 거리 5mm 안) — 가장 큰 ${(tot.gap * 1000).toFixed(2)}mm`);
 ok(!tot.att.length, `새 몸의 붙은 팔다리(잡은 팔·디딘 다리)가 초속 300°를 넘지 않는다 — ${tot.att.length}번 ${tot.att.slice(0, 4).join(' · ')}`);

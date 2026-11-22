@@ -29,7 +29,7 @@ const skel = new THREE.SkeletonHelper(rig.mesh); skel.visible = false; scene.add
 // 사람형 몸(p3d-0.10.0, 기본): 제어 뼈대(rig)는 계산에만 쓰고 숨긴다. 그릴 때마다 제어 뼈대의 확정된 자세를 새 몸에 옮긴다(human.js — 계산 상태를 바꾸지 않는다). 옛 몸: 주소에 ?body=old
 const human = BODY === 'human' ? buildHuman() : null, retarget = human ? makeRetarget(rig, human) : null;
 if (human) { scene.add(human.root); rig.mesh.visible = false; }
-const draw = () => { if (human) retarget.apply(sim.fing, sim.pron); renderer.render(scene, camera); };
+const draw = () => { if (human) retarget.apply(sim.fing, sim.pron, sim.climb, sim.world, sim.gw); renderer.render(scene, camera); };
 const sim = makeSim(rig, world, CLIPS); let body = sim.body;
 loadKeys();
 const input = makeInput(renderer.domElement);

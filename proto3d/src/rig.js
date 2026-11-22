@@ -28,6 +28,7 @@ const BODY_HUMAN = {
   boxChest: { c: [0, 0.035, -0.013], h: [0.165, 0.165, 0.14] }, boxHip: { c: [0, 0.096, 0.052], h: [0.135, 0.17, 0.12] },
   // 팔의 그려지는 굵기(어깨 쪽, 끝 쪽): 마네킹 메시에서 뼈 축까지의 거리
   armR: { upper: [0.075, 0.062], fore: [0.068, 0.05] },
+  palm: 0.08, // 손목에서 잡는 점까지(물리). 새 손(손목 → 손가락 뿌리 12.1cm)에 맞춰 0.11로 해 봤으나 손이 턱 아래로 내려가 벽에 붙은 자세에서 팔이 '등 뒤로 돌아가는 방향'이 되어 손을 놓쳤다(p3d-0.10.1, foot2) → 옛 값. 손가락은 그림에서 맞춘다(human.js)
   boxCollide: true, // 몸통과 지형의 충돌을 위 두 상자(골반·가슴)로 한다(climb.js collide). 옛 몸은 몸 원점 둘레의 원기둥 하나
   kneeClr: 0.10, // 디딘 다리의 무릎 방향을 고를 때 무릎과 벽·턱 사이에 두려는 거리(climb.js legIK). 새 몸의 무릎 둘레 반지름(약 10cm)
 };
@@ -39,7 +40,7 @@ DIM.hipZ ??= 0; DIM.oSpine ??= [0, DIM.spine, 0]; DIM.oChest ??= [0, DIM.chest, 
 DIM.oHip = [DIM.hipW, -DIM.hipDrop, DIM.hipZ]; DIM.oToe = [0, -(DIM.ankleY - 0.02), DIM.ballZ];
 DIM.headCT = DIM.headC ?? [0, DIM.headR * 0.9, 0]; DIM.headC ??= [0, DIM.headR * 0.9, 0.01]; // headCT = 몸통 계산(torso)의 머리 중심. 옛 몸은 0.9.1까지 torso에서만 앞쪽 1cm를 빼고 썼다(그대로 둔다)
 DIM.boxChest ??= { c: [0, 0.11, 0.005], h: [0.18, 0.12, 0.105] }; DIM.boxHip ??= { c: [0, 0.07, 0], h: [0.15, 0.17, 0.095] };
-DIM.armR ??= { upper: [0.055, 0.045], fore: [0.045, 0.036] }; DIM.kneeClr ??= 0.06;
+DIM.armR ??= { upper: [0.055, 0.045], fore: [0.045, 0.036] }; DIM.kneeClr ??= 0.06; DIM.palm ??= 0.08;
 DIM.leg = DIM.thigh + DIM.shin;
 DIM.arm = DIM.upperArm + DIM.foreArm;
 // [이름, 부모, 쉬는 자세의 부모 기준 위치]

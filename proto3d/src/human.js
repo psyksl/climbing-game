@@ -73,7 +73,7 @@ for (const [s, h] of [['L', 'l'], ['R', 'r']]) {
   MAP.push({ o: `foot.${s}`, h: `foot_${h}`, aO: 'toe', sO: UP, aH: `ball_${h}`, sH: 'up' });
   MAP.push({ o: `toe.${s}`, h: `ball_${h}`, aO: FWD, sO: UP, aH: `ball_leaf_${h}`, sH: 'up' });
 }
-const FINGERS = ['index', 'middle', 'ring', 'pinky'], PRON = 80 * Math.PI / 180, SCAP_UP = 28 * Math.PI / 180, SCAP_FWD = 10 * Math.PI / 180;
+const FINGERS = ['index', 'middle', 'ring', 'pinky'], WRIST_MAX = 70 * Math.PI / 180, HAND_TILT = 14 * Math.PI / 180, FINGER_R = 0.009, SH_R = 0.075, PRON = 80 * Math.PI / 180, SCAP_UP = 28 * Math.PI / 180, SCAP_FWD = 10 * Math.PI / 180;
 
 // 연결기를 만든다. ctrl = rig.js의 제어 뼈대(쉬는 자세에서 만들어야 한다 — 모든 뼈의 쉬는 회전이 단위 회전)
 export function makeRetarget(ctrl, H) {
@@ -93,7 +93,7 @@ export function makeRetarget(ctrl, H) {
   const spine2Fix = H.bindQ.spine_01.clone().slerp(H.bindQ.spine_03, 0.5).invert().multiply(H.bindQ.spine_02);
   const tmp = { maxIKGap: 0 };
   // 원본(T자) 자세로 돌려 둔 뒤 매번 다시 만든다 → 앞 장면의 값에 기대지 않는다(그리기 빈도와 무관)
-  function apply(fing = [0.3, 0.3], pron = [0, 0]) {
+  function apply(fing = [0.3, 0.3], pron = [0, 0], K = null, world = null, gwv = null) {
     ctrl.root.updateMatrixWorld(true);
     for (const b of H.list) b.quaternion.copy(H.bindL[b.name]);
     H.root.position.set(0, 0, 0); H.root.quaternion.identity(); H.root.updateMatrixWorld(true);
@@ -111,7 +111,10 @@ export function makeRetarget(ctrl, H) {
       //   어깨 관절의 자리가 제어 뼈대보다 몇 cm 올라가지만, 손목은 아래의 IK가 제어 뼈대의 손목 자리에 그대로 맞춘다(접촉은 바뀌지 않는다)
       { const s = h === 'l' ? 'L' : 'R', sx = h === 'l' ? 1 : -1, qc = qO('chest'), qi = qc.clone().invert(), ua = wp(ctrl.bones[`foreArm.${s}`]).sub(wp(ctrl.bones[`upperArm.${s}`])).normalize().applyQuaternion(qi);
         const e = Math.acos(THREE.MathUtils.clamp(-ua.y, -1, 1)) * 180 / Math.PI, up = THREE.MathUtils.clamp((e - 70) / 110, 0, 1) * SCAP_UP, fw = THREE.MathUtils.clamp(ua.z, 0, 1) * SCAP_FWD;
-        if (up || fw) { const B = H.bones[`clavicle_${h}`], r = Q().setFromAxisAngle(V(0, 0, 1).applyQuaternion(qc), sx * up).multiply(Q().setFromAxisAngle(V(0, 1, 0).applyQuaternion(qc), -sx * fw)); setWorld(B, r.multiply(wq(B))); } }
+        if (up || fw) { const B = H.bones[`clavicle_${h}`], q0 = wq(B), put = k => setWorld(B, Q().setFromAxisAngle(V(0, 0, 1).applyQuaternion(qc), sx * up * k).multiply(Q().setFromAxisAngle(V(0, 1, 0).applyQuaternion(qc), -sx * fw * k)).multiply(q0));
+          // 들린 어깨(어깨 관절 둘레 반지름 7.5cm)가 벽·턱에 들면 덜 든다(p3d-0.10.1, GPT 지적 "표시 쪽 쇄골 보정 뒤의 팔 형상도 충돌 검증에"): 1 → 0.66 → 0.33 → 0 가운데 들지 않는 가장 큰 것
+          put(1); if (world) { const nb = world.boxes.filter(bx => bx.kind !== 'floor'), hit = () => { const p = wp(H.bones[`upperarm_${h}`]); return nb.some(bx => inBox(p, bx, SH_R) > 0); };
+            for (const k of [0.66, 0.33, 0]) { if (!hit()) break; put(k); } } } }
       // ② 팔: 어깨 → 제어 뼈대의 손목 자리로 IK. 굽는 쪽 = 제어 뼈대의 팔꿈치 쪽(팔이 거의 펴지면 제어 뼈의 앞 축이 정하는 쪽)
       for (const [up, lo, end] of [[`upperarm_${h}`, `lowerarm_${h}`, `hand_${h}`], [`thigh_${h}`, `calf_${h}`, `foot_${h}`]]) {
         const mU = by[up], mL = by[lo], s = mU.side, arm = mU.limb === 'arm', oU = ctrl.bones[mU.o], oL = ctrl.bones[mL.o], oE = ctrl.bones[arm ? `hand.${s}` : `foot.${s}`];
@@ -129,6 +132,12 @@ export function makeRetarget(ctrl, H) {
         // ③ 손·발: 제어 뼈의 회전을 옮긴다
         setWorld(H.bones[end], mapQ(by[end]));
         if (arm) { // 손목의 비틀림을 아래팔과 절반씩: 아래팔을 제 축으로 돌린다(손은 세계에서 그대로)
+          // 잡은 손(p3d-0.10.1): 손바닥이 턱 앞면을 보게 세운다(손가락 쪽 = 위, 앞면을 따라). 손목은 아래팔에서 70°까지만 꺾는다. 0.10.0은 제어 뼈의 손(손목 → 턱 모서리 쪽)을 그대로 옮겨 두꺼운 손바닥이 턱에 3.5cm 들어갔다
+          const Hd = K ? K.hands[h === 'l' ? 0 : 1] : null;
+          if (Hd && (Hd.st === 'hold' || Hd.st === 'reach') && Hd.edge) { const n = Hd.n.clone().setY(0).normalize(), up = UP.clone().addScaledVector(n, -UP.dot(n)).normalize().multiplyScalar(Math.cos(HAND_TILT)).addScaledVector(n, -Math.sin(HAND_TILT)).normalize(), fa = V().copy(mL.aHL).applyQuaternion(wq(H.bones[lo])).normalize();
+            let fd = up.clone(); const a = fd.angleTo(fa); if (a > WRIST_MAX) fd = fa.clone().lerp(fd, WRIST_MAX / a).normalize();
+            // 세우는 정도는 손가락 굽힘 값(S.fing — 계산 걸음에서 0 → 1로 0.1초쯤에 오른다)을 따라간다. 한 걸음에 세우면 잡는 걸음에 아래팔이 크게 돌았다(6,674°/s — human_check로 찾음)
+            const gw = gwv ? gwv[h === 'l' ? 0 : 1] : THREE.MathUtils.clamp((fing[h === 'l' ? 0 : 1] - 0.3) / 0.7, 0, 1); setWorld(H.bones[end], wq(H.bones[end]).slerp(alignQ(by[end].aHL, by[end].sHL, fd, n.clone().negate()), gw * gw * (3 - 2 * gw))); }
           const B = H.bones[lo], ax = V().copy(mL.aHL).applyQuaternion(wq(B)).normalize(), handQ = wq(H.bones[end]);
           const rel = wq(B).invert().multiply(handQ).multiply(H.bindQ[lo].clone().invert().multiply(H.bindQ[end]).invert()), tw = twistAbout(rel, mL.aHL);
           setWorld(B, Q().setFromAxisAngle(ax, tw * 0.5).multiply(wq(B))); setWorld(H.bones[end], handQ);
@@ -139,15 +148,32 @@ export function makeRetarget(ctrl, H) {
       }
       // ④ 손가락
       const c = fing[h === 'l' ? 0 : 1], k = [70, 25, 12].map(x => x * Math.PI / 180), rel = [15, 22, 14].map(x => x * Math.PI / 180), open = [4, 6, 4].map(x => x * Math.PI / 180);
-      for (const f of [...FINGERS, 'thumb']) for (let j = 1; j <= 3; j++) { const n = `${f}_0${j}_${h}`, B = H.bones[n];
-        const ang = c >= 0.3 ? rel[j - 1] + (k[j - 1] - rel[j - 1]) * (c - 0.3) / 0.7 : open[j - 1] + (rel[j - 1] - open[j - 1]) * c / 0.3;
-        B.quaternion.copy(H.bindL[n]).multiply(Q().setFromAxisAngle(fingerAxis[n], ang * (f === 'thumb' ? 0.5 : 1))); }
+      const setF = (f, a1, a2, a3) => { [a1, a2, a3].forEach((ang, j) => { const n = `${f}_0${j + 1}_${h}`; H.bones[n].quaternion.copy(H.bindL[n]).multiply(Q().setFromAxisAngle(fingerAxis[n], ang)); }); H.bones[`${f}_01_${h}`].updateMatrixWorld(true); };
+      const Hd = K ? K.hands[h === 'l' ? 0 : 1] : null, box = Hd && Hd.st === 'hold' && Hd.edge ? Hd.edge.box : null;
+      for (const f of [...FINGERS, 'thumb']) {
+        const ang = j => (c >= 0.3 ? rel[j] + (k[j] - rel[j]) * (c - 0.3) / 0.7 : open[j] + (rel[j] - open[j]) * c / 0.3) * (f === 'thumb' ? 0.5 : 1);
+        if (!world) { setF(f, ang(0), ang(1), ang(2)); continue; }
+        if (!box || f === 'thumb') { // 엄지는 잡은 손에서도 이 길(정한 굽힘에 가깝게, 들면 덜 드는 쪽) // 놓인·뻗는 손(p3d-0.10.1): 새 몸의 손이 제어 뼈대보다 6cm 길어 손가락이 벽에 들었다(9.9cm) → 정한 굽힘에서 들면 덜 드는 굽힘 가운데 정한 값에 가장 가까운 것
+          setF(f, ang(0), ang(1), ang(2)); const hw0 = wp(H.bones[`hand_${h}`]), nb = world.boxes.filter(bx => bx.kind !== 'floor' && inBox(hw0, bx, 0.30) > 0); if (!nb.length) continue;
+          const penAt = () => Math.max(0, ...[`${f}_02_${h}`, `${f}_03_${h}`, `${f}_04_leaf_${h}`].flatMap(nm => nb.map(bx => inBox(wp(H.bones[nm]), bx, FINGER_R))));
+          if (penAt() <= 1e-4) continue; const base = ang(0); let bst = null;
+          for (let a = -20; a <= 110; a += 10) { const r = a * Math.PI / 180; setF(f, r, r * 0.35, r * 0.2); const pn = penAt(), sc = pn * 1000 + Math.abs(r - base) * 2; if (!bst || sc < bst.sc) bst = { r, sc }; }
+          setF(f, bst.r, bst.r * 0.35, bst.r * 0.2); continue; }
+        // 잡은 손가락(p3d-0.10.1): 첫 마디를 0~110°(가운데·끝 마디는 0.35·0.2배)로 놓아 보고, 마디 자리가 턱 상자(손가락 굵기만큼 부풀림)에 들지 않는 가장 큰 굽힘을 고른다 — 손가락이 턱 윗면을 덮는다.
+        //   모두 들면 가장 덜 드는 것. 0.10.0은 정해진 각(70°·25°·12°)으로 굽혀 손가락이 턱에 들었다
+        let best = null; const hw = wp(H.bones[`hand_${h}`]), near = world ? world.boxes.filter(bx => bx.kind !== 'floor' && inBox(hw, bx, 0.30) > 0) : [box]; // 손목 30cm 안의 상자 모두(잡은 턱 뒤의 벽도)
+        for (let a = 0; a <= 110; a += 10) { const r = a * Math.PI / 180; setF(f, r, r * 0.35, r * 0.2); let pen = 0;
+          for (const nm of [`${f}_02_${h}`, `${f}_03_${h}`, `${f}_04_leaf_${h}`]) { const p = wp(H.bones[nm]); for (const bx of near) pen = Math.max(pen, inBox(p, bx, FINGER_R)); }
+          if (!best || (pen <= 1e-4 && a >= best.a) || (best.pen > 1e-4 && pen < best.pen)) best = { a, pen }; }
+        const r = best.a * Math.PI / 180; setF(f, r, r * 0.35, r * 0.2); }
     }
     H.root.updateMatrixWorld(true);
     tmp.maxIKGap = gap; return tmp;
   }
   return { apply, info: tmp };
 }
+// 점이 상자(r만큼 부풀림) 안에 든 깊이(가장 얕은 면까지). 밖이면 0
+function inBox(p, b, r) { const d = Math.min(p.x - (b.min.x - r), b.max.x + r - p.x, p.y - (b.min.y - r), b.max.y + r - p.y, p.z - (b.min.z - r), b.max.z + r - p.z); return Math.max(0, d); }
 // 회전 q(지역)를 축 a 둘레의 비틀림 각으로(스윙-트위스트 분해)
 function twistAbout(q, a) { const n = a.clone().normalize(), p = V(q.x, q.y, q.z).dot(n), t = new THREE.Quaternion(n.x * p, n.y * p, n.z * p, q.w); if (t.lengthSq() < 1e-12) return 0; t.normalize(); let ang = 2 * Math.acos(THREE.MathUtils.clamp(t.w, -1, 1)); if (V(t.x, t.y, t.z).dot(n) < 0) ang = -ang; if (ang > Math.PI) ang -= 2 * Math.PI; if (ang < -Math.PI) ang += 2 * Math.PI; return ang; }
 // 새 몸의 손바닥 자리(제어 뼈대의 CL.PALM과 같은 거리를 손가락 쪽으로)와 발볼·발끝 — 접촉 오차를 잴 때

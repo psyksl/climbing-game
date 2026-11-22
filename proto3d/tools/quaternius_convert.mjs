@@ -36,6 +36,16 @@ const M = meshes.map(m => { const g = m.geometry, P = g.attributes.position, N =
   for (let k = 0; k < n; k++) { const w = [0, 1, 2, 3].map(j => SW.getComponent(k, j)), tot = w.reduce((a, c) => a + c, 0) || 1, q = w.map(x => Math.round(x / tot * 255)), big = w.indexOf(Math.max(...w));
     q[big] += 255 - q.reduce((a, c) => a + c, 0);
     for (let j = 0; j < 4; j++) { si[k * 4 + j] = SI.getComponent(k, j); sw[k * 4 + j] = q[j]; } }
+  // 어깨 둘레 무게 다듬기(p3d-0.10.1, GPT 지적 "어깨 불룩함"): 원본 뼈대에 위팔만 돌려도 어깨가 구겨진다 → 모델의 정점 무게 탓. 위팔 관절에서 10cm 안의 정점 가운데 쇄골·위팔·가슴(spine_03)이 나눠 갖는 것만,
+  //   팔 축을 따라 관절 4cm 안쪽 → 쇄골·가슴 쪽, 6cm 바깥 → 위팔 쪽으로 부드럽게 다시 나눈다(합은 그대로). 기본은 끔 — SHOULDER=1일 때만(해 보니 어깨가 패이고 뒤에서 혹처럼 보여 나아지지 않았다. 원본 뼈대에 위팔만 돌려도 같은 구겨짐이 있어 원인은 모델의 무게다)
+  if (process.env.SHOULDER === '1') { const nm = bones.map(b => b.name), J = {}, arm = {}; for (const s of ['l', 'r']) { J[s] = bones[nm.indexOf('upperarm_' + s)].getWorldPosition(new THREE.Vector3()); arm[s] = bones[nm.indexOf('lowerarm_' + s)].getWorldPosition(new THREE.Vector3()).sub(J[s]).normalize(); }
+    let changed = 0;
+    for (let k = 0; k < n; k++) { const px = new THREE.Vector3(pos[k * 3], pos[k * 3 + 1], pos[k * 3 + 2]), s = px.x >= 0 ? 'l' : 'r', d = px.clone().sub(J[s]); if (d.length() > 0.10) continue;
+      // 위팔·쇄골이 함께 가진 몫만 다시 나눈다(가슴·목 쪽 몫은 그대로): 팔 축을 따라 관절 4cm 안쪽 → 쇄골, 6cm 바깥 → 위팔
+      const iU = nm.indexOf('upperarm_' + s), iC = nm.indexOf('clavicle_' + s), jU = [0, 1, 2, 3].find(j => si[k * 4 + j] === iU && sw[k * 4 + j] > 0), jC = [0, 1, 2, 3].find(j => si[k * 4 + j] === iC && sw[k * 4 + j] > 0);
+      if (jU === undefined || jC === undefined) continue; const tot = sw[k * 4 + jU] + sw[k * 4 + jC], t = Math.min(1, Math.max(0, (d.dot(arm[s]) + 0.04) / 0.10)), wu = t * t * (3 - 2 * t);
+      sw[k * 4 + jU] = Math.round(tot * wu); sw[k * 4 + jC] = tot - sw[k * 4 + jU]; changed++; }
+    console.log(m.name, '어깨 둘레 무게를 다시 나눈 정점', changed); }
   const idx = g.index ? (n > 65535 ? new Uint32Array(g.index.array) : new Uint16Array(g.index.array)) : null;
   // bind 역행렬: 메시의 세계 변환을 합친 위치에 맞춘다(bind = 뼈의 세계 행렬 × 메시의 세계 변환의 역 → 합친 뒤에는 뼈의 세계 행렬의 역)
   return { name: m.name, mat: [].concat(m.material)[0].name, color: '#' + [].concat(m.material)[0].color.getHexString(), n, lo, sz, pos: b64(qp), nor: b64(qn), si: b64(si), sw: b64(sw), idx: idx ? b64(idx) : null, idx32: !!(idx && idx instanceof Uint32Array) };
