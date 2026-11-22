@@ -12,7 +12,7 @@ const { buildCharacter, DIM } = await imp('rig.js'), { makeWorld } = await imp('
 const clip = process.env.MODE === 'clip', clips = clip ? JSON.parse(fs.readFileSync(path.resolve(HERE, '../assets_local/clips.json'), 'utf8')) : null;
 const rig = buildCharacter(), hand = (i, p) => ({ type: 'hand', i, p }), foot = (i, p) => ({ type: 'foot', i, p }), rel = (limb, i) => ({ type: 'release', limb, i });
 const AL = [-0.72, 1.92, -2.84], AR = [-0.62, 1.92, -2.84], F = [-0.3, 2.15, -2.86], LOW = [-0.45, 0.5, -2.93], A = { L: [-1.1, 1.92, -2.84], R: [-0.7, 1.92, -2.84] };
-let sim; const start = (p, yaw = Math.PI) => { sim = makeSim(rig, makeWorld(), clips); sim.reset({ pos: p, yaw }); sim.opt.wallRest = false; sim.opt.footAssist = false; };
+let sim; const start = (p, yaw = Math.PI) => { sim = makeSim(rig, makeWorld(), clips); sim.reset({ pos: p, yaw }); sim.opt.wallRest = false; sim.opt.footAssist = false; if (process.env.VARIANT) sim.opt.posture = process.env.VARIANT; };
 const run = (n, inp = {}, cmd = []) => { for (let i = 0; i < n; i++) sim.step({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd: i ? [] : cmd }); };
 const logFrom = k => sim.climb.log.slice(k).filter(e => e.type !== 'try').map(e => `${(e.t ?? 0).toFixed(2)} ${e.type}${e.name ? ' ' + e.name : ''}${e.box ? ' ' + e.box : ''}${e.why ? ' · ' + e.why : ''}`);
 const st = () => { const K = sim.climb; return `손 ${K.hands.map(h => h.st + (h.box ? ':' + h.box.name : '')).join('/')} · 발 ${K.feet.map(f => f.st + (f.box ? ':' + f.box.name : '')).join('/')} · 몸 ${sim.body.pos.toArray().map(v => v.toFixed(2)).join(',')}`; };

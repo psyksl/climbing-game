@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pathToFileURL(path.resolve(HERE, '../src', f)).href);
 const THREE = await import('three');
 const { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { CL } = await imp('climb.js'), { buildHuman, makeRetarget, humanPoints } = await imp('human.js');
-const { SCENES_FOOT, SCENES, START } = await import('./scenes_foot.mjs');
+const { SCENES_FOOT, SCENES, SCENES_H, START } = await import('./scenes_foot.mjs');
 const clip = process.env.MODE === 'clip', clips = clip ? JSON.parse(fs.readFileSync(path.resolve(HERE, '../assets_local/clips.json'), 'utf8')) : null;
 const OLD = process.env.BODY === 'old', rig = buildCharacter(), V = () => new THREE.Vector3();
 // 옛 몸: 제어 뼈대와 그 메시를 그대로 잰다(뼈 이름을 새 몸 이름으로 맞춰 같은 잣대를 쓴다)
@@ -25,7 +25,7 @@ const LIMB = { thigh_l: ['foot', 0], calf_l: ['foot', 0], thigh_r: ['foot', 1], 
 const FING = /^(index|middle|ring|pinky|thumb)/, CONTACT = /^(hand|index|middle|ring|pinky|thumb|foot|ball)/;
 // 정점마다 가장 큰 몫의 뼈 이름(관통을 어느 부위가 했는지 적는다)
 const vb = H.meshes.map(m => { const si = m.geometry.attributes.skinIndex, sw = m.geometry.attributes.skinWeight, out = []; for (let k = 0; k < si.count; k++) { let b = 0, w = -1; for (let j = 0; j < 4; j++) if (sw.getComponent(k, j) > w) { w = sw.getComponent(k, j); b = si.getComponent(k, j); } out.push(nm0(H.list[b])); } return out; });
-const all = [...SCENES_FOOT.map((s, i) => ['foot' + (i + 1), ...s]), ...SCENES.map((s, i) => ['reach' + (i + 1), ...s])].filter(s => !process.env.ONLY || process.env.ONLY.split(',').includes(s[0]));
+const all = [...SCENES_FOOT.map((s, i) => ['foot' + (i + 1), ...s]), ...SCENES.map((s, i) => ['reach' + (i + 1), ...s]), ...SCENES_H.map(s => [s[0].split(' ')[0], ...s])].filter(s => !process.env.ONLY || process.env.ONLY.split(',').includes(s[0]));
 // 메시 정점의 세계 자리(p3d-0.10.1, GPT 지적): getVertexPosition은 메시의 지역 좌표다. 옛 몸은 상위 root에 몸의 x/z 이동이 있어 0.10.0의 "옛 몸 관통 0cm"는 틀린 비교였다 → 메시의 세계 행렬을 곱한다
 const worldVert = (m, j, v) => m.getVertexPosition(j, v).applyMatrix4(m.matrixWorld);
 const PART = nm => /^(hand|index|middle|ring|pinky|thumb)/.test(nm) ? 'hand' : /^(foot|ball)/.test(nm) ? 'foot' : /^(thigh|calf)/.test(nm) ? 'leg' : /^(upperarm|lowerarm|clavicle)/.test(nm) ? 'arm' : /^(Head|neck)/.test(nm) ? 'head' : 'torso';

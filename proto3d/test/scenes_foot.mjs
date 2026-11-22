@@ -26,3 +26,14 @@ export const SCENES = [
   ['⑤ 사용자 플레이와 같은 설정(발 보조 켬): 막힘 → 복귀 → 다시 뻗기', (sim, put, rep) => { setup(rep); rep(45, { cy: 1 }); rep(120); rep(300, {}, [hand(1, F)]); rep(60, { cy: 1 }); rep(360, {}, [hand(1, F)]); }, true],
   ['⑥ 손 조작 2(누르는 동안 뻗고 떼면 잡기): 닿지 않는 자리에서 0.9초 누르다 뗌 → 올라선 뒤 다시 눌러 닿으면 뗌', (sim, put, rep) => { setup(rep); rep(45, { cy: 1 }); rep(120); rep(110, { reach: [null, F] }, [{ ...hand(1, F), hold: true }]); rep(200, {}, [{ type: 'handUp', i: 1 }]); rep(75, { cy: 1 }); rep(60); rep(100, { reach: [null, F] }, [{ ...hand(1, F), hold: true }]); rep(260, {}, [{ type: 'handUp', i: 1 }]); }, false, 2],
 ];
+
+// 새 몸의 대표 장면(p3d-0.10.1, GPT의 0.10.0 검토: 원래 장면은 그대로 두고 새 몸에서도 할 수 있는 대표 장면을 따로). 왼손 턱 A → 왼발 낮은 발판(교차) → W → 오른손 다음 턱
+// 같은 시작: 왼손으로 턱 A(−0.72)를 잡고 왼발을 낮은 발판에 올린다. 스크립트 입력(사람 손 아님)
+const AEND = [-0.6, 1.92, -2.84], hstart = rep => { rep(60); rep(150, {}, [hand(0, AL)]); rep(260, {}, [foot(0, LOW)]); };
+export const SCENES_H = [
+  ['h1 성공: 발판에 올라 W 1초(체중 이동·몸 올리기) → 오른손을 턱 F로 → 잡음', (sim, put, rep) => { hstart(rep); rep(120, { cy: 1 }); rep(120); rep(360, {}, [hand(1, F)]); }, false],
+  ['h2 중간 취소 후 다시: 왼발을 보내고 0.2초 뒤 놓음 → 다시 보냄 → W 1초 → 오른손 턱 F', (sim, put, rep) => { rep(60); rep(150, {}, [hand(0, AL)]); rep(24, {}, [foot(0, LOW)]); rep(120, {}, [rel('foot', 0)]); rep(260, {}, [foot(0, LOW)]); rep(120, { cy: 1 }); rep(60); rep(360, {}, [hand(1, F)]); }, false],
+  ['h3 막혀 실패 → 다른 목표: W 0.12초만 → 오른손 턱 F(닿지 않음) → 오른손을 턱 A의 오른쪽 끝으로', (sim, put, rep) => { hstart(rep); rep(15, { cy: 1 }); rep(90); rep(300, {}, [hand(1, F)]); rep(300, {}, [hand(1, AEND)]); }, false],
+  ['h4 막혀 실패 → 몸을 올려 다시: W 0.12초 → 턱 F(닿지 않음) → W 0.8초 → 턱 F 다시', (sim, put, rep) => { hstart(rep); rep(15, { cy: 1 }); rep(90); rep(300, {}, [hand(1, F)]); rep(100, { cy: 1 }); rep(60); rep(300, {}, [hand(1, F)]); }, false],
+  ['h5 다시 잡기: 턱 F를 잡았다가 놓고 1초 뒤 같은 턱 F를 다시 잡음', (sim, put, rep) => { hstart(rep); rep(120, { cy: 1 }); rep(120); rep(300, {}, [hand(1, F)]); rep(120, {}, [rel('hand', 1)]); rep(300, {}, [hand(1, F)]); }, false],
+];

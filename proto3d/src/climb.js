@@ -321,6 +321,7 @@ const nearBox = (world, p, m) => world.boxes.some(x => p.x > x.min.x - m && p.x 
 //   이 각은 이 함수의 방향 값이며 사람 무릎 관절을 잰 각이 아니다. 무릎을 벌리는 자세나 엇갈린 발을 막지 않는다
 function legIK(S, hj, ank, yaw, sx, placed = true) {
   // 새 규칙은 디딘 발과 보내는 발에만 쓴다(placed). 늘어뜨린 발·뛰는 중에 접어 올린 다리는 발이 고관절 바로 아래를 오가서 "발의 자리"가 뜻이 없다(해 보니 한 걸음 튐이 캡처 동작에서 65 → 166회로 늘었다) → 0.8.8의 규칙 그대로
+  // (p3d-0.10.1에서 늘어뜨린 다리에도 여유로 무릎 방향을 고르게 해 봤으나 관통이 6 → 7.1cm로 늘고 디딘 다리가 초속 317°로 튀어 되돌렸다)
   const bend = clamp((1 - hj.distanceTo(ank) / DIM.leg - 0.05) / 0.35, 0, 1), K = S.climb, np = poseOn(K) && K.on && placed;
   let ik, pole;
   if (np) { const py = yaw + K.po.yaw, d = ank.clone().sub(hj), ox = sx * (d.x * Math.cos(py) - d.z * Math.sin(py)), fz = d.x * Math.sin(py) + d.z * Math.cos(py);
@@ -806,7 +807,7 @@ export function stepClimb(S, inp, dt) {
         //   0.10.0은 무릎만 벌려(여유 값이 무릎을 77~80°로 밀었다) 개구리 자세가 됐고 그래도 넓적다리가 벽에 5~6cm 들었다. 사람은 엉덩이를 빼서 무릎이 들어올 자리를 만든다(참고 영상 5382882의 5.0~5.4초)
         for (const f of [...pf, ...K.feet.filter(g => g.st === 'move' && g.box && g.box.kind !== 'floor')]) { const sx = f.i ? -1 : 1, hj = Tn.hj[f.i], an = f.st === 'move' ? f.ank : f.ank, py = b.yaw + K.po.yaw;
           const pl = V(sx * Math.sin(35 * deg), 0.1, Math.cos(35 * deg)).applyAxisAngle(UP, py).normalize(), k2 = twoBone(hj, an, DIM.thigh, DIM.shin, pl);
-          const dist = Math.min(...[0.45, 0.7, 1].map(t => boxDist(S.world, hj.clone().lerp(k2.mid, t)))); tz = Math.min(tz, -clamp((DIM.kneeClr - dist) * 1.3, 0, 0.10)); } } // 고관절 자리는 지금 골반의 자리를 따르므로 빼는 만큼 여유가 생겨 저절로 멈춘다(이력을 더하면 스스로 커져 늘 끝까지 빠졌다 — 해 봄)
+          const dist = Math.min(...[0.45, 0.7, 1].map(t => boxDist(S.world, hj.clone().lerp(k2.mid, t)))); tz = Math.min(tz, -clamp((DIM.kneeClr - dist) * 1.3, 0, 0.10) * clamp(1 - (K.hc || 0) / 0.25, 0, 1)); } } // 머리가 위의 턱 밑에서 고개를 젖히는 동안(K.hc)은 덜 뺀다 — 골반을 빼면 윗몸이 앞으로 기울어 머리가 턱에 닿아 W로 오르지 못했다(턱 A → 턱 F, 오른 높이 28 → 15cm) // 고관절 자리는 지금 골반의 자리를 따르므로 빼는 만큼 여유가 생겨 저절로 멈춘다(이력을 더하면 스스로 커져 늘 끝까지 빠졌다 — 해 봄)
       if (K.post === 'ref' && K.refT) ty = ty * (1 - K.refT.w) + K.refT.yaw * K.refT.w; // 참고 자세: 가까운 참고 장면의 골반 돌림을 그 거리만큼(0.4m 안 = 다 따름, 1m 밖 = 따르지 않음)
       const rch = K.hands.find(h => h.st === 'reach'); if (rch && K.stretch.s > 0.01) { const d = rch.goal.clone().sub(Tn.sh[rch.i]); tx += -CL.PO_REACH * K.stretch.s * clamp(d.dot(left) / Math.max(d.length(), 1e-6) * 1.6, -1, 1); }
     }

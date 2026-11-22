@@ -12,13 +12,13 @@ import { fileURLToPath, pathToFileURL } from 'url';
 const HERE = path.dirname(fileURLToPath(import.meta.url)), SRC = process.env.SRC ? path.resolve(process.env.SRC) : path.resolve(HERE, '../src'), imp = f => import(pathToFileURL(path.join(SRC, f)).href);
 const THREE = await import('three');
 const { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js');
-const { SCENES_FOOT, SCENES, START } = await import('./scenes_foot.mjs');
+const { SCENES_FOOT, SCENES, SCENES_H, START } = await import('./scenes_foot.mjs');
 for (const k of ['OLDPOSE', 'OLDHAND']) if (process.env[k]) globalThis[k] = 1;
 const clip = process.env.MODE === 'clip', clips = clip ? JSON.parse(fs.readFileSync(path.resolve(HERE, '../assets_local/clips.json'), 'utf8')) : null;
 const rig = buildCharacter(), names = rig.list.map(b => b.name);
 const LIMB = { 'upLeg.L': ['foot', 0], 'leg.L': ['foot', 0], 'upLeg.R': ['foot', 1], 'leg.R': ['foot', 1], 'upperArm.L': ['hand', 0], 'foreArm.L': ['hand', 0], 'upperArm.R': ['hand', 1], 'foreArm.R': ['hand', 1] };
 const ATT = 300, ANY = 900, JERK = 12;
-const all = [...SCENES_FOOT.map((s, i) => ['foot' + (i + 1), ...s]), ...SCENES.map((s, i) => ['reach' + (i + 1), ...s])].filter(s => !process.env.ONLY || process.env.ONLY.split(',').includes(s[0]));
+const all = [...SCENES_FOOT.map((s, i) => ['foot' + (i + 1), ...s]), ...SCENES.map((s, i) => ['reach' + (i + 1), ...s]), ...SCENES_H.map(s => [s[0].split(' ')[0], ...s])].filter(s => !process.env.ONLY || process.env.ONLY.split(',').includes(s[0]));
 const out = { mode: clip ? 'clip' : 'proc', src: process.env.SRC ? '옛 소스' : process.env.OLDPOSE ? '자세의 층 끔' : '지금', 기준: { 붙은_팔다리_초속_도: ATT, 모든_뼈_초속_도: ANY, 한_걸음_변화_도: JERK }, scenes: {} };
 for (const [id, title, fn, assist, mode, st0] of all) {
   const sim = makeSim(rig, makeWorld(), clips); sim.reset({ pos: st0 || START, yaw: Math.PI }); sim.opt.wallRest = false; sim.opt.footAssist = !!assist;
