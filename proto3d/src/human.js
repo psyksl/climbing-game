@@ -88,7 +88,7 @@ for (const [s, h] of [['L', 'l'], ['R', 'r']]) {
   MAP.push({ o: `toe.${s}`, h: `ball_${h}`, aO: FWD, sO: UP, aH: `ball_leaf_${h}`, sH: 'up' });
 }
 // HAND_TILT = 잡은 손의 기울기: 물리의 손목 자리와 같은 접촉 틀(rig.js DIM.grip)
-const FINGERS = ['index', 'middle', 'ring', 'pinky'], WRIST_MAX = 70 * Math.PI / 180, HAND_TILT = (DIM.grip ? DIM.grip.tilt : 14) * Math.PI / 180, FINGER_R = 0.009, FINGER_RH = 0.012, SH_R = 0.075, PRON = 80 * Math.PI / 180, SCAP_UP = 28 * Math.PI / 180, SCAP_FWD = 10 * Math.PI / 180;
+const FINGERS = ['index', 'middle', 'ring', 'pinky'], WRIST_MAX = (DIM.grip && DIM.grip.wristMax ? DIM.grip.wristMax : 70) * Math.PI / 180, HAND_TILT = (DIM.grip ? DIM.grip.tilt : 14) * Math.PI / 180, FINGER_R = 0.009, FINGER_RH = 0.012, SH_R = 0.075, PRON = 80 * Math.PI / 180, SCAP_UP = 28 * Math.PI / 180, SCAP_FWD = 10 * Math.PI / 180;
 
 // 연결기를 만든다. ctrl = rig.js의 제어 뼈대(쉬는 자세에서 만들어야 한다 — 모든 뼈의 쉬는 회전이 단위 회전)
 export function makeRetarget(ctrl, H) {

@@ -32,7 +32,8 @@ const BODY_HUMAN = {
   // 잡는 손의 접촉 틀(p3d-0.10.2, GPT의 0.10.1 검토 3번 — 물리의 잡는 점과 그림의 손을 같은 정의로): 턱 모서리 g를 원점으로 n = 앞면의 바깥 법선, up = 위.
   //   가운뎃손가락 첫 마디(MCP)가 모서리 위 kU·앞 kN에 오고(손가락이 윗면을 덮고, 손바닥이 앞면 앞에 선다), 손바닥 방향 d = up·cos(tilt) − n·sin(tilt), 손목 = 첫 마디 − L·d.
   //   L = 마네킹의 손목 → 가운뎃손가락 첫 마디(12.2cm, human_data의 뼈 자리에서 잰 값). 그림의 손 세우기(human.js)는 tilt를 늘 쓰고, 물리의 손목 자리(anchorOf)는 비교 설정 grip=frame일 때만 이 틀을 쓴다(기본은 0.10.1의 손목 자리 — 닿는 거리를 바꾸지 않는다). kU·kN·tilt는 실험값
-  grip: { L: 0.122, tilt: 14, kU: 0.011, kN: 0.040 },
+  grip: { L: 0.122, tilt: 14, kU: 0.011, kN: 0.040, wristMax: 70, hand: { half: 0.045, palmDown: 0.10, palmOut: [0.012, 0.045], fingBack: 0.035, fingUp: [0.004, 0.028] } },
+  // wristMax = 손목이 아래팔에서 꺾이는 한계(°). hand = 모서리 틀(t·n·u)에서 손이 차지하는 자리(손바닥: 모서리 아래 palmDown까지, 면 앞 palmOut, 폭 ±half · 손가락: 윗면 위 fingUp, 모서리 뒤 fingBack까지) — climb.js handFits·armCheck와 human.js가 같은 값을 쓴다(p3d-0.10.4)
   boxCollide: true, // 몸통과 지형의 충돌을 위 두 상자(골반·가슴)로 한다(climb.js collide). 옛 몸은 몸 원점 둘레의 원기둥 하나
   kneeClr: 0.10, // 디딘 다리의 무릎 방향을 고를 때 무릎과 벽·턱 사이에 두려는 거리(climb.js legIK). 새 몸의 무릎 둘레 반지름(약 10cm)
 };

@@ -91,6 +91,13 @@ const pre = AtoB.slice(0, 7); // 두 손 A(오른손 A2 옆면), 몸을 모서�
   check('혼자 선 긴 턱·양면 벽: 앞에서 잡으면 앞(180°), 뒤에서 잡으면 뒤(0°)를 본다(±3°)', /hold:C.*hold:C/.test(e1.손) && Math.abs(e1.몸방향_도 - 180) <= 3 && /hold:C.*hold:C/.test(b2.손) && (b2.몸방향_도 <= 3 || b2.몸방향_도 >= 357) && /hold:D.*hold:D/.test(d1.손) && Math.abs(d1.몸방향_도 - 180) <= 3 && /hold:D.*hold:D/.test(d2.손) && (d2.몸방향_도 <= 3 || d2.몸방향_도 >= 357), `C 앞 ${e1.손} ${e1.몸방향_도}° · C 뒤 ${b2.손} ${b2.몸방향_도}° · D 앞 ${d1.몸방향_도}° · D 뒤 ${d2.몸방향_도}°`);
   check('혼자 선 긴 턱(붙은 벽 없음)의 끝 쪽에 서서 작은 끝 옆면을 잡으면 몸은 끝 쪽(270°)을 그대로 본다 — 긴 면 쪽으로 억지로 돌지 않는다(±3°)', /\(\+x면\)/.test(e2.손) && Math.abs(e2.몸방향_도 - 270) <= 3 && Math.abs(e3.몸방향_도 - 270) <= 3, `한 손 ${e2.손} ${e2.몸방향_도}° · 두 손 ${e3.손} ${e3.몸방향_도}°`); }
 
+// ── 6. 같은 틀의 판정: 손이 들어갈 자리·손목이 꺾이는 한계 ──
+{ const w = makeFixtureWorld(), { resolveGrip } = await imp('climb.js'), gE = resolveGrip(w, V(8.31, 1.91, -2.92)), gF = resolveGrip(w, V(8.1, 1.92, -2.84));
+  check('손이 들어갈 자리: 턱 E의 끝 옆면은 3cm 옆에 기둥이 있어 잡을 곳으로 보지 않는다(앞면은 잡는다)', !(gE && gE.n.x > 0.5) && !!gF && gF.n.z > 0.5, `끝 옆면 → ${gE ? JSON.stringify(gE.n.toArray()) + ' ' + gE.edge.box.name : '없음'} · 앞면 → ${gF ? gF.edge.box.name : '없음'}`);
+  const S = scene([2.6, 0, -0.45], Math.PI, [['h', 0, [2.4, 1.70, -0.9]], ['h', 1, [2.8, 1.70, -1.04]], ['n', 60]], '손목 한계: 앞에 서서 혼자 선 긴 턱의 뒷면 모서리');
+  const r = S.사건.find(e => /reject hand1/.test(e));
+  check('손목 한계: 앞에 서서 긴 턱의 뒷면 모서리를 잡으려 하면 거부되고(손목이 꺾이지 않음 또는 길이 막힘) 왼손은 그대로', !!r && /hold:C\(앞면\) \/ free/.test(S.단계[S.단계.length - 1].손), `${r || '거부 없음'} · ${S.단계[S.단계.length - 1].손}`); }
+
 console.log(`\n통과 ${out.checks.filter(c => c.ok).length} · 실패 ${fail}`);
 if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify({ 실행_출처: __P, ...out }, null, 1));
 process.exitCode = fail ? 1 : 0;

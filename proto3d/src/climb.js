@@ -71,7 +71,7 @@ export function resolveGrip(world, pt) {
     const t = clamp(pt.clone().sub(e.a).dot(ab) / (len * len), 0.05 / len, 1 - 0.05 / len), p = e.a.clone().addScaledVector(ab, t), d = p.distanceTo(pt);
     // 겨눈 점이 그 턱(얇은 상자)의 겉에 있으면 모서리에서 조금 멀어도 그 턱의 모서리로 본다(아래에서 올려다보면 턱의 밑면을 겨누게 된다)
     const b = e.box, on = b.max.y - b.min.y < 0.12 && pt.x > b.min.x - 0.03 && pt.x < b.max.x + 0.03 && pt.y > b.min.y - 0.03 && pt.y < b.max.y + 0.03 && pt.z > b.min.z - 0.03 && pt.z < b.max.z + 0.03;
-    if ((d <= CL.SNAP || (on && d <= 0.30)) && (!best || d < best.d) && openAt(world, e, p)) best = { d, edge: e, p, n: e.n };
+    if ((d <= CL.SNAP || (on && d <= 0.30)) && (!best || d < best.d) && openAt(world, e, p) && handFits(world, { p, n: e.n, edge: e })) best = { d, edge: e, p, n: e.n };
   }
   return best;
 }
@@ -320,6 +320,16 @@ function segSeg(p1, q1, p2, q2) {
   if (t < 0) { t = 0; s = a > 1e-9 ? clamp(-c / a, 0, 1) : 0; } else if (t > 1) { t = 1; s = a > 1e-9 ? clamp((bb - c) / a, 0, 1) : 0; }
   return p1.clone().addScaledVector(d1, s).sub(p2.clone().addScaledVector(d2, t));
 }
+// 잡는 모서리의 틀(p3d-0.10.4, GPT의 0.10.3 검토 "윗면 네 모서리 — 앞면·뒷면·두 끝 옆면 — 를 같은 틀로, 손목·팔뚝·손가락과 판정·충돌을 함께"): t = 모서리 방향, n = 잡은 면의 바깥(수평), u = 위.
+//   fd = 바라는 손의 방향(손목 → 손가락 뿌리) = u·cos(tilt) − n·sin(tilt). 그림(human.js)이 손을 세우는 방향과 같다. 물리의 손목 자리(anchorOf)도 이 틀(아래·바깥)이다
+export function gripFrame(g) { const n = g.n.clone().setY(0).normalize(), u = UP.clone(), t = u.clone().cross(n).normalize(), k = (DIM.grip ? DIM.grip.tilt : 14) * Math.PI / 180; return { t, n, u, fd: u.clone().multiplyScalar(Math.cos(k)).addScaledVector(n, -Math.sin(k)).normalize() }; }
+// 손이 들어갈 자리(같은 틀): 손바닥(모서리 아래·면 앞)과 손가락(윗면 위·모서리 뒤)의 자리가 다른 상자에 5mm 넘게 들면 그 자리는 잡을 수 없다(잡는 턱 자신은 뺀다 — 손가락이 윗면에 닿는 것은 정상).
+//   0.10.3까지는 모서리 앞 세 점(openAt)만 봐서, 손 폭(±4.5cm)의 끝이나 손가락이 옆 벽에 드는 자리도 잡았다
+export function handFits(world, g) { const H = DIM.grip && DIM.grip.hand; if (!H || !DIM.boxCollide || globalThis.OLDHANDFIT) return true; const F = gripFrame(g), pts = [];
+  for (const a of [-H.half, 0, H.half]) { for (const dn of [-0.03, -0.07, -H.palmDown]) for (const o of H.palmOut) pts.push(g.p.clone().addScaledVector(F.t, a).addScaledVector(F.u, dn).addScaledVector(F.n, o));
+    for (const b of [0.008, H.fingBack]) for (const up of H.fingUp) pts.push(g.p.clone().addScaledVector(F.t, a).addScaledVector(F.u, up).addScaledVector(F.n, -b)); }
+  for (const p of pts) for (const b of world.boxes) { if (b === g.edge.box || b.kind === 'floor') continue; if (Math.min(p.x - b.min.x, b.max.x - p.x, p.y - b.min.y, b.max.y - p.y, p.z - b.min.z, b.max.z - p.z) > 0.005) return false; }
+  return true; }
 // 팔이 그 자리에 놓일 수 있는가: 어깨가 돌아가는 방향인지, 팔이 벽·턱이나 제 몸을 지나가지 않는지
 function armCheck(S, i, sh, goal, n) {
   const B = S.rig.bones, sx = i ? -1 : 1, yaw = S.body.yaw, fwd = V(Math.sin(yaw), 0, Math.cos(yaw)), dir = goal.clone().sub(sh).normalize();
@@ -331,6 +341,8 @@ function armCheck(S, i, sh, goal, n) {
   if (rayHit(S.world, sh.clone().lerp(ik.mid, 0.2), ik.mid) < 1 || rayHit(S.world, ik.mid, ik.mid.clone().lerp(ik.end, 0.9)) < 1) return '팔이 벽·턱을 지나감';
   // 팔뚝: 어느 쪽으로 팔꿈치를 두어도 팔뚝의 줄기가 제 몸에 5mm 넘게 겹치면 그 자리에는 팔을 둘 수 없다(p3d-0.8.5. 전에는 기본 후보의 팔뚝이 엉덩이–목 선 둘레 20 × 13cm 안이거나 머리 가운데에서 11.5cm 안이면 거부했다)
   if (sd(self, 'body') > 0.005) return self.body.head ? '팔이 머리를 지나감' : '팔이 몸통을 지나감';
+  // 손목(p3d-0.10.4, 같은 틀): 고른 팔꿈치에서 팔뚝이 오는 쪽과 바라는 손의 방향 사이가 손목이 꺾이는 한계(wristMax)를 넘으면 그 자리는 이 팔로 잡지 못한다(그림은 한계에서 멈춰 손가락이 공중에 섰다)
+  if (n && DIM.boxCollide && DIM.grip && DIM.grip.wristMax && !globalThis.OLDWRIST) { const fa = ik.end.clone().sub(ik.mid).normalize(), fd = gripFrame({ n }).fd; if (fa.angleTo(fd) > DIM.grip.wristMax * Math.PI / 180 + 1e-3) return '손목이 그쪽으로 꺾이지 않음'; }
   // (위팔과 머리도 위의 self에 들어 있다: 귀 옆에 붙는 것 = 가운데 선이 머리 가운데에서 11.5cm까지는 된다)
   return '';
 }
