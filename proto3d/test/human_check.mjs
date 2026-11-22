@@ -25,12 +25,21 @@ const FING = /^(index|middle|ring|pinky|thumb)/, CONTACT = /^(hand|index|middle|
 // 정점마다 가장 큰 몫의 뼈 이름(관통을 어느 부위가 했는지 적는다)
 const vb = H.meshes.map(m => { const si = m.geometry.attributes.skinIndex, sw = m.geometry.attributes.skinWeight, out = []; for (let k = 0; k < si.count; k++) { let b = 0, w = -1; for (let j = 0; j < 4; j++) if (sw.getComponent(k, j) > w) { w = sw.getComponent(k, j); b = si.getComponent(k, j); } out.push(nm0(H.list[b])); } return out; });
 const all = [...SCENES_FOOT.map((s, i) => ['foot' + (i + 1), ...s]), ...SCENES.map((s, i) => ['reach' + (i + 1), ...s])].filter(s => !process.env.ONLY || process.env.ONLY.split(',').includes(s[0]));
-const out = { mode: clip ? 'clip' : 'proc', body: OLD ? 'old' : 'human', scenes: {} }, tot = { palm: 0, ankle: 0, gap: 0, att: [], fast: [], penBody: { d: 0 }, penContact: { d: 0 } };
+// 메시 정점의 세계 자리(p3d-0.10.1, GPT 지적): getVertexPosition은 메시의 지역 좌표다. 옛 몸은 상위 root에 몸의 x/z 이동이 있어 0.10.0의 "옛 몸 관통 0cm"는 틀린 비교였다 → 메시의 세계 행렬을 곱한다
+const worldVert = (m, j, v) => m.getVertexPosition(j, v).applyMatrix4(m.matrixWorld);
+const PART = nm => /^(hand|index|middle|ring|pinky|thumb)/.test(nm) ? 'hand' : /^(foot|ball)/.test(nm) ? 'foot' : /^(thigh|calf)/.test(nm) ? 'leg' : /^(upperarm|lowerarm|clavicle)/.test(nm) ? 'arm' : /^(Head|neck)/.test(nm) ? 'head' : 'torso';
+function penetration(world) { const out = {}, v = new THREE.Vector3(); H.meshes.forEach((m, mi) => { m.updateMatrixWorld(true); const n = m.geometry.attributes.position.count; for (let j = 0; j < n; j++) { worldVert(m, j, v);
+  for (const bx of world.boxes) { if (v.x <= bx.min.x || v.x >= bx.max.x || v.y <= bx.min.y || v.y >= bx.max.y || v.z <= bx.min.z || v.z >= bx.max.z) continue;
+    const d = Math.min(v.x - bx.min.x, bx.max.x - v.x, v.y - bx.min.y, bx.max.y - v.y, v.z - bx.min.z, bx.max.z - v.z), nm = vb[mi][j], pt = PART(nm), key = CONTACT.test(nm) ? 'contact' : pt;
+    for (const kk of new Set([key, pt])) if (d > (out[kk]?.d ?? 0)) out[kk] = { d, bone: nm, box: bx.name }; } } }); return out; }
+function centroid() { const c = new THREE.Vector3(), v = new THREE.Vector3(); let n = 0; for (const m of H.meshes) { m.updateMatrixWorld(true); const N = m.geometry.attributes.position.count; for (let j = 0; j < N; j += 7) { c.add(worldVert(m, j, v)); n++; } } return c.multiplyScalar(1 / n); }
+const PEN_EVERY = +(process.env.PEN_EVERY || 6);
+const out = { mode: clip ? 'clip' : 'proc', body: OLD ? 'old' : 'human', scenes: {} }, tot = { palm: 0, ankle: 0, gap: 0, att: [], fast: [], penBody: { d: 0 }, penContact: { d: 0 }, part: {}, coord: 0 };
 for (const [id, title, fn, assist, mode, st0] of all) {
   const world = makeWorld(), sim = makeSim(rig, world, clips); sim.reset({ pos: st0 || START, yaw: Math.PI }); sim.opt.wallRest = false; sim.opt.footAssist = !!assist;
   const inputs = [], put = (inp = {}, cmd = []) => inputs.push({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd }), rep = (n, inp, cmd) => { for (let i = 0; i < n; i++) put(inp, i ? [] : cmd); };
   fn(sim, put, rep);
-  const prev = new Map(), r = { palm: 0, ankle: 0, gap: 0, att: [], fast: [], penBody: { d: 0 }, penContact: { d: 0 } }, v = V();
+  const prev = new Map(), r = { palm: 0, ankle: 0, gap: 0, att: [], fast: [], penBody: { d: 0 }, penContact: { d: 0 }, part: {}, coord: null }, v = V();
   for (let k = 0; k < inputs.length; k++) {
     sim.step(inputs[k]); R.apply(sim.fing, sim.pron); const K = sim.climb, t = (k + 1) / 120, P = OLD ? null : humanPoints(H, CL.PALM);
     r.gap = Math.max(r.gap, R.info.maxIKGap);
@@ -40,13 +49,13 @@ for (const [id, title, fn, assist, mode, st0] of all) {
     for (const b of H.list) { const bn = nm0(b); if (FING.test(bn) || /leaf/.test(bn)) continue; const q = b.getWorldQuaternion(new THREE.Quaternion()), p = prev.get(bn); prev.set(bn, q); if (!p || k < 2) continue;
       const w = p.angleTo(q) * 180 / Math.PI * 120, L = LIMB[bn], att = L && K.on && (L[0] === 'foot' ? K.feet[L[1]].st === 'plant' : K.hands[L[1]].st === 'hold');
       if (att && w > 300) r.att.push(`${t.toFixed(3)}초 ${bn} ${Math.round(w)}°/s`); else if (w > 900) r.fast.push(`${t.toFixed(3)}초 ${bn} ${Math.round(w)}°/s`); }
-    if (k % 12 === 0) H.meshes.forEach((m, mi) => { const n = m.geometry.attributes.position.count; for (let j = 0; j < n; j++) { m.getVertexPosition(j, v);
-      for (const bx of world.boxes) { if (v.x <= bx.min.x || v.x >= bx.max.x || v.y <= bx.min.y || v.y >= bx.max.y || v.z <= bx.min.z || v.z >= bx.max.z) continue;
-        const d = Math.min(v.x - bx.min.x, bx.max.x - v.x, v.y - bx.min.y, bx.max.y - v.y, v.z - bx.min.z, bx.max.z - v.z), nm = vb[mi][j], slot = CONTACT.test(nm) ? r.penContact : r.penBody;
-        if (d > slot.d) Object.assign(slot, { d, bone: nm, box: bx.name, t: +t.toFixed(3) }); } } });
+    if (k % PEN_EVERY === 0) { const pen = penetration(world); for (const k2 of Object.keys(pen)) { const slot = k2 === 'contact' ? r.penContact : r.penBody, x = pen[k2]; if (x.d > slot.d) Object.assign(slot, { ...x, t: +t.toFixed(3) }); if (x.d > (r.part[k2]?.d ?? 0)) r.part[k2] = { ...x, t: +t.toFixed(3) }; }
+      if (k === 0) { const c = centroid(); r.coord = +Math.hypot(c.x - sim.body.pos.x, c.z - sim.body.pos.z).toFixed(3); } }
   }
   const R2 = { 제목: title, 손바닥_어긋남_mm: +(r.palm * 1000).toFixed(2), 발목_어긋남_mm: +(r.ankle * 1000).toFixed(2), IK_못_닿음_mm: +(r.gap * 1000).toFixed(2), 붙은_팔다리_300도_넘음: r.att.length, 그_목록: r.att.slice(0, 6), 뼈_900도_넘음: r.fast.length, 빠른_목록: r.fast.slice(0, 6),
     메시_관통_몸통팔다리_cm: +(r.penBody.d * 100).toFixed(1), 그때: r.penBody.bone ? `${r.penBody.t}초 ${r.penBody.bone} → ${r.penBody.box}` : '', 메시_관통_손발_cm: +(r.penContact.d * 100).toFixed(1), 그때_손발: r.penContact.bone ? `${r.penContact.t}초 ${r.penContact.bone} → ${r.penContact.box}` : '' };
+  R2.부위별_관통_cm = Object.fromEntries(Object.entries(r.part).map(([k2, x]) => [k2, `${(x.d * 100).toFixed(1)} (${x.t}초 ${x.bone} → ${x.box})`])); R2.메시_중심과_몸_원점_수평_m = r.coord;
+  for (const [k2, x] of Object.entries(r.part)) if (x.d > (tot.part[k2]?.d ?? 0)) tot.part[k2] = { ...x, id }; tot.coord = Math.max(tot.coord, r.coord ?? 0);
   out.scenes[id] = R2; tot.palm = Math.max(tot.palm, r.palm); tot.ankle = Math.max(tot.ankle, r.ankle); tot.gap = Math.max(tot.gap, r.gap); tot.att.push(...r.att.map(x => id + ' ' + x)); tot.fast.push(...r.fast.map(x => id + ' ' + x));
   for (const k of ['penBody', 'penContact']) if (r[k].d > tot[k].d) tot[k] = { ...r[k], id };
   console.log(`■ ${id} ${title.slice(0, 40)}… 손바닥 ${R2.손바닥_어긋남_mm}mm · 발목 ${R2.발목_어긋남_mm}mm · IK 못 닿음 ${R2.IK_못_닿음_mm}mm · 붙은 팔다리 300°/s 넘음 ${r.att.length} · 900°/s 넘음 ${r.fast.length} · 관통 몸 ${R2.메시_관통_몸통팔다리_cm}cm(${R2.그때}) 손발 ${R2.메시_관통_손발_cm}cm(${R2.그때_손발})`);
@@ -59,5 +68,14 @@ ok(tot.gap < 0.005, `새 몸의 팔다리가 제어 뼈대의 손목·발목에 
 ok(!tot.att.length, `새 몸의 붙은 팔다리(잡은 팔·디딘 다리)가 초속 300°를 넘지 않는다 — ${tot.att.length}번 ${tot.att.slice(0, 4).join(' · ')}`);
 console.log(`기록  새 몸의 뼈(손가락 제외)가 초속 900°를 넘은 걸음 ${tot.fast.length}번 ${tot.fast.slice(0, 4).join(' · ')}`);
 console.log(`기록  새 몸의 메시가 지형에 들어간 가장 깊은 곳: 몸통·팔다리 ${(tot.penBody.d * 100).toFixed(1)}cm(${tot.penBody.id || ''} ${tot.penBody.t ?? ''}초 ${tot.penBody.bone || ''} → ${tot.penBody.box || ''}) · 손·발 ${(tot.penContact.d * 100).toFixed(1)}cm(${tot.penContact.id || ''} ${tot.penContact.bone || ''} → ${tot.penContact.box || ''}) — 12걸음마다 정점 전부`);
-out.합계 = { 손바닥_mm: tot.palm * 1000, 발목_mm: tot.ankle * 1000, IK_mm: tot.gap * 1000, 붙은_팔다리: tot.att, 빠른_뼈: tot.fast.length, 관통_몸: tot.penBody, 관통_손발: tot.penContact };
+console.log(`기록  부위별 가장 깊은 관통(${PEN_EVERY}걸음마다 정점 전부, 세계 좌표): ` + ['torso', 'leg', 'arm', 'head', 'hand', 'foot'].map(k2 => { const x = tot.part[k2]; return `${k2} ${x ? (x.d * 100).toFixed(1) + 'cm(' + x.id + ' ' + x.t + '초 ' + x.bone + ' → ' + x.box + ')' : '0'}`; }).join(' · '));
+// 좌표 확인: 정점의 세계 자리가 몸 근처에 있는가(0.10.0처럼 지역 좌표로 재면 옛 몸은 2.65m 떨어진다)
+ok(tot.coord < 0.4, `메시 정점을 세계 좌표로 잰다: 첫 걸음의 메시 중심이 몸 원점에서 수평 ${tot.coord.toFixed(3)}m(0.4m 안)`);
+// 변환 확인(새 몸만): 새 몸 전체를 다른 부모(옮기고 돌린 것) 아래에 두고 다시 옮겨도 정점의 세계 자리가 같아야 한다
+if (!OLD) { const world = makeWorld(), sim = makeSim(rig, world, clips); sim.reset({ pos: START, yaw: Math.PI }); sim.opt.wallRest = false; for (let k = 0; k < 400; k++) sim.step({ mx: 0, mz: 0, cxSign: 1, cmd: k === 60 ? [{ type: 'hand', i: 0, p: [-0.72, 1.92, -2.84] }] : [] });
+  R.apply(sim.fing, sim.pron); const snap = () => H.meshes.flatMap(m => { m.updateMatrixWorld(true); const v = new THREE.Vector3(), o = []; for (let j = 0; j < m.geometry.attributes.position.count; j += 11) o.push(worldVert(m, j, v).clone()); return o; });
+  const a = snap(), par = new THREE.Group(); par.position.set(1.3, 0.4, -2.1); par.rotation.set(0.2, 0.9, -0.1); par.add(H.root); par.updateMatrixWorld(true); R.apply(sim.fing, sim.pron); const b = snap(); par.remove(H.root); R.apply(sim.fing, sim.pron);
+  const dmax = Math.max(...a.map((p, i) => p.distanceTo(b[i])));
+  ok(dmax < 1e-4, `새 몸을 옮기고 돌린 부모 아래에 두어도 정점의 세계 자리가 같다 — 가장 큰 차이 ${(dmax * 1000).toFixed(4)}mm`); }
+out.합계 = { 손바닥_mm: tot.palm * 1000, 발목_mm: tot.ankle * 1000, IK_mm: tot.gap * 1000, 붙은_팔다리: tot.att, 빠른_뼈: tot.fast.length, 관통_몸: tot.penBody, 관통_손발: tot.penContact, 부위별: tot.part, 좌표_확인_m: tot.coord };
 if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify(out, null, 1));

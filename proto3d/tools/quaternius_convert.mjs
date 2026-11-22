@@ -32,8 +32,10 @@ const M = meshes.map(m => { const g = m.geometry, P = g.attributes.position, N =
   const bb = new THREE.Box3().setFromBufferAttribute(new THREE.BufferAttribute(pos, 3)), lo = bb.min.toArray(), sz = bb.max.clone().sub(bb.min).toArray();
   const qp = new Uint16Array(n * 3), qn = new Int8Array(n * 3), si = new Uint8Array(n * 4), sw = new Uint8Array(n * 4);
   for (let k = 0; k < n * 3; k++) { qp[k] = Math.round((pos[k] - lo[k % 3]) / sz[k % 3] * 65535); qn[k] = Math.round(nor[k] * 127); }
-  for (let k = 0; k < n; k++) { const w = [0, 1, 2, 3].map(j => SW.getComponent(k, j)), tot = w.reduce((a, c) => a + c, 0) || 1; let acc = 0;
-    for (let j = 0; j < 4; j++) { si[k * 4 + j] = SI.getComponent(k, j); const q = j < 3 ? Math.round(w[j] / tot * 255) : 255 - acc; sw[k * 4 + j] = Math.max(0, q); acc += j < 3 ? Math.round(w[j] / tot * 255) : 0; } }
+  // 8비트로 줄일 때 남는 몫은 가장 큰 무게에 더한다(p3d-0.10.1). 0.10.0은 넷째 칸에 넣었는데, 무게가 0인 넷째 칸의 뼈 번호 0 = root라 정점이 원점 쪽으로 최대 1cm쯤 끌려갔다
+  for (let k = 0; k < n; k++) { const w = [0, 1, 2, 3].map(j => SW.getComponent(k, j)), tot = w.reduce((a, c) => a + c, 0) || 1, q = w.map(x => Math.round(x / tot * 255)), big = w.indexOf(Math.max(...w));
+    q[big] += 255 - q.reduce((a, c) => a + c, 0);
+    for (let j = 0; j < 4; j++) { si[k * 4 + j] = SI.getComponent(k, j); sw[k * 4 + j] = q[j]; } }
   const idx = g.index ? (n > 65535 ? new Uint32Array(g.index.array) : new Uint16Array(g.index.array)) : null;
   // bind 역행렬: 메시의 세계 변환을 합친 위치에 맞춘다(bind = 뼈의 세계 행렬 × 메시의 세계 변환의 역 → 합친 뒤에는 뼈의 세계 행렬의 역)
   return { name: m.name, mat: [].concat(m.material)[0].name, color: '#' + [].concat(m.material)[0].color.getHexString(), n, lo, sz, pos: b64(qp), nor: b64(qn), si: b64(si), sw: b64(sw), idx: idx ? b64(idx) : null, idx32: !!(idx && idx instanceof Uint32Array) };
