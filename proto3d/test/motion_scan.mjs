@@ -6,9 +6,11 @@
 //   ② 어떤 뼈든 초속 900°를 넘는 구간
 //   ③ 한 걸음 회전량이 바로 앞 걸음보다 12° 넘게 달라진 걸음(wall_check의 튐과 같은 잣대)
 // 사용: node test/motion_scan.mjs [JSON]   캡처 동작: MODE=clip   옛 소스: SRC=<src 폴더>   장면 고르기: ONLY=foot3,reach1   비교 스위치: OLDPOSE=1   자세 설정: VARIANT=base|rule|solve
+import { prov, provLine } from './provenance.mjs'; // 실행 출처(p3d-0.10.3) — 소스보다 먼저 불러와 설정 스위치를 켠다
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+const __P = prov(); console.log(provLine(__P));
 const HERE = path.dirname(fileURLToPath(import.meta.url)), SRC = process.env.SRC ? path.resolve(process.env.SRC) : path.resolve(HERE, '../src'), imp = f => import(pathToFileURL(path.join(SRC, f)).href);
 const THREE = await import('three');
 const { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js');
@@ -57,7 +59,7 @@ for (const [id, title, fn, assist, mode, st0] of all) {
   if (R.무릎_왕복.창) console.log(`  디딘 무릎 왕복: 0.1초 창 ${R.무릎_왕복.창}개 · ${R.무릎_왕복.가장_심한.map(j => `${j.다리} ${j.끝_초}초 경로 ${j.경로_mm}mm 순이동 ${j.순이동_mm}mm 방향 바뀜 ${j.방향_바뀜}`).join(' · ')}`);
   for (const e of R.사건) console.log(`  ${e.구간_초[0].toFixed(3)}~${e.구간_초[1].toFixed(3)}초  ${e.붙은_팔다리 ? '붙은 ' : '      '}${e.가장_빠른_뼈.padEnd(10)} 초속 ${String(e.초속_도).padStart(5)}°  [${e.손발_상태}]  ${e.그때_일}`);
 }
-if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify(out, null, 1));
+if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify({ 실행_출처: __P, ...out }, null, 1));
 // 검사(통과·실패): 디딘 다리(넓적다리·정강이)가 초속 300°를 넘는 구간이 없다. 0.9.0을 사용자에게 보낸 뒤 사용자가 영상 21초쯤에서 짚은 튐(디딘 무릎이 0.06초에 반대쪽으로 — 초속 1,620°)이 이것이다.
 //   wall_check의 "한 걸음 회전량 변화 12°" 검사는 이것을 잡지 못했다 — 빠르기가 정해진 한계로 몇 걸음에 걸쳐 오르면 걸음 사이의 변화는 작다. 빠르기 자체를 재야 한다
 { // p3d-0.10.2: 다리의 판정은 부위별 누적으로(사건의 대표 뼈가 팔이어도 같은 때의 다리 위반을 센다)

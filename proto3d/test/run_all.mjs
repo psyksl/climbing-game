@@ -1,9 +1,11 @@
 // 시험 묶음 실행기(p3d-0.10.2, GPT의 0.10.1 검토 7절 "FAIL이 상위 실행기의 실패로 연결되는지 확인"). 빌드 → 계산 시험 → 브라우저 시험을 차례로 돌리고, 하나라도 실패(종료 코드 ≠ 0)하면 이 실행기도 실패로 끝난다.
 // 알려진 실패도 실패로 센다(통과로 바꾸지 않는다). 각 시험의 FAIL 줄을 모아 보인다. 사용: node test/run_all.mjs [빠르게: QUICK=1 → 브라우저 시험 뺌]   결과 JSON: node test/run_all.mjs <JSON>
+import { prov, provLine } from './provenance.mjs'; // 실행 출처(p3d-0.10.3) — 소스보다 먼저 불러와 설정 스위치를 켠다
 import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+const __P = prov(); console.log(provLine(__P));
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SUITES = [
   ['빌드', ['build.js'], {}],
@@ -22,5 +24,5 @@ for (const [name, args, env] of SUITES) {
 }
 const bad = res.filter(r => r.종료_코드);
 console.log(`\n시험 묶음 ${res.length}개 중 실패 ${bad.length}개${bad.length ? ': ' + bad.map(r => r.시험).join(', ') : ''}`);
-if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify(res, null, 1));
+if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify({ 실행_출처: __P, 시험: res }, null, 1));
 process.exitCode = bad.length ? 1 : 0;

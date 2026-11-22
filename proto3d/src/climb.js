@@ -29,7 +29,8 @@ export const CL = {
   //   PO_W = 골반 쪽 무게 ÷ 윗몸 쪽 무게(골반·넓적다리 뿌리 0.22 : 가슴·머리·팔 0.48로 어림. 발에 붙은 다리의 나머지는 세지 않는다), PO_H = 골반에서 윗몸 무게중심까지의 높이.
   //   골반이 P만큼 가면 윗몸의 무게중심은 −PO_W × P만큼 간다(두 점의 무게를 단 평균이 물리의 기준 자리에 남는다 — 몸의 자리를 몰래 옮기지 않는다. 전신 균형을 검증한 것은 아니다)
   //   PO_SIDE = 받치는 발 쪽으로 가는 정도(발이 몸 가운데에서 벗어난 거리 × 이 값, PO_SIDE_MAX까지), PO_BACK = 깊이 접은 다리를 위해 엉덩이를 벽에서 빼는 거리(가장 클 때), PO_YAW = 발을 엇갈려 디딜 때 골반이 도는 각(가장 클 때), PO_REACH = 팔을 거의 다 펴야 닿는 손을 뻗을 때 골반이 반대쪽으로 가는 거리(가장 클 때. 윗몸이 그만큼 목표 쪽으로 간다 = 닿는 거리가 는다 → 고정 수치는 비교 측정 뒤)
-  KNEE_HYST: 6, SIDE_FACE: globalThis.SIDE_FACE ?? 1, TURN_ACC: globalThis.TURN_ACC ?? 18, // SIDE_FACE = 턱 옆면 법선의 몫(몸이 보는 쪽. 0.5로 줄여 봤으나 가속 한계와 함께 켜면 h3에서 늘어진 오른 다리가 발판 가까이 가 무릎을 빼내며 초속 464°로 디뎠다 → 1 = 그대로), TURN_ACC = 몸이 도는 빠르기의 가속 한계(rad/s²) — p3d-0.10.2 실험값
+  KNEE_HYST: 6, SH_OMEGA: 8, WRIST_MIN: 0.14, SH_AVOID: 0.20, // SH_OMEGA = 뻗는 손목이 어깨 둘레를 도는 각속도의 한계(rad/s), WRIST_MIN = 어깨–손목 최소 거리(m), SH_AVOID = 손이 가는 길이 어깨에서 떨어질 거리(m. 그보다 가까이 지나면 경유점) — p3d-0.10.3 실험값
+  SIDE_FACE: globalThis.SIDE_FACE ?? 1, TURN_ACC: globalThis.TURN_ACC ?? 18, // SIDE_FACE = 턱 옆면 법선의 몫(몸이 보는 쪽. 0.5로 줄여 봤으나 가속 한계와 함께 켜면 h3에서 늘어진 오른 다리가 발판 가까이 가 무릎을 빼내며 초속 464°로 디뎠다 → 1 = 그대로), TURN_ACC = 몸이 도는 빠르기의 가속 한계(rad/s²) — p3d-0.10.2 실험값
   // p3d-0.10.2: 디딘 무릎이 지금 쪽의 해를 두고 다른 쪽으로 넘어가는 값의 차이(1 = 1°만큼의 값). 실험값
   PO_W: 0.46, PO_H: 0.33, PO_SIDE: 0.30, PO_SIDE_MAX: 0.035, PO_BACK: 0.09, PO_YAW: 0.60, PO_REACH: 0, // PO_REACH는 0으로 둔다: 재 보니(test/reach_bound.mjs) 골반을 반대로 보내도 어깨가 목표에 가까워지지 않았다(0 ~ −1cm. 윗몸이 기울며 뻗는 어깨가 내려간다). 값은 실험용으로 남겨 둔다
   ARM_F: 0.65, LEG_F: 1.5, LEG_PERP: 0.35, MU_TOP: 0.9, MU_WALL: 1.0, COM_H: 1.0, MOM: 8,
@@ -400,6 +401,11 @@ function solvePose(S, K, T, held, dt) {
   for (const f of legs) K.knA[f.i] = x[3 + f.i];
   if (globalThis.__KT) globalThis.__KT.push({ solve: x.slice(), cost: best, ref: [R.x, R.z, R.yaw] });
 }
+// 상자가 보는 쪽(p3d-0.10.3): 다른 상자에 막히지 않은 옆면 가운데 가장 넓은 면의 바깥 법선(수평). 턱 A는 앞면(+z), 모서리 벽은 −x 면. 고른 면이 잡은 면의 법선과 반대쪽이면(뒤에서 잡음) 잡은 면을 쓴다
+const FACING = new WeakMap();
+function boxFacing(world, box, fallback) { if (FACING.has(box)) return FACING.get(box).clone(); const c = box.min.clone().add(box.max).multiplyScalar(0.5), sz = box.max.clone().sub(box.min), cand = [];
+  for (const [n, a] of [[V(1, 0, 0), sz.z * sz.y], [V(-1, 0, 0), sz.z * sz.y], [V(0, 0, 1), sz.x * sz.y], [V(0, 0, -1), sz.x * sz.y]]) { const p = c.clone().add(V(n.x * (sz.x / 2 + 0.02), 0, n.z * (sz.z / 2 + 0.02))); if (!world.boxes.some(b => b !== box && b.kind !== 'floor' && p.x > b.min.x && p.x < b.max.x && p.y > b.min.y && p.y < b.max.y && p.z > b.min.z && p.z < b.max.z)) cand.push([n, a]); }
+  const fb = fallback.clone().setY(0); cand.sort((a, b) => b[1] - a[1] || b[0].dot(fb) - a[0].dot(fb)); const f = cand.length ? cand[0][0] : fb.normalize(); if (cand.length < 2 || cand[0][1] > cand[1][1] + 1e-9) FACING.set(box, f); return f.clone(); } // 넓이가 같은 면이 둘이면(양쪽이 열린 벽) 잡은 면 쪽을 고르고 기억하지 않는다
 function legCheck(S, i, hj, ank) {
   const { ik } = legIK(S, hj, ank, S.body.yaw, i ? -1 : 1);
   return nearBox(S.world, ik.mid, 0.03) || rayHit(S.world, hj.clone().lerp(ik.mid, 0.2), ik.mid) < 1 || rayHit(S.world, ik.mid, ik.mid.clone().lerp(ik.end, 0.85)) < 1 ? '다리가 벽·턱을 지나감' : '';
@@ -508,6 +514,10 @@ function limbsStep(S, dt) {
     const rel0 = H.w.clone().sub(sh), w0 = H.w.clone(), aim = H.goal.clone(); { const dg = H.w.distanceTo(H.goal); if (H.edge && (dg > 0.05 || !globalThis.OLDHAND)) aim.addScaledVector(H.n, Math.min(0.10, dg * 0.6)); } // p3d-0.8.8: 다가가는 길의 띄움은 끝까지 이어서 줄어든다(전에는 5cm 앞에서 3cm가 한 걸음에 없어져 손이 가는 방향이 꺾였다)
     // 다른 팔을 가로지르는 길이면 그 팔뚝을 돌아가는 경유점부터 간다(p3d-0.8.6. 목표는 그대로다)
     { const yw = S.body.yaw, vi = armVia(S, H, sh, H.goal, selfShapes(S, H.i), V(Math.sin(yw), 0, Math.cos(yw)), V(Math.cos(yw), 0, -Math.sin(yw)), yw, H.i ? -1 : 1, K.on && K.T ? K.T.qC : null); H.viaOn = !!vi; if (vi) aim.copy(vi); }
+    // p3d-0.10.3(사람형 몸): 가는 길(지금 손목 → 이번 목표)이 어깨 SH_AVOID 안을 지나면 그 가장 가까운 점을 어깨에서 SH_AVOID만큼 밀어낸 자리를 경유점으로 삼는다(목표는 그대로). 손목이 어깨를 뚫고 지나가는 길이 팔꿈치를 뒤집었다(reach3)
+    // 실험(기본 끔, SHVIA=1): 이 경유점은 reach3·v6의 팔 최대 빠르기를 더 줄였지만(1,926 → 1,365°/s) 팔 교차 장면 셋을 깨뜨렸다(길이 없으면 멈춤, 막힌 뒤 다른 길, 교차 줄기)
+    if (DIM.boxCollide && globalThis.SHVIA && !H.viaOn) { const ab = aim.clone().sub(H.w), L2 = ab.lengthSq(); if (L2 > 1e-6) { const tt = clamp(sh.clone().sub(H.w).dot(ab) / L2, 0, 1), cp = H.w.clone().addScaledVector(ab, tt), off = cp.clone().sub(sh), dd = off.length();
+      if (tt > 0.02 && tt < 0.98 && dd < CL.SH_AVOID) { const yw = S.body.yaw, out = dd > 1e-3 ? off.multiplyScalar(1 / dd) : V(Math.cos(yw), 0, -Math.sin(yw)).multiplyScalar(H.i ? -1 : 1); aim.copy(sh).addScaledVector(out, CL.SH_AVOID * 1.15); H.shVia = true; } else H.shVia = false; } }
     // 손의 빠르기(p3d-0.8.8): 일정한 빠르기로 가서 딱 멈추지 않고, 떠날 때 붙고 다가가며 줄어든다(끝 = 목표, 닿지 않는 목표면 팔을 다 편 자리). 0.8.7까지는 0.1초에 초속 3.2m가 되어 그대로 턱에 닿았다(찌르듯 뻗고 굳는 모양).
     // 몸이 빨리 움직일 때(뛰는 중·떨어지는 중)는 줄이지 않는다 — 그때는 손이 움직이는 몸을 따라잡아야 한다(p3d-0.6.0의 교훈: 목표 가까이에서 느려지면 1cm 앞에서 못 잡는다). 닿았는지의 판정은 그대로다
     const dv = aim.sub(H.w), dl = dv.length();
@@ -532,7 +542,11 @@ function limbsStep(S, dt) {
     { const l2 = dv.length(); if (l2 > 1e-6) { const stp = dv.clone().multiplyScalar(Math.min(selfTouch || armTouch ? dl / l2 : 1, H.sp * dt / l2));
         // 팔이 다 펴지는 끝에서는 펴지는 빠르기를 줄인다(p3d-0.8.8): 팔 길이의 끝에 초속 3m로 닿으면 팔꿈치가 한 걸음에 펴지며 팔뚝이 17~24° 튀었다(IK는 다 펴질 때 팔꿈치 각이 가장 빨리 변한다). 어깨에서 멀어지는 몫만 줄이고 옆으로 가는 몫은 그대로다
         if (!globalThis.OLDHAND) { const r0v = H.w.clone().sub(sh), L0 = r0v.length(); if (L0 > 0.3 * CL.ARM) { const ur = r0v.multiplyScalar(1 / L0), vr = stp.dot(ur), lim = (Math.sqrt(2 * CL.EXT_DEC * Math.max(0, CL.ARM - L0)) + 0.25) * dt; if (vr > lim) stp.addScaledVector(ur, lim - vr); } }
+        // p3d-0.10.3(사람형 몸): 어깨 둘레를 도는 빠르기의 한계(어깨 관절의 각속도 SH_OMEGA). 손목이 어깨 가까이를 지날 때 같은 손 빠르기로도 어깨→손목 축이 한 걸음에 43° 돌아 팔꿈치가 뒤집혔다(reach3, 팔뚝 초속 3,002°). 어깨에서 먼 손(보통 뻗기)에는 걸리지 않는다
+        if (DIM.boxCollide && !globalThis.NOSHOMEGA && !globalThis.NOSHOM) { const r0v = H.w.clone().sub(sh), L0 = r0v.length(); if (L0 > 1e-4) { const ur = r0v.multiplyScalar(1 / L0), tg = stp.clone().addScaledVector(ur, -stp.dot(ur)), mx = CL.SH_OMEGA * Math.max(L0, CL.WRIST_MIN) * dt; if (tg.length() > mx) stp.addScaledVector(tg, mx / tg.length() - 1); } }
         H.w.add(stp); } }
+    // p3d-0.10.3(사람형 몸, 실험·기본 끔 WMIN=1 — 교차 장면의 팔 줄기 시험을 깨뜨려 기본에서 뺐다): 손목은 어깨에서 WRIST_MIN보다 가까이 가지 않는다(팔을 다 접어도 손목은 어깨에서 14cm쯤 — 위팔·팔뚝 27cm, 팔꿈치 가장 작은 각 약 30°). 0.10.2까지는 뻗는 손목의 길이 어깨 3.5cm 안을 지났다(reach3)
+    if (DIM.boxCollide && globalThis.WMIN) { const d0 = H.w.clone().sub(sh), L0 = d0.length(); if (L0 < CL.WRIST_MIN) H.w.copy(sh).addScaledVector(L0 > 1e-4 ? d0.multiplyScalar(1 / L0) : fwdW.clone(), CL.WRIST_MIN); }
     if (SB) for (let it = 0; it < 2; it++) { const hh = selfHits(SB, H.w, RW, false, RW, RW, hn); keepN(hh); if (!hh.body && !hh.arm) break; if (hh.body) { H.w.addScaledVector(hh.body.n, Math.min(hh.body.d, 0.02 + shMv)); selfTouch = true; } if (hh.arm) { H.w.addScaledVector(hh.arm.n, Math.min(hh.arm.d, 0.02 + shMv)); armTouch = true; } }
     // p3d-0.10.1(사람형 몸): 뻗는 손목이 머리에 닿아 있는가 — 머리가 비켜 준다(아래 K.hg). 손을 얼굴 앞의 턱에 모으는 자세에서 새 몸(머리 반지름 11.5cm)은 손목이 2~3cm 앞에서 머리에 막혀 되돌려 잡지 못했다
     H.headTouch = null; if (DIM.boxCollide && SB && SB.head) { const dh = H.w.distanceTo(SB.head.c) - SB.head.r - RW - 0.01; if (dh < 0) H.headTouch = { d: -dh, n: H.w.clone().sub(SB.head.c).normalize() }; }
@@ -766,7 +780,9 @@ export function stepClimb(S, inp, dt) {
   const held = K.hands.filter(h => h.st === 'hold'), planted = K.feet.filter(f => f.st === 'plant');
   // 몸은 잡은 턱 쪽을 본다
   // p3d-0.10.2(새 규칙): 턱의 옆면(끝)을 잡으면 그 법선이 벽과 나란해 몸이 45°를 초속 200°로 가속·감속 없이 돌았다(h3·m1·m3·m5). 옆면의 몫을 SIDE_FACE로 줄이고, 도는 빠르기에 가속 한계(TURN_ACC)를 둔다 — 최대 빠르기(TURN)는 그대로. 실험값
-  const nr = K.post !== 'base' && DIM.boxCollide, nW = V(); for (const h of held) nW.addScaledVector(h.n, nr && Math.abs(h.n.y) < 0.5 && Math.abs(h.n.x) > 0.7 ? CL.SIDE_FACE : 1);
+  // p3d-0.10.3(새 규칙, GPT의 0.10.2 검토 2번 "손목 방향과 몸 전체 방향을 분리"): 몸이 보는 쪽은 잡은 **면**의 법선이 아니라 그 턱이 붙은 **벽이 보는 쪽**(boxFacing: 상자의 열린 옆면 가운데 가장 넓은 것)으로 정한다.
+  //   같은 벽의 얇은 턱 끝(옆면)을 잡으면 몸은 돌지 않고 손목만 그 면을 따른다(그림). 다른 벽(모서리 벽 등)에 있는 잡을 곳이면 그 벽 쪽으로 돈다. 0.10.2까지는 옆면 법선을 평균해 몸이 45° 돌았다. 비교: YAWMODE=face(0.10.2)
+  const nr = K.post !== 'base' && DIM.boxCollide, yawWall = nr && globalThis.YAWMODE !== 'face', nW = V(); for (const h of held) { if (yawWall && h.edge) nW.add(boxFacing(S.world, h.edge.box, h.n)); else nW.addScaledVector(h.n, nr && Math.abs(h.n.y) < 0.5 && Math.abs(h.n.x) > 0.7 ? CL.SIDE_FACE : 1); }
   if (nW.lengthSq() > 0.01) { nW.normalize(); const d0 = Math.atan2(-nW.x, -nW.z) - b.yaw, d = Math.atan2(Math.sin(d0), Math.cos(d0));
     if (nr) { const want = clamp(d * 8, -CL.TURN, CL.TURN), w0 = K.yawW || 0; K.yawW = w0 + clamp(want - w0, -CL.TURN_ACC * dt, CL.TURN_ACC * dt); b.yaw += clamp(K.yawW * dt, -Math.abs(d), Math.abs(d)); }
     else b.yaw += clamp(d, -CL.TURN * dt, CL.TURN * dt); } else K.yawW = 0;
@@ -1092,10 +1108,11 @@ function reachArm(S, s, sh, target, yaw, sx, qC, want = null, tb = null) {
       if (ang > 0.35 && ax.lengthSq() > 1e-8) { ax.normalize(); const arc = (sg, tot) => { let d = 0; for (let a = 0.2; a < tot; a += 0.2) { const h = at(q.clone().applyAxisAngle(ax, sg * a)); if (h) d = Math.max(d, h.d); } return d; }, dS = arc(1, ang);
         if (dS > 0.004 && arc(-1, 2 * Math.PI - ang) < dS) { go = q.clone().applyAxisAngle(ax, -1.2); far = true; } } } }
   const pole = bendDir(S, 'el' + s, sh, target, go, hit0 || want || far ? 23 : 7, false, true), ik = twoBone(sh, target, DIM.upperArm, DIM.foreArm, pole);
+  if (globalThis.__AT) globalThis.__AT.push({ s, wp: wp.toArray(), go: go.toArray(), far, hit0: hit0 ? +hit0.d.toFixed(4) : 0, want: !!want, rate: hit0 || want || far ? 23 : 7 });
   return { pole, ik, hit: armHit(S.world, sh, ik, tb), self: armSelf(B, ik, sh), want: wp };
 }
 // 시험·진단용(test/self_diag.mjs): 게임 코드에서는 쓰지 않는다
-export const _dbg = { armHit: (...a) => armHit(...a), armIK: (...a) => armIK(...a), armSelf: (...a) => armSelf(...a), selfHits: (...a) => selfHits(...a), ARM_SQ, selfShapes: (...a) => selfShapes(...a), heldPole: (...a) => heldPole(...a) };
+export const _dbg = { boxFacing: (...a) => boxFacing(...a), armHit: (...a) => armHit(...a), armIK: (...a) => armIK(...a), armSelf: (...a) => armSelf(...a), selfHits: (...a) => selfHits(...a), ARM_SQ, selfShapes: (...a) => selfShapes(...a), heldPole: (...a) => heldPole(...a) };
 // 굽는 쪽의 상태를 바꾸지 않고 계산만 해 본다(물리 쪽 검사용. 상태는 그림을 확정할 때만 나아간다)
 function dryBend(S, key, f) { const PS = S.poleS || (S.poleS = {}), a = PS[key] ? PS[key].clone() : null, b = PS[key + 'p'] ? PS[key + 'p'].clone() : null, w = PS[key + 'w'], r = f(); if (a) PS[key] = a; else delete PS[key]; if (b) PS[key + 'p'] = b; else delete PS[key + 'p']; PS[key + 'w'] = w; return r; }
 function poseArm(S, s, sh, target, yaw, sx, grip, held = !!grip, anchor = null, reach = false, tb = null) {
@@ -1121,7 +1138,7 @@ export function poseClimb(S) {
   for (const F of K.feet) {
     const hj = T.hj[F.i], tgt = F.st === 'plant' ? F.ank : F.a, want = legIK(S, hj, tgt, b.yaw, F.i ? -1 : 1, F.st !== 'free', true).pole;
     // 디딘 다리의 무릎이 도는 빠르기(p3d-0.9.0 고침): 몸통 자세의 층을 켠 채 디딘 다리는 초속 3.5라디안(200°)까지, 벽·턱에 2cm 안으로 닿았을 때도 8라디안까지. 0.8.8까지는 7 / 26이었다 — 26은 무릎을 0.06초에 반대쪽으로 돌릴 수 있다
-    const pl0 = F.st === 'plant' && poseOn(K), r0 = pl0 ? 3.5 : 7, r1 = pl0 ? (K.post !== 'base' && DIM.boxCollide ? (globalThis.KNEE_R1 ?? 5) : 8) : 26; // p3d-0.10.2(새 규칙): 디딘 다리의 빼내기 5rad/s(286°/s). 8이면 발판 옆을 지나는 디딘 무릎이 초속 458°로 돌았다(h3, 손 접촉 틀을 넣은 뒤)
+    const pl0 = F.st === 'plant' && poseOn(K), r0 = pl0 ? 3.5 : 7, r1 = pl0 ? (K.post !== 'base' && DIM.boxCollide ? (globalThis.KNEE_R1 ?? 4.5) : 8) : 26; // p3d-0.10.2(새 규칙): 디딘 다리의 빼내기 4.5rad/s(258°/s. p3d-0.10.3에서 5 → 4.5: 팔의 길을 고친 뒤 v7에서 늘어진 오른발이 무릎을 벽 안에 둔 채 디뎌 304°/s). 8이면 발판 옆을 지나는 디딘 무릎이 초속 458°로 돌았다(h3, 손 접촉 틀을 넣은 뒤)
     const capK = poseOn(K) && K.post !== 'base' && DIM.boxCollide; // p3d-0.10.2: 새 규칙에서는 실제 도는 각도에도 같은 한계(bendDir의 cap). 발이 떨어진 걸음에 늘어진 다리의 규칙으로 바뀌며 무릎이 한 걸음에 43mm(초속 802°) 튀었다(m3)
     const PSk = S.poleS || (S.poleS = {}), keep = capK ? [PSk['kn' + F.s] && PSk['kn' + F.s].clone(), PSk['kn' + F.s + 'p'] && PSk['kn' + F.s + 'p'].clone()] : null; // 빼내기로 다시 부를 때 같은 앞 걸음에서 시작하게(p3d-0.10.2: 두 번 부르면 한 걸음에 3.5 + 5rad/s를 돌아 디딘 다리가 초속 438°로 돌았다)
     let pole = bendDir(S, 'kn' + F.s, hj, tgt, want, r0, false, false, capK ? r0 : 0), ik = twoBone(hj, tgt, DIM.thigh, DIM.shin, pole), lim = F.st === 'plant' ? 0 : 14;

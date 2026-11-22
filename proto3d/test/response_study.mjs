@@ -3,9 +3,11 @@
 // 재는 것(장면마다): ① W를 누른 뒤 몸이 5mm 오를 때까지 ② W를 뗀 뒤 몸의 빠르기가 초속 2cm 아래로 0.1초 머물 때까지 ③ 발 명령 → 디딤 ④ 손 명령 → 잡음/거부
 //   ⑤ 골반 층(K.po)이 목표(K.poT)에서 떨어진 거리의 평균·최대(벽 문맥) ⑥ 발판에 디딘 뒤 골반 층이 목표 1cm 안에 들어올 때까지 ⑦ 골반 층이 움직인 가장 빠른 빠르기
 // 사용: node test/response_study.mjs [JSON]   장면: ONLY=h1,h3
+import { prov, provLine } from './provenance.mjs'; // 실행 출처(p3d-0.10.3) — 소스보다 먼저 불러와 설정 스위치를 켠다
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+const __P = prov(); console.log(provLine(__P));
 const HERE = path.dirname(fileURLToPath(import.meta.url)), SRC = path.resolve(HERE, '../src'), imp = f => import(pathToFileURL(path.join(SRC, f)).href);
 const { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js');
 const { SCENES_H, SCENES_HV, START } = await import('./scenes_foot.mjs');
@@ -37,4 +39,4 @@ for (const [id, title, fn, assist, , st0] of all) {
 globalThis.PO_FAST = 0;
 for (const [id, R] of Object.entries(out)) { console.log(`\n■ ${id} ${R.제목.slice(0, 60)}`);
   for (const vn of VARS.map(v => v[0])) { const x = R[vn]; console.log(`  ${vn.padEnd(9)} W→오름 ${x.W_누른_뒤_몸이_5mm_오르기_초} · W뗀→정착 ${x.W_뗀_뒤_정착_초} · 골반층 뒤처짐 평균 ${x.골반층_목표와_거리_평균_cm}cm 최대 ${x.골반층_목표와_거리_최대_cm}cm · 디딘 뒤 1cm 안 ${x.발판에_디딘_뒤_골반층이_목표_1cm_안_초}초 · 골반층 최대 ${x.골반층_가장_빠른_빠르기_cm_s}cm/s · ${x.명령_결과.join(', ')}`); } }
-if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify(out, null, 1));
+if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify({ 실행_출처: __P, ...out }, null, 1));

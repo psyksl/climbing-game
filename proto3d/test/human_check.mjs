@@ -8,9 +8,11 @@
 // 사용: node test/human_check.mjs [JSON]   캡처 동작: MODE=clip   장면 고르기: ONLY=foot2,reach2
 // 자세 규칙 비교: VARIANT=base|rule|ref(사람형 몸의 자세 규칙 — rule이 기본)
 // 옛 몸과 견주기: BODY=old — 옛 몸의 메시(제어 뼈대에 바로 붙은 것)로 ③④만 잰다(①②는 옮기는 단계가 없어 0)
+import { prov, provLine } from './provenance.mjs'; // 실행 출처(p3d-0.10.3) — 소스보다 먼저 불러와 설정 스위치를 켠다
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+const __P = prov(); console.log(provLine(__P));
 const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pathToFileURL(path.resolve(HERE, '../src', f)).href);
 const THREE = await import('three');
 const { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { CL } = await imp('climb.js'), { buildHuman, makeRetarget, humanPoints } = await imp('human.js');
@@ -92,5 +94,5 @@ if (!OLD) { const world = makeWorld(), sim = makeSim(rig, world, clips); sim.res
   const dmax = Math.max(...a.map((p, i) => p.distanceTo(b[i])));
   ok(dmax < 1e-4, `새 몸을 옮기고 돌린 부모 아래에 두어도 정점의 세계 자리가 같다 — 가장 큰 차이 ${(dmax * 1000).toFixed(4)}mm`); }
 out.합계 = { 손바닥_mm: tot.palm * 1000, 발목_mm: tot.ankle * 1000, IK_mm: tot.gap * 1000, 붙은_팔다리: tot.att, 빠른_뼈: tot.fast.length, 관통_몸: tot.penBody, 관통_손발: tot.penContact, 부위별: tot.part, 좌표_확인_m: tot.coord };
-if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify(out, null, 1));
+if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify({ 실행_출처: __P, ...out }, null, 1));
 if (nFail) process.exitCode = 1;

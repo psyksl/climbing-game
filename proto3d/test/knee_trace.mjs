@@ -1,8 +1,10 @@
 // 디딘 다리 무릎의 걸음별 기록(p3d-0.10.2, GPT의 0.10.1 검토 1번): 후보 각·값·지금 쪽·극 방향·하중·골반 목표/실제·충돌 빼내기를 같은 120Hz 기록으로 잇는다. 진단 — 통과·실패 없음. 스크립트 입력(사람 손 아님).
 // 사용: node test/knee_trace.mjs <장면 id> <시작초> <끝초> [다리 L|R] [JSON]   비교: VARIANT=base|rule   옛 소스: SRC=<src>
+import { prov, provLine } from './provenance.mjs'; // 실행 출처(p3d-0.10.3) — 소스보다 먼저 불러와 설정 스위치를 켠다
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+const __P = prov(); console.log(provLine(__P));
 const HERE = path.dirname(fileURLToPath(import.meta.url)), SRC = process.env.SRC ? path.resolve(process.env.SRC) : path.resolve(HERE, '../src'), imp = f => import(pathToFileURL(path.join(SRC, f)).href);
 const THREE = await import('three');
 const { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js');
@@ -35,4 +37,4 @@ for (let k = 0; k < inputs.length; k++) {
 }
 console.log(`■ ${id} ${title.slice(0, 40)} [${process.env.VARIANT || '기본'}] ${legS} ${t0}~${t1}s`);
 for (const x of rows) console.log(`${x.t.toFixed(4)} ${x.발[0]} 하중${x.하중} 무릎${String(x.무릎_초속도).padStart(6)}°/s 방향${String(x.방향_초속도).padStart(6)} 걸음${String(x.무릎_한걸음_mm).padStart(5)}mm 고른${x.고른각} 바람${x.바라는각} 지금${x.지금각} 값${x.값} 여유${x.여유_mm} | ${x.차선} | 빼${x.빼내기 ? 1 : 0} 골반${x.골반} 목표${x.골반_목표} 고관절${x.고관절} ${x.사건}`);
-if (outF) fs.writeFileSync(outF, JSON.stringify({ id, title, variant: process.env.VARIANT || '기본', rows }, null, 1));
+if (outF) fs.writeFileSync(outF, JSON.stringify({ 실행_출처: __P, id, title, variant: process.env.VARIANT || '기본', rows }, null, 1));

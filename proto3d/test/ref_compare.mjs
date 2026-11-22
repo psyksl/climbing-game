@@ -2,9 +2,11 @@
 // 순간: ① 발을 보내기 직전 ② 발이 발판 모서리를 넘는 순간 ③ 디딘 순간 ④ W로 올라가는 중간 ⑤ 다음 손을 보내는 순간 ⑥ 잡음/거부. 그 밖에 벽 문맥의 6걸음마다 차이의 평균.
 // 참고 값 = 지금 손발 배치에 가장 가까운 참고 장면 8개의 무게 평균(사람의 정답이 아니라 이 동작 묶음의 값). 색인이 없으면(assets_local/ref_index.json) 우리 값만 적는다.
 // 사용: node test/ref_compare.mjs [JSON]   비교 설정: VARIANT=base|rule|ref (기본 = 지금 설정)   옛 소스: SRC=<src>
+import { prov, provLine } from './provenance.mjs'; // 실행 출처(p3d-0.10.3) — 소스보다 먼저 불러와 설정 스위치를 켠다
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+const __P = prov(); console.log(provLine(__P));
 const HERE = path.dirname(fileURLToPath(import.meta.url)), SRC = process.env.SRC ? path.resolve(process.env.SRC) : path.resolve(HERE, '../src'), imp = f => import(pathToFileURL(path.join(SRC, f)).href);
 const THREE = await import('three');
 const { buildCharacter, DIM } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { CL } = await imp('climb.js');
@@ -47,4 +49,4 @@ for (const [id, title, fn, assist, mode, st0] of all) {
   for (const r of rows) console.log(`  ${r.순간.padEnd(16)} 우리 골반 ${r.우리.골반.join('/')} 가슴 ${r.우리.가슴.join('/')} 무릎 ${r.우리.무릎.join('/')} 팔꿈치 ${r.우리.팔꿈치.join('/')}` + (r.참고 ? `\n  ${''.padEnd(16)} 참고 골반 ${r.참고.골반.join('/')} 가슴 ${r.참고.가슴.join('/')} 무릎 ${r.참고.무릎.join('/')} 팔꿈치 ${r.참고.팔꿈치.join('/')} (가장 가까운 ${r.참고.가장_가까운_거리_m}m)` : ''));
   if (avg) console.log(`  참고와의 차이(벽 문맥 6걸음마다 ${diff.n}표본의 평균, 도): ${Object.entries(avg).map(([k, v]) => `${k} ${v}`).join(' · ')}`);
 }
-if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify(out, null, 1));
+if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify({ 실행_출처: __P, ...out }, null, 1));

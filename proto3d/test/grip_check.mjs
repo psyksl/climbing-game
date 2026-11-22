@@ -4,9 +4,11 @@
 //   손바닥: 손목→가운뎃손가락 첫 마디의 가운데 점이 턱 앞면에서 떨어진 거리 · 손 메시(손·손가락 정점)가 턱·벽에 든 가장 깊은 곳 · 팔뚝 메시가 든 곳
 //   물리: 어깨 → 잡는 손목 자리(anchor) 거리 ÷ 팔 길이, 잡음이 이어지는가
 // 사용: node test/grip_check.mjs [JSON]   장면: ONLY=h1,h5   자세 설정: VARIANT=   옛 소스: SRC=
+import { prov, provLine } from './provenance.mjs'; // 실행 출처(p3d-0.10.3) — 소스보다 먼저 불러와 설정 스위치를 켠다
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+const __P = prov(); console.log(provLine(__P));
 const HERE = path.dirname(fileURLToPath(import.meta.url)), SRC = process.env.SRC ? path.resolve(process.env.SRC) : path.resolve(HERE, '../src'), imp = f => import(pathToFileURL(path.join(SRC, f)).href);
 const THREE = await import('three');
 const { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { CL } = await imp('climb.js'), { buildHuman, makeRetarget } = await imp('human.js');
@@ -21,10 +23,11 @@ function handPen(world, h) { const re = new RegExp(`^(hand|index|middle|ring|pin
     for (const bx of world.boxes) { if (bx.kind === 'floor') continue; const d = inside(v, bx); if (d > 0) { if (isH && d > dH) { dH = d; bH = nm + '→' + bx.name; } if (isA && d > dA) dA = d; } } } }); return { dH, dA, bH }; }
 function measure(sim, world, i) { const K = sim.climb, Hd = K.hands[i], h = i ? 'r' : 'l', bx = Hd.edge ? Hd.edge.box : null; if (!bx) return null;
   const n = Hd.n.clone().setY(0).normalize(), top = bx.max.y, front = V().copy(Hd.grip).setY(0); // 앞면의 자리: 잡는 점(모서리)
+  // p3d-0.10.3: 윗면의 x·z 범위를 모두 본다(GPT 지적 — 0.10.2는 x만 봐서 모서리·옆면 쪽에서 윗면 밖 정점을 셀 수 있었다)
   // 손가락의 덮음은 메시로 잰다(p3d-0.10.2): 끝 마디(03)·가운데 마디(02) 정점 가운데 윗면 위(앞 모서리에서 5mm 넘게 안쪽)에 있는 것의 윗면까지 가장 가까운 거리. −3~+4mm면 "덮음"(닿음). 뼈 반지름을 가정하지 않는다
   const fingers = FING.map(f => { const re = new RegExp(`^${f}_0[23]_${h}$`), v = V(); let gap = 9, behind = -9;
     H.meshes.forEach((m, mi) => { const N = m.geometry.attributes.position.count; for (let j = 0; j < N; j++) { if (!re.test(vb[mi][j])) continue; m.getVertexPosition(j, v).applyMatrix4(m.matrixWorld); const bh = -v.clone().sub(Hd.grip).dot(n);
-      if (bh > 0.005 && v.x > bx.min.x - 0.002 && v.x < bx.max.x + 0.002) { const g = v.y - top; if (g < gap) { gap = g; behind = bh; } } } });
+      if (bh > 0.005 && v.x > bx.min.x - 0.002 && v.x < bx.max.x + 0.002 && v.z > bx.min.z - 0.002 && v.z < bx.max.z + 0.002) { const g = v.y - top; if (g < gap) { gap = g; behind = bh; } } } });
     return { f, gap, behind, over: gap < 9, wrap: gap > -0.003 && gap < 0.004 }; });
   const w = wp(`hand_${h}`), m1 = wp(`middle_01_${h}`), palmC = w.clone().lerp(m1, 0.5), palmOut = palmC.clone().sub(Hd.grip).dot(n);
   const pen = handPen(world, h), sh = K.T ? K.T.sh[i] : null, reach = sh ? sh.distanceTo(Hd.goal) / CL.ARM : null;
@@ -47,4 +50,4 @@ for (const [id, title, fn, assist, , st0] of all) {
   console.log(`\n■ ${id} ${title.slice(0, 50)} [${out.variant} · ${out.src}]`);
   for (const r of rows) console.log(`  ${String(r.걸음초).padEnd(6)} ${r.손} ${r.순간.padEnd(14)} ${r.상태} 세움${r.세움} 덮음 ${r.덮은_손가락}/4 [${r.손가락}] 손바닥↔앞면 ${r.손바닥_가운데_앞면에서_mm}mm 첫마디↔윗면 ${r.첫마디_윗면에서_mm}mm 손관통 ${r.손_관통_mm}mm 팔뚝관통 ${r.팔뚝_관통_mm}mm 팔길이비 ${r.어깨_손목_팔길이비} 손목(모서리 아래 ${r.손목_모서리_아래_mm}·앞 ${r.손목_앞면_앞_mm})`);
 }
-if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify(out, null, 1));
+if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify({ 실행_출처: __P, ...out }, null, 1));

@@ -5,9 +5,11 @@
 // 잰 값(어깨 둘레 삼각형: 쇄골·위팔·가슴 뼈의 무게가 섞인 정점과 그 이웃): 넓이가 쉬는 자세의 35% 아래로 줄어든 삼각형(찌그러짐), 법선이 뒤집힌 삼각형(접힘), 가장 작은 넓이 비.
 //   이 수치는 개발 쪽 진단값이며 그림의 품질 판정이 아니다(사람이 보기에 구겨져 보이는지는 그림으로 따로 본다).
 // 무게 편집(국소): 어깨 둘레 정점의 쇄골·위팔·가슴 무게를 메시 이웃의 평균 쪽으로 몇 번 끌어온다(합은 그대로, 다른 뼈의 무게는 건드리지 않음). 사용: node test/shoulder_check.mjs [JSON]   반복 수: SMOOTH=3
+import { prov, provLine } from './provenance.mjs'; // 실행 출처(p3d-0.10.3) — 소스보다 먼저 불러와 설정 스위치를 켠다
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+const __P = prov(); console.log(provLine(__P));
 const HERE = path.dirname(fileURLToPath(import.meta.url)), SRC = path.resolve(HERE, '../src'), imp = f => import(pathToFileURL(path.join(SRC, f)).href);
 const THREE = await import('three');
 const { buildHuman, makeRetarget, smoothShoulder } = await imp('human.js'), { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js');
@@ -41,4 +43,4 @@ async function run(label, H) { const R = region(H); for (const b of H.list) b.qu
       const s = score(bind, snap(R), domRot(H, R)); (out.장면[label] = out.장면[label] || {})[`${id} ${t}초`] = s; console.log(`  R ${id} ${t}초`.padEnd(16) + ` 찌그러짐 ${String(s.찌그러짐).padStart(3)} · 접힘 ${String(s.접힘).padStart(3)} · 가장 작은 넓이비 ${s.가장_작은_넓이비}`); } } }
 await run('지금 무게', buildHuman());
 if (smoothShoulder) { const H2 = buildHuman(); smoothShoulder(H2, +(process.env.SMOOTH || 3)); await run(`W 무게 편집(어깨 둘레 이웃 평균 ${process.env.SMOOTH || 3}번)`, H2); }
-if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify(out, null, 1));
+if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify({ 실행_출처: __P, ...out }, null, 1));
