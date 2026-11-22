@@ -276,6 +276,8 @@ function armHit(world, sh, ik, tb = null, extra = 0) {
 // 손이 가는 길(p3d-0.10.4): 한 경유점(목표 면의 바깥 10cm)으로 막히면, 지금 잡은 면의 바깥 + 목표 면의 바깥 쪽으로 더 멀리(10 · 16 · 22cm) 돌아가는 길도 본다 — 같은 턱의 앞면을 잡은 손을 그 턱의 끝(옆면)으로 옮길 때
 //   곧은 길이 턱 모서리를 가로질러 "길이 막힘"으로 거부됐다(다른 벽 시험 지형). 실제 손은 목표 쪽 띄움과 지형 미끄러짐으로 돌아간다(limbsStep). 모두 막히면 막힘
 function handPathBlocked(world, H, goal, g) { if (!pathBlocked(world, H.w, viaOf(H.w, goal, g.n, 0.10), goal)) return false; if (globalThis.OLDHANDPATH) return true;
+  // 다른 길을 찾는 것은 목표 턱이나 지금 잡은 턱 자신의 모서리에 막혔을 때만이다(그 두 턱을 빼면 곧은 길이 열릴 때). 손과 턱 사이의 다른 판·벽에 막히면 그대로 막힘
+  { const hb = H.st === 'hold' && H.edge ? H.edge.box : null, w2 = { boxes: world.boxes.filter(b => b !== g.edge.box && b !== hb) }; if (pathBlocked(w2, H.w, viaOf(H.w, goal, g.n, 0.10), goal)) return true; }
   const n2 = g.n.clone(); if (H.st === 'hold' && H.n) n2.add(H.n); if (n2.lengthSq() < 1e-6) return true; n2.normalize();
   for (const lift of [0.10, 0.16, 0.22]) if (!pathBlocked(world, H.w, viaOf(H.w, goal, n2, lift), goal)) return false;
   // 목표 면의 바깥 12 · 20cm 자리를 거쳐 가는 꺾인 길(다른 턱의 끝 옆면으로 — 가운데 경유점은 두 자리의 가운데라 볼록한 모서리를 돌아가지 못한다)
@@ -621,11 +623,11 @@ function limbsStep(S, dt) {
     //   묶인 동안에도 막힘의 시간은 그대로 센다(거부 까닭과 때는 같다). 취소·다른 목표·놓기는 바로 듣는다(목표가 바뀌면 풀린다)
     //   다른 팔(팔꿈치·손목)이 묶은 때보다 1cm 넘게 움직였으면 푼다. 묶인 동안의 막힘 종류(지형·제 몸·다른 팔)는 묶은 때의 것으로 센다
     if (!globalThis.NOLOCK) { const blockedNow = H.blockT > 0 || H.selfBlock > 0 || H.armCross > 0, sig = K.hands.map(h => h.st + (h.st === 'hold' && h.edge ? h.edge.box.name : '')).join('/') + '|' + K.feet.map(f => f.st + (f.box ? f.box.name : '')).join('/'), gd = H.w.distanceTo(H.goal);
-      const os = H.i ? 'L' : 'R', oEl = worldPos(S.rig.bones[`foreArm.${os}`]), oWr = worldPos(S.rig.bones[`hand.${os}`]), swv = false;
+      const os = H.i ? 'L' : 'R', oEl = worldPos(S.rig.bones[`foreArm.${os}`]), oWr = worldPos(S.rig.bones[`hand.${os}`]), swv = ((S.poleS && S.poleS['el' + os + 'w']) || 0) > 0.5; // 다른 팔이 자리를 내 주는 중(그 팔꿈치가 도는 중)이면 묶지 않는다
       if (H.lock) { const L = H.lock; if (L.goal.distanceTo(H.goal) > 0.01 || S.body.pos.distanceTo(L.body) > 0.015 || Math.abs(S.body.yaw - L.yaw) > 0.05 || sig !== L.sig || swv || oEl.distanceTo(L.oEl) > 0.01 || oWr.distanceTo(L.oWr) > 0.01) { H.lock = null; H.lockN = 0; H.lockBest = gd; H.lockBlk = 0; H.unlocks = (H.unlocks || 0) + 1; }
         else { H.w.copy(sh).add(L.rel); H.poleWant = L.pole.clone(); const k = L.kind; H.armBlock = k.terr; H.blockT = k.terr ? lk0.bt + dt : 0; H.selfBlock = k.self ? lk0.sb + dt : 0; H.armCross = k.arm ? lk0.ac + dt : 0; H.selfTot = lk0.st + (k.self ? dt : 0); H.armTot = lk0.at + (k.arm ? dt : 0); } }
       // 나아감은 가장 가까웠던 거리로 잰다(막힌 손은 걸음마다 1~2cm 오가며 "조금 나아갔다"를 되풀이했다 — reach3). 지난 0.1초 가운데 절반 넘게 막혀 있었어야 묶는다
-      if (!H.lock) { if (H.lockBest === undefined || gd < H.lockBest - 0.003) { H.lockN = 0; H.lockBest = gd; H.lockBlk = 0; } else { H.lockN = (H.lockN || 0) + 1; if (blockedNow) H.lockBlk = (H.lockBlk || 0) + 1; }
+      if (!H.lock) { if (H.lockBest === undefined || gd < H.lockBest - 0.003 || swv) { H.lockN = 0; H.lockBest = gd; H.lockBlk = 0; } else { H.lockN = (H.lockN || 0) + 1; if (blockedNow) H.lockBlk = (H.lockBlk || 0) + 1; }
         if (H.lockN >= 12 && H.lockBlk >= 6 && S.poleS && S.poleS['el' + H.s]) { H.lock = { rel: H.w.clone().sub(sh), pole: S.poleS['el' + H.s].clone(), goal: H.goal.clone(), body: S.body.pos.clone(), yaw: S.body.yaw, sig, oEl, oWr, kind: { terr: H.blockT > 0, self: H.selfBlock > 0, arm: H.armCross > 0 } }; H.poleWant = H.lock.pole.clone(); } } }
     H.swivel = !H.lock && H.armBlock && ((S.poleS && S.poleS['el' + H.s + 'w']) || 0) > 0.5;
     if (H.drag) continue;
