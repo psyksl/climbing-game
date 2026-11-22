@@ -9,6 +9,15 @@
 
 > 2026-11-20: GPT의 p3d-0.7.0 품질 검토를 확인하고 다른 게임·문헌·기법을 조사했다 → `docs/품질_검토_p3d-0.7.0.md`. 게임 코드는 바뀌지 않았다(진단 도구 `test/pose_freeze.mjs`만 더함).
 
+## p3d-0.10.4 — 안전한 팔 경로, 다른 벽 시험 지형, 모서리 틀, 체중 싣기 측정 (2026-11-23)
+
+GPT의 0.10.3 검토 반영. 결과: `docs/사람형_몸_p3d-0.10.4.md`. 상태: 기술 반영, 시각/사람 확인 대기.
+
+- 팔: 어깨 둘레 바닥(손목 ≥ 14cm), 각속도 한계를 실제 거리로(받쳐진 8 · 뛰는 중 12rad/s, 실험값), 막힌 손 묶기, 팔 줄기 검사의 머리 타원체. 30장면 어깨–손목 최소 2.9 → 14cm, 팔 최대 2,070 → 899°/s. 기본 벽 시험은 0.10.3과 항목별로 같다.
+- 다른 벽 시험 지형: `?world=corner`(화면), `node test/corner_check.mjs`(20개), 장면 `test/scenes_corner.mjs`(영상 `SET=corner QUERY=world=corner node test/record_reach.mjs`).
+- 손: `gripFrame`(모서리 틀)·`handFits`(손이 들어갈 자리)·손목 한계 판정. 측정 `node test/hand_frame_check.mjs`. 끝 옆면의 손 모양은 미해결.
+- 측정 도구: `arm_path_check`, `weight_study`(세로 힘), `wall_diff`(항목별 비교), `arm_trace` 정정.
+
 ## p3d-0.10.3 — 결과 설정 정정, 팔 급회전 원인, 몸 방향 분리 (2026-11-22)
 
 GPT의 0.10.2 검토 반영. 결과 문서 `docs/사람형_몸_p3d-0.10.3.md`, GPT 전달 `docs/GPT_요청_p3d-0.10.3.md`, 결과 `results/p3d-0.10.3/`(파일마다 실행 출처). 상태: 기술 반영, 시각/사람 확인 대기(스크립트 입력).

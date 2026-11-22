@@ -13,6 +13,7 @@ const SUITES = [
   ['벽 시험(옛 몸)', ['test/wall_check.mjs'], { BODY: 'old' }],
   ['새 몸 맞춤(human_check)', ['test/human_check.mjs'], {}],
   ['걸음마다 재기(motion_scan)', ['test/motion_scan.mjs'], {}],
+  ['다른 벽 시험 지형(corner_check)', ['test/corner_check.mjs'], {}],
   ...(process.env.QUICK ? [] : [['FPS 비교', ['test/fps_check.js'], {}], ['입력 경계', ['test/input_edges.js'], {}], ['지상 동작', ['test/motion_check.js'], {}], ['벽 브라우저', ['test/wall_browser.js'], {}], ['카메라', ['test/camera_check.js'], {}]]),
 ];
 const res = [];
