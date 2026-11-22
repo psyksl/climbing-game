@@ -37,3 +37,20 @@ export const SCENES_H = [
   ['h4 막혀 실패 → 몸을 올려 다시: W 0.12초 → 턱 F(닿지 않음) → W 0.8초 → 턱 F 다시', (sim, put, rep) => { hstart(rep); rep(15, { cy: 1 }); rep(90); rep(300, {}, [hand(1, F)]); rep(100, { cy: 1 }); rep(60); rep(300, {}, [hand(1, F)]); }, false],
   ['h5 다시 잡기: 턱 F를 잡았다가 놓고 1초 뒤 같은 턱 F를 다시 잡음', (sim, put, rep) => { hstart(rep); rep(120, { cy: 1 }); rep(120); rep(300, {}, [hand(1, F)]); rep(120, {}, [rel('hand', 1)]); rep(300, {}, [hand(1, F)]); }, false],
 ];
+
+// 대표 장면의 변형(p3d-0.10.2, GPT의 0.10.1 검토 1번: "h3만 되는 맞춤 예외가 아니라 h1~h5, 좌우 반전, 조금 다른 시작점·발 높이·입력 길이에서 확인"). 원래 장면(SCENES_H)은 옮기지 않았다. 스크립트 입력(사람 손 아님)
+//   좌우 반전: 벽이 좌우 대칭이 아니라 같은 자리를 거울로 옮길 수 없다 → 손발을 바꾸고 턱 A의 왼쪽을 쓴다(오른손 턱 A → 오른발을 넓은 발판으로 엇갈려 → W → 왼손을 턱 A의 왼쪽 끝 옆면으로).
+const AR2 = [-1.05, 1.92, -2.84], WIDE = [-1.50, 0.30, -2.72], ALEND = [-1.6, 1.92, -2.84], mstart = rep => { rep(60); rep(150, {}, [hand(1, AR2)]); rep(260, {}, [foot(1, WIDE)]); }, MSTART = [-1.10, 0, -2.58];
+const hst = (rep, low = LOW, a = AL) => { rep(60); rep(150, {}, [hand(0, a)]); rep(260, {}, [foot(0, low)]); };
+export const SCENES_HV = [
+  ['v1 h1의 시작점 +5cm(오른쪽)', (sim, put, rep) => { hst(rep); rep(120, { cy: 1 }); rep(120); rep(360, {}, [hand(1, F)]); }, false, 1, [-0.57, 0, -2.58]],
+  ['v2 h1의 시작점 −5cm(왼쪽)', (sim, put, rep) => { hst(rep); rep(120, { cy: 1 }); rep(120); rep(360, {}, [hand(1, F)]); }, false, 1, [-0.67, 0, -2.58]],
+  ['v3 h1의 발 자리를 바꿈(낮은 발판 −0.35)', (sim, put, rep) => { hst(rep, [-0.35, 0.5, -2.93]); rep(120, { cy: 1 }); rep(120); rep(360, {}, [hand(1, F)]); }, false],
+  ['v4 h1의 W 0.8초', (sim, put, rep) => { hst(rep); rep(96, { cy: 1 }); rep(144); rep(360, {}, [hand(1, F)]); }, false],
+  ['v5 h1의 W 1.3초', (sim, put, rep) => { hst(rep); rep(156, { cy: 1 }); rep(84); rep(360, {}, [hand(1, F)]); }, false],
+  ['v6 h3의 다른 목표를 턱 A의 끝 옆면 대신 앞면(−0.65)으로', (sim, put, rep) => { hst(rep); rep(15, { cy: 1 }); rep(90); rep(300, {}, [hand(1, F)]); rep(300, {}, [hand(1, [-0.65, 1.92, -2.84])]); }, false],
+  ['v7 h3의 W 0.2초', (sim, put, rep) => { hst(rep); rep(24, { cy: 1 }); rep(81); rep(300, {}, [hand(1, F)]); rep(300, {}, [hand(1, AEND)]); }, false],
+  ['m1 좌우 반전 h1: 오른손 턱 A → 오른발 넓은 발판(엇갈림) → W 1초 → 왼손 턱 A의 왼쪽 끝(옆면)', (sim, put, rep) => { mstart(rep); rep(120, { cy: 1 }); rep(120); rep(300, {}, [hand(0, ALEND)]); }, false, 1, MSTART],
+  ['m3 좌우 반전 h3: W 0.12초 → 왼손 턱 A의 왼쪽 끝(옆면)', (sim, put, rep) => { mstart(rep); rep(15, { cy: 1 }); rep(90); rep(300, {}, [hand(0, ALEND)]); }, false, 1, MSTART],
+  ['m5 좌우 반전 h5: 왼손으로 턱 A 왼쪽 끝을 잡았다가 놓고 다시', (sim, put, rep) => { mstart(rep); rep(120, { cy: 1 }); rep(120); rep(240, {}, [hand(0, ALEND)]); rep(120, {}, [rel('hand', 0)]); rep(300, {}, [hand(0, ALEND)]); }, false, 1, MSTART],
+];

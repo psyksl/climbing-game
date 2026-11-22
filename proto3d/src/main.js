@@ -14,7 +14,7 @@ import GALLERY from 'gallery-data'; // 동작 보기용 자료(받은 동작 전
 import { poseRaw } from './clipmotion.js';
 import { buildProps, makeSwingRope, applyGrips } from './demo.js'; // 캡처 동작 자료(빌드할 때 assets_local/clips.json이 있으면 들어온다. 없으면 null)
 
-export const VERSION = 'p3d-0.10.1';
+export const VERSION = 'p3d-0.10.2';
 const params = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: params.has('test') });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = !params.has('noshadow');
@@ -32,8 +32,10 @@ const human = BODY === 'human' ? buildHuman() : null, retarget = human ? makeRet
 if (human) { scene.add(human.root); rig.mesh.visible = false; }
 const draw = () => { if (human) retarget.apply(sim.fing, sim.pron, sim.climb, sim.world, sim.gw); renderer.render(scene, camera); };
 const sim = makeSim(rig, world, CLIPS); let body = sim.body;
-// 자세 규칙(p3d-0.10.1, 비교용): 주소에 ?posture=rule(기본) | base(0.10.0) | ref(참고 자세 — 캡처 빌드에만 색인이 있다)
-const POSTURE = ['rule', 'base', 'ref'].includes(params.get('posture')) && (params.get('posture') !== 'ref' || (REFIDX && REFIDX.frames)) ? params.get('posture') : 'rule';
+// 자세 규칙(p3d-0.10.1, 비교용): 주소에 ?posture=rule(기본) | base(0.10.0) | ref(참고 자세 — 캡처 빌드에만 색인이 있다) | solve(p3d-0.10.2 함께 고르는 자세 실험)
+// 잡는 손의 접촉 틀(p3d-0.10.2, 비교용): ?grip=frame = 첫 마디를 턱 모서리에 두는 손목 자리(닿는 거리가 약 6cm 는다 — 기획 결정 대기). 기본 = 0.10.1의 손목 자리. climb.js가 부를 때마다 읽는다
+if (params.get('grip') === 'frame') globalThis.GRIP_FRAME = 1;
+const POSTURE = ['rule', 'base', 'ref', 'solve'].includes(params.get('posture')) && (params.get('posture') !== 'ref' || (REFIDX && REFIDX.frames)) ? params.get('posture') : 'rule';
 const applyPosture = () => { sim.opt.posture = POSTURE; sim.ref = POSTURE === 'ref' ? REFIDX : null; }; applyPosture();
 loadKeys();
 const input = makeInput(renderer.domElement);
@@ -221,7 +223,7 @@ function drawHud(fps) {
   if (gal.on) { const c = galClip(); hud.innerHTML = `<div class=ver>3D 모션 시제품 ${VERSION} · ${BODY === 'old' ? '옛 몸(자작)' : '사람형 몸(Quaternius 마네킹, CC0)'}</div><div><b>동작 보기</b> ${gal.i + 1} / ${gal.names.length} &nbsp; <b>${gal.names[gal.i]}</b></div><div><b>분류</b> ${c.cat} &nbsp; <b>지형</b> ${KIND_KO[c.kind] || '-'}${gal.props ? '' : '(숨김)'}${gal.built && gal.built.info.removed ? ` · 맞지 않아 뺀 조각 ${gal.built.info.removed}개` : c.kind !== 'ground' && gal.built && !gal.built.info.pieces ? ' · 조각 없음(손발 자리로는 지형을 정하지 못함)' : ''} &nbsp; <b>시각</b> ${Math.min(gal.t, c.dur).toFixed(2)} / ${c.dur.toFixed(2)}초</div><div class=slow>시연 · 물리 판정 없음</div><div class=dim>받은 동작을 이 캐릭터로 옮겨 지형에 맞춰 튼 것입니다. 잡을 수 있는지·버티는지는 따지지 않습니다(게임 계산은 멈춤).<br>지형은 이 동작에서 손발이 닿는 자리로 만든 임시 조각입니다. 점 = 닿아 있는 손발(붉은색 왼쪽, 푸른색 오른쪽)</div><div class=${slow ? 'slow' : 'real'}>${slow ? '느리게 ×0.25' : '실제 속도'}</div>`; return; }
   const v = Math.hypot(body.vel.x, body.vel.z), st = sim.motion.stats, K = sim.climb;
   const C = sim.clip, cap = C && C.w > 0.5, footName = (L, i) => cap ? (C.feet[i].step ? '고쳐 디딤' : C.feet[i].lock ? (C.feet[i].kind === 'heel' ? '디딤(뒤꿈치)' : '디딤(발끝)') : '옮기는 중') : L.mode === 'plant' ? (L.heel > 0 ? '디딤(뒤꿈치 듦)' : '디딤') : L.mode === 'swing' ? '옮기는 중' : '공중';
-  hud.innerHTML = `<div class=ver>3D 모션 시제품 ${VERSION} · ${BODY === 'old' ? '옛 몸(자작)' : '사람형 몸(Quaternius 마네킹, CC0) · 자세 ' + ({ rule: '새 규칙', base: '0.10.0', ref: '참고 자세(실험)' })[POSTURE]}</div>`
+  hud.innerHTML = `<div class=ver>3D 모션 시제품 ${VERSION} · ${BODY === 'old' ? '옛 몸(자작)' : '사람형 몸(Quaternius 마네킹, CC0) · 자세 ' + ({ rule: '새 규칙', base: '0.10.0', solve: '함께 고르기(실험)', ref: '참고 자세(실험)' })[POSTURE] + (globalThis.GRIP_FRAME ? ' · 손 접촉 틀(실험)' : '')}</div>`
     + (K.on ? `<div><b>동작</b> 벽 등반(IK) <span class=dim>· 지상 동작: ${sim.clipSet && sim.useClip ? '캡처' : '자작'}</span></div>` : `<div><b>모션</b> ${!sim.clipSet ? '자작(코드로 만든 동작)' : sim.useClip ? `캡처 동작${cap ? '' : ' → 지금은 자작(웅크림·점프·착지)'}` : '자작(코드로 만든 동작)'}</div>`)
     + `<div><b>문맥</b> <span class=ctx>${viewMode ? '시점 보기 · 조작 멈춤' : K.on ? '벽 등반' : '지상 조작'}</span> &nbsp; <b>상태</b> ${stateName()}${OPT.diag ? ` &nbsp; <b>속도</b> ${(K.on ? body.vel.length() : v).toFixed(2)} m/s` : ''}</div>`
     + `<div class=dim>손 조작 ${OPT.handMode === 2 ? '2 · 누르는 동안 뻗고 떼면 잡기' : '1 · 눌러 보내기'} &nbsp; 발 보조 ${OPT.footAssist ? '켬' : '끔'}${OPT.wallRest ? ' &nbsp; <b>실험: 벽 딛기 켬</b>' : ''}${OPT.oldPose ? ' &nbsp; <b>비교: 옛 몸 자세(0.8.8)</b>' : ''}${FOOTX ? ' &nbsp; <b>발 선택 = X(시범 프로필)</b>' : ''}${MANUAL ? ' &nbsp; <b>수동 발 프로필</b>(저장하지 않음)' : ''}</div>`
@@ -281,7 +283,7 @@ requestAnimationFrame(frame);
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
 
 // 시험용 창구: 입력을 넣고 물리 걸음을 직접 진행한다(그림과 상관없이 같은 결과)
-document.title = `등반 3D 모션 시제품 ${VERSION}${CLIPS ? ' · 캡처 동작' : ''}${BODY === 'old' ? ' · 옛 몸' : ''}${POSTURE !== 'rule' ? ' · 자세 ' + POSTURE : ''}`;
+document.title = `등반 3D 모션 시제품 ${VERSION}${CLIPS ? ' · 캡처 동작' : ''}${BODY === 'old' ? ' · 옛 몸' : ''}${POSTURE !== 'rule' ? ' · 자세 ' + POSTURE : ''}${globalThis.GRIP_FRAME ? ' · grip frame' : ''}`;
 window.__p3 = {
   perf: reset => { const r = { 프레임: PERF.frames, 실제_초: +PERF.real.toFixed(3), 게임_초: +PERF.sim.toFixed(3), 게임_실제_비: +(PERF.sim / Math.max(1e-6, PERF.real)).toFixed(4), 버린_초: +PERF.drop.toFixed(3), 평균_fps: +(PERF.frames / Math.max(1e-6, PERF.real)).toFixed(1), 가장_긴_프레임_ms: +PERF.maxMs.toFixed(1), 프레임_25ms_넘음: PERF.long, 계산_ms_프레임당: +(PERF.stepMs / Math.max(1, PERF.frames)).toFixed(3), 계산_ms_걸음당: +(PERF.stepMs / Math.max(1, PERF.steps)).toFixed(4), 그리기_ms_프레임당: +(PERF.drawMs / Math.max(1, PERF.frames)).toFixed(3), 느리게: slow }; if (reset) Object.assign(PERF, { frames: 0, real: 0, sim: 0, drop: 0, maxMs: 0, long: 0, stepMs: 0, drawMs: 0, steps: 0, win: [] }); return r; },
   VERSION, BIND, conflicts, PHY, rig, posture(p) { sim.opt.posture = p; sim.ref = p === 'ref' ? REFIDX : null; return !!(p !== 'ref' || (REFIDX && REFIDX.frames)); }, // 시험용: 자세 규칙 바꾸기(p3d-0.10.1) gestures: () => gest.log.map(g => ({ ...g })), aimHeld: () => aim.held.map(v => !!v),

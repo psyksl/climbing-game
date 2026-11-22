@@ -8,6 +8,7 @@ import { makeBody, stepBody, PHY } from './controller.js';
 import { makeMotion, stepMotion, poseProc, measure } from './motion.js';
 import { makeClipSet, makeClipState, stepClip, poseClip } from './clipmotion.js';
 import { makeClimb, command, stepClimb, poseClimb, groundHands, outBlend, afterPose, torsoClear } from './climb.js';
+import { DIM } from './rig.js';
 
 // clips = 캡처 동작 자료(없으면 null → 자작 모션만). S.useClip으로 두 모션을 바꾼다(자료가 있을 때만).
 // 벽 문맥(W2): 손이 턱을 잡으면 S.climb.on. 그동안은 지상 이동 대신 climb.js의 물리·자세가 돈다. 손을 다 놓으면 속도를 그대로 가지고 지상 이동으로 돌아온다.
@@ -37,7 +38,9 @@ export function makeSim(rig, world, clips = null) {
     const pw = st === 'free' ? 1 : 0; S.pron[i] += (pw - S.pron[i]) * (1 - Math.exp(-(pw > S.pron[i] ? 5 : 14) * dt));
     // 잡은 손을 턱 앞면에 맞춰 세우는 정도(그림, human.js). 0.4초쯤에 오른다 — 손가락(0.1초)만큼 빨리 세우면 잡는 걸음 둘레에서 아래팔이 초속 1,000° 넘게 돌았다
     // 뻗는 손은 턱에 30cm 안으로 다가가면 미리 세운다(닿기 전에 손 모양을 만든다)
-    const Hh = K.hands[i], gwT = st === 'hold' ? 1 : st === 'reach' && Hh.edge ? Math.min(1, Math.max(0, 1 - (Hh.w.distanceTo(Hh.goal) - 0.03) / 0.27)) : 0; S.gw[i] += (gwT - S.gw[i]) * (1 - Math.exp(-(gwT > S.gw[i] ? 12 : 20) * dt)); } };
+    // p3d-0.10.2(사람형 몸): 놓은 손도 턱에서 멀어질 때까지 세운 모양을 둔다(손바닥이 모서리를 쓸고 지나가 놓은 직후 손이 턱에 31mm 들었다 — grip_check). 뻗는 손은 45cm 안에서 미리 세운다(30cm로는 잡기 0.1초 전에 13%밖에 세워지지 않았다)
+    const Hh = K.hands[i], hb = DIM.grip, d = Hh.edge ? Hh.w.distanceTo(Hh.goal) : 9, gwT = st === 'hold' ? 1 : st === 'reach' && Hh.edge ? Math.min(1, Math.max(0, 1 - (d - 0.03) / (hb ? 0.42 : 0.27))) : hb && st === 'free' && Hh.edge ? Math.min(1, Math.max(0, 1 - (d - 0.03) / 0.12)) : 0;
+    S.gw[i] += (gwT - S.gw[i]) * (1 - Math.exp(-(gwT > S.gw[i] ? 12 : 20) * dt)); } };
   S.reset();
   return S;
 }

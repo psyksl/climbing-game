@@ -1,6 +1,7 @@
 // 정해 준 구간을 빠짐없이 찍어 한 장에 늘어놓는다(p3d-0.9.0). motion_scan.mjs가 찾은 사건을 눈으로 확인하는 데 쓴다.
 // 영상(초당 25장)이나 0.1초 간격 장면으로는 0.03~0.06초짜리 튐이 한두 장에만 걸리거나 빠진다 → 계산 걸음을 직접 진행하며 1/60초(기본)마다 찍는다.
 // 무릎·팔꿈치·손목·발목이 지나간 자리를 점으로 겹쳐 그린다(자취) — 한 장에서 튄 자리가 보인다. 스크립트 입력(사람 손 아님).
+// 시점은 세계에 고정한다(p3d-0.10.2: 몸 방향을 따라 돌리면 몸이 45° 돌 때 옆 카메라가 벽에 막혀 몸 안으로 들어갔다)
 // 사용: node test/dense_strip.mjs <출력.png> <장면 id(foot3, reach3, h1 …)> <시작 초> <끝 초> [간격 걸음=2]   다른 빌드: BUILD=<html>   캡처 동작: MODE=clip   자세 규칙: POSTURE=base|rule|ref
 import fs from 'fs';
 import path from 'path';
@@ -26,7 +27,7 @@ for (const [vname, off] of [['뒤에서', Math.PI], ['옆에서', -Math.PI / 2]]
   for (let k = k0; k <= Math.min(k1, inputs.length - 1); k += every) {
     if (k > k0) await pg.evaluate(([part]) => { for (const x of part) { for (const c of x.cmd || []) __p3.cmd(c); __p3.run(1, x); } }, [inputs.slice(k - every, k)]);
     // 지난 자리의 자취: 이번 장면까지의 관절 자리(세계 좌표)를 모아 두고, 이번 시점으로 화면에 옮겨 점으로 그린다
-    const info = await pg.evaluate(([off, trail]) => { __p3.shot({ off, dist: 3.3, pitch: 0.06, h: 0.95 }); const R = __p3.rig, n = ['leg.L', 'leg.R', 'foreArm.L', 'foreArm.R', 'foot.L', 'foot.R', 'hand.L', 'hand.R'], now = n.map(x => { const e = R.bones[x].matrixWorld.elements; return [e[12], e[13], e[14]]; });
+    const info = await pg.evaluate(([off, trail]) => { __p3.shot({ off: off + Math.PI - __p3.body().yaw, dist: 3.3, pitch: 0.06, h: 0.95 }); const R = __p3.rig, n = ['leg.L', 'leg.R', 'foreArm.L', 'foreArm.R', 'foot.L', 'foot.R', 'hand.L', 'hand.R'], now = n.map(x => { const e = R.bones[x].matrixWorld.elements; return [e[12], e[13], e[14]]; });
       const pts = [...trail, now].map(fr => fr.map(p => __p3.screenOf(p))); return { now, pts, t: __p3.body().t }; }, [off, trail]);
     trail.push(info.now);
     await pg.evaluate(pts => { let c = document.getElementById('trailc'); if (!c) { c = document.createElement('canvas'); c.id = 'trailc'; c.width = innerWidth; c.height = innerHeight; c.style.cssText = 'position:fixed;left:0;top:0;pointer-events:none'; document.body.appendChild(c); } const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height);

@@ -6,6 +6,7 @@
 //   ④ 손가락: 제어 뼈대에 없다. sim이 계산 걸음마다 정하는 굽힘 값(S.fing)을 읽어 굽힌다
 import * as THREE from 'three';
 import DATA from './human_data.json' with { type: 'json' };
+import { DIM } from './rig.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z), Q = () => new THREE.Quaternion();
 const UP = V(0, 1, 0), FWD = V(0, 0, 1);
@@ -41,6 +42,19 @@ export function buildHuman() {
   for (const b of list) { bindQ[b.name] = b.getWorldQuaternion(Q()); bindP[b.name] = b.getWorldPosition(V()); bindL[b.name] = b.quaternion.clone(); }
   return { root, meshes, skeleton, bones, list, bindQ, bindP, bindL, clips: DATA.clips.map(decodeClip), source: DATA.source };
 }
+// 어깨 둘레의 국소 무게 편집(p3d-0.10.2 실험, 기본 끔 — test/shoulder_check.mjs가 견준다): 쇄골·위팔·가슴(spine_03) 무게가 섞인 정점에서 그 세 뼈의 무게만 메시 이웃(같은 자리 정점 포함)의 평균 쪽으로 n번 끌어온다.
+//   세 뼈 무게의 합과 다른 뼈의 무게는 그대로. 0.10.1의 SHOULDER=1(팔 축을 따라 다시 나눔)과 다른 방법이다
+export function smoothShoulder(H, n = 3, k = 0.5) { for (const m of H.meshes) { const g = m.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, N = si.count, idx = g.index.array, P = g.attributes.position;
+  for (const s of ['l', 'r']) { const ids = [`clavicle_${s}`, `upperarm_${s}`, 'spine_03'].map(nm => H.list.findIndex(b => b.name === nm)), W = new Float32Array(N * 3), mix = new Uint8Array(N);
+    for (let v = 0; v < N; v++) { let c = 0; for (let j = 0; j < 4; j++) { const t = ids.indexOf(si.getComponent(v, j)); if (t >= 0) { W[v * 3 + t] = sw.getComponent(v, j); if (sw.getComponent(v, j) > 0.05) c++; } } if (c >= 2) mix[v] = 1; }
+    const nb = Array.from({ length: N }, () => new Set()); for (let t = 0; t < idx.length; t += 3) for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) if (a !== b) nb[idx[t + a]].add(idx[t + b]);
+    const key = v => `${P.getX(v).toFixed(4)},${P.getY(v).toFixed(4)},${P.getZ(v).toFixed(4)}`, same = new Map(); for (let v = 0; v < N; v++) { if (!mix[v]) continue; const kk = key(v); if (!same.has(kk)) same.set(kk, []); same.get(kk).push(v); }
+    for (const grp of same.values()) for (const v of grp) for (const u of grp) if (u !== v) nb[v].add(u);
+    for (let it = 0; it < n; it++) { const W2 = W.slice(); for (let v = 0; v < N; v++) { if (!mix[v]) continue; const tot = W[v * 3] + W[v * 3 + 1] + W[v * 3 + 2]; if (tot < 1e-6) continue; const av = [0, 0, 0]; let c = 0;
+        for (const u of nb[v]) { const tu = W[u * 3] + W[u * 3 + 1] + W[u * 3 + 2]; if (tu < 1e-6) continue; for (let t = 0; t < 3; t++) av[t] += W[u * 3 + t] / tu; c++; } if (!c) continue;
+        for (let t = 0; t < 3; t++) W2[v * 3 + t] = tot * ((1 - k) * W[v * 3 + t] / tot + k * av[t] / c); } W.set(W2); }
+    for (let v = 0; v < N; v++) { if (!mix[v]) continue; for (let t = 0; t < 3; t++) { let j = -1; for (let q = 0; q < 4; q++) if (si.getComponent(v, q) === ids[t]) j = q; if (j < 0 && W[v * 3 + t] > 1e-4) { for (let q = 0; q < 4; q++) if (sw.getComponent(v, q) < 1e-4) { j = q; si.setComponent(v, q, ids[t]); break; } } if (j >= 0) sw.setComponent(v, j, W[v * 3 + t]); } }
+  } si.needsUpdate = true; sw.needsUpdate = true; } }
 function decodeClip(c) { const r = new Int16Array(dec(c.rot)), nb = DATA.bones.length; return { ...c, nb, q: (f, i, out) => out.set(r[(f * nb + i) * 4] / 32767, r[(f * nb + i) * 4 + 1] / 32767, r[(f * nb + i) * 4 + 2] / 32767, r[(f * nb + i) * 4 + 3] / 32767).normalize() }; }
 
 // 원본 동작을 새 몸에 그대로 튼다(비교용, 물리 없음). t = 초. 뿌리·골반의 자리도 원본 그대로(RM 동작이면 몸이 원본 이동만큼 간다)
@@ -73,7 +87,8 @@ for (const [s, h] of [['L', 'l'], ['R', 'r']]) {
   MAP.push({ o: `foot.${s}`, h: `foot_${h}`, aO: 'toe', sO: UP, aH: `ball_${h}`, sH: 'up' });
   MAP.push({ o: `toe.${s}`, h: `ball_${h}`, aO: FWD, sO: UP, aH: `ball_leaf_${h}`, sH: 'up' });
 }
-const FINGERS = ['index', 'middle', 'ring', 'pinky'], WRIST_MAX = 70 * Math.PI / 180, HAND_TILT = 14 * Math.PI / 180, FINGER_R = 0.009, SH_R = 0.075, PRON = 80 * Math.PI / 180, SCAP_UP = 28 * Math.PI / 180, SCAP_FWD = 10 * Math.PI / 180;
+// HAND_TILT = 잡은 손의 기울기: 물리의 손목 자리와 같은 접촉 틀(rig.js DIM.grip)
+const FINGERS = ['index', 'middle', 'ring', 'pinky'], WRIST_MAX = 70 * Math.PI / 180, HAND_TILT = (DIM.grip ? DIM.grip.tilt : 14) * Math.PI / 180, FINGER_R = 0.009, FINGER_RH = 0.012, SH_R = 0.075, PRON = 80 * Math.PI / 180, SCAP_UP = 28 * Math.PI / 180, SCAP_FWD = 10 * Math.PI / 180;
 
 // 연결기를 만든다. ctrl = rig.js의 제어 뼈대(쉬는 자세에서 만들어야 한다 — 모든 뼈의 쉬는 회전이 단위 회전)
 export function makeRetarget(ctrl, H) {
@@ -134,7 +149,8 @@ export function makeRetarget(ctrl, H) {
         if (arm) { // 손목의 비틀림을 아래팔과 절반씩: 아래팔을 제 축으로 돌린다(손은 세계에서 그대로)
           // 잡은 손(p3d-0.10.1): 손바닥이 턱 앞면을 보게 세운다(손가락 쪽 = 위, 앞면을 따라). 손목은 아래팔에서 70°까지만 꺾는다. 0.10.0은 제어 뼈의 손(손목 → 턱 모서리 쪽)을 그대로 옮겨 두꺼운 손바닥이 턱에 3.5cm 들어갔다
           const Hd = K ? K.hands[h === 'l' ? 0 : 1] : null;
-          if (Hd && (Hd.st === 'hold' || Hd.st === 'reach') && Hd.edge) { const n = Hd.n.clone().setY(0).normalize(), up = UP.clone().addScaledVector(n, -UP.dot(n)).normalize().multiplyScalar(Math.cos(HAND_TILT)).addScaledVector(n, -Math.sin(HAND_TILT)).normalize(), fa = V().copy(mL.aHL).applyQuaternion(wq(H.bones[lo])).normalize();
+          // p3d-0.10.2: 놓은 손도(턱을 기억하고 세움 값이 남아 있으면) 같은 틀로 세운다 — 세움 값(S.gw)은 계산 걸음에서 턱과의 거리로 줄어든다
+          if (Hd && Hd.edge && (Hd.st === 'hold' || Hd.st === 'reach' || (DIM.grip && gwv && gwv[h === 'l' ? 0 : 1] > 0.01))) { const n = Hd.n.clone().setY(0).normalize(), up = UP.clone().addScaledVector(n, -UP.dot(n)).normalize().multiplyScalar(Math.cos(HAND_TILT)).addScaledVector(n, -Math.sin(HAND_TILT)).normalize(), fa = V().copy(mL.aHL).applyQuaternion(wq(H.bones[lo])).normalize();
             let fd = up.clone(); const a = fd.angleTo(fa); if (a > WRIST_MAX) fd = fa.clone().lerp(fd, WRIST_MAX / a).normalize();
             // 세우는 정도는 손가락 굽힘 값(S.fing — 계산 걸음에서 0 → 1로 0.1초쯤에 오른다)을 따라간다. 한 걸음에 세우면 잡는 걸음에 아래팔이 크게 돌았다(6,674°/s — human_check로 찾음)
             const gw = gwv ? gwv[h === 'l' ? 0 : 1] : THREE.MathUtils.clamp((fing[h === 'l' ? 0 : 1] - 0.3) / 0.7, 0, 1); setWorld(H.bones[end], wq(H.bones[end]).slerp(alignQ(by[end].aHL, by[end].sHL, fd, n.clone().negate()), gw * gw * (3 - 2 * gw))); }
@@ -155,13 +171,23 @@ export function makeRetarget(ctrl, H) {
         if (!world) { setF(f, ang(0), ang(1), ang(2)); continue; }
         if (!box || f === 'thumb') { // 엄지는 잡은 손에서도 이 길(정한 굽힘에 가깝게, 들면 덜 드는 쪽) // 놓인·뻗는 손(p3d-0.10.1): 새 몸의 손이 제어 뼈대보다 6cm 길어 손가락이 벽에 들었다(9.9cm) → 정한 굽힘에서 들면 덜 드는 굽힘 가운데 정한 값에 가장 가까운 것
           setF(f, ang(0), ang(1), ang(2)); const hw0 = wp(H.bones[`hand_${h}`]), nb = world.boxes.filter(bx => bx.kind !== 'floor' && inBox(hw0, bx, 0.30) > 0); if (!nb.length) continue;
-          const penAt = () => Math.max(0, ...[`${f}_02_${h}`, `${f}_03_${h}`, `${f}_04_leaf_${h}`].flatMap(nm => nb.map(bx => inBox(wp(H.bones[nm]), bx, FINGER_R))));
+          const pts = () => [`${f}_02_${h}`, `${f}_03_${h}`, `${f}_04_leaf_${h}`].map(nm => wp(H.bones[nm])).concat(DIM.grip && f === 'thumb' ? [wp(H.bones[`${f}_01_${h}`]).lerp(wp(H.bones[`${f}_02_${h}`]), 0.5)] : []); // p3d-0.10.2: 엄지는 뿌리 마디(01) 가운데도 본다 — 잡은 손의 엄지 뿌리가 턱 앞면에 11mm 들었다(grip_check)
+          const penAt = () => Math.max(0, ...pts().flatMap(p => nb.map(bx => inBox(p, bx, FINGER_R))));
           if (penAt() <= 1e-4) continue; const base = ang(0); let bst = null;
           for (let a = -20; a <= 110; a += 10) { const r = a * Math.PI / 180; setF(f, r, r * 0.35, r * 0.2); const pn = penAt(), sc = pn * 1000 + Math.abs(r - base) * 2; if (!bst || sc < bst.sc) bst = { r, sc }; }
           setF(f, bst.r, bst.r * 0.35, bst.r * 0.2); continue; }
         // 잡은 손가락(p3d-0.10.1): 첫 마디를 0~110°(가운데·끝 마디는 0.35·0.2배)로 놓아 보고, 마디 자리가 턱 상자(손가락 굵기만큼 부풀림)에 들지 않는 가장 큰 굽힘을 고른다 — 손가락이 턱 윗면을 덮는다.
         //   모두 들면 가장 덜 드는 것. 0.10.0은 정해진 각(70°·25°·12°)으로 굽혀 손가락이 턱에 들었다
         let best = null; const hw = wp(H.bones[`hand_${h}`]), near = world ? world.boxes.filter(bx => bx.kind !== 'floor' && inBox(hw, bx, 0.30) > 0) : [box]; // 손목 30cm 안의 상자 모두(잡은 턱 뒤의 벽도)
+        if (DIM.grip) { // p3d-0.10.2(사람형 몸, 접촉 틀): 첫 마디 굽힘(0~110°)과 가운데·끝 마디의 비(0~0.6)를 함께 찾아, 마디가 턱에 들지 않으면서 끝 마디 가운데(패드)가 잡은 턱의 겉에 가장 가까운 것을 고른다.
+          //   0.10.1은 비를 0.35·0.2로 묶어 "들지 않는 가장 큰 굽힘"을 골랐다 — 첫 마디가 윗면 가까이 오면 끝 마디가 먼저 윗면에 닿아 손가락이 서 있는 채로 멈췄다(틈 6~24mm)
+          //   마디 자리뿐 아니라 마디 사이의 가운데도 본다(마디 사이 메시가 윗면에 9mm 들었다). 마네킹 손가락의 굵기에 맞춰 반지름 FINGER_RH
+          for (const rr of [0, 0.15, 0.3, 0.45, 0.6]) for (let a = 0; a <= 110; a += 5) { const r = a * Math.PI / 180; setF(f, r, r * rr, r * rr * 0.6); let pen = 0;
+            const J = [`${f}_01_${h}`, `${f}_02_${h}`, `${f}_03_${h}`, `${f}_04_leaf_${h}`].map(nm => wp(H.bones[nm])), pts = [J[1], J[2], J[3], J[0].clone().lerp(J[1], 0.5), J[1].clone().lerp(J[2], 0.5), J[2].clone().lerp(J[3], 0.5)];
+            for (const p of pts) for (const bx of near) pen = Math.max(pen, inBox(p, bx, FINGER_RH));
+            const pad = wp(H.bones[`${f}_03_${h}`]).lerp(wp(H.bones[`${f}_04_leaf_${h}`]), 0.5), gap = Math.sqrt(Math.max(box.min.x - pad.x, 0, pad.x - box.max.x) ** 2 + Math.max(box.min.y - pad.y, 0, pad.y - box.max.y) ** 2 + Math.max(box.min.z - pad.z, 0, pad.z - box.max.z) ** 2) - FINGER_RH;
+            const sc = pen * 4000 + Math.abs(gap - 0.003) * 1000 + Math.abs(rr - 0.3) * 2; if (!best || sc < best.sc) best = { a, rr, sc }; }
+          const r = best.a * Math.PI / 180; setF(f, r, r * best.rr, r * best.rr * 0.6); continue; }
         for (let a = 0; a <= 110; a += 10) { const r = a * Math.PI / 180; setF(f, r, r * 0.35, r * 0.2); let pen = 0;
           for (const nm of [`${f}_02_${h}`, `${f}_03_${h}`, `${f}_04_leaf_${h}`]) { const p = wp(H.bones[nm]); for (const bx of near) pen = Math.max(pen, inBox(p, bx, FINGER_R)); }
           if (!best || (pen <= 1e-4 && a >= best.a) || (best.pen > 1e-4 && pen < best.pen)) best = { a, pen }; }

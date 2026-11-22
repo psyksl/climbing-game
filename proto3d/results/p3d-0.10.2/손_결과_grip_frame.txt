@@ -1,0 +1,30 @@
+foot1   0.95 grabL
+foot2   0.95 grabL | 5.14 grabR
+foot3   0.95 grabL | 5.14 grabR
+foot4   0.95 grabL
+foot5   0.95 grabL
+foot6   0.93 grabL
+foot7   0.95 grabL | 4.58 grabR
+foot8   0.95 grabL | 5.59 grabR
+foot9   0.95 grabL | 4.89 grabR
+reach1  0.95 grabL | 5.73 grabR | 7.80 rejectR(이미 잡고 있는 자리)
+reach2  0.95 grabL | 6.32 grabR
+reach3  0.95 grabL | 6.32 grabR | 10.53 rejectR(몸에 막혀 닿지 않음)
+reach4  0.95 grabL | 4.67 grabR
+reach5  0.95 grabL | 5.73 grabR | 8.30 rejectR(이미 잡고 있는 자리)
+reach6  0.95 grabL | 6.22 grabR | 9.84 grabR
+h1      0.95 grabL | 6.32 grabR
+h2      0.95 grabL | 7.02 grabR
+h3      0.95 grabL | 5.57 rejectR(닿지 않음(1cm 모자람)) | 7.70 grabR
+h4      0.95 grabL | 5.57 rejectR(닿지 않음(1cm 모자람)) | 9.04 grabR
+h5      0.95 grabL | 6.32 grabR | 9.82 grabR
+v1      0.93 grabL | 6.32 grabR
+v2      0.97 grabL | 6.32 grabR
+v3      0.95 grabL | 6.33 grabR
+v4      0.95 grabL | 6.33 grabR
+v5      0.95 grabL | 6.30 grabR
+v6      0.95 grabL | 5.57 rejectR(닿지 않음(1cm 모자람)) | 8.28 rejectR(다른 팔에 막혀 닿지 않음)
+v7      0.95 grabL | 5.25 grabR | 7.53 grabR
+m1      0.97 grabR | 6.29 grabL
+m3      0.97 grabR | 5.22 grabL
+m5      0.97 grabR | 6.29 grabL | 9.34 grabL
