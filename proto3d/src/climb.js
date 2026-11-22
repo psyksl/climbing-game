@@ -305,6 +305,8 @@ function armCheck(S, i, sh, goal, n) {
   return '';
 }
 // 무릎의 기본 방향: 벽 쪽에서 30° 바깥, 많이 굽힐수록 옆으로(편한 기본값. 허용 판정이 아니다). 무릎이 벽·턱에 들어가면 들어가지 않을 때까지 더 옆으로 돌린다
+// 점에서 가장 가까운 상자 겉면까지의 거리(안에 들어가 있으면 음수, 바닥은 뺀다)
+const boxDist = (world, p) => { let m = 9; for (const x of world.boxes) { if (x.kind === 'floor') continue; const dx = Math.max(x.min.x - p.x, 0, p.x - x.max.x), dy = Math.max(x.min.y - p.y, 0, p.y - x.max.y), dz = Math.max(x.min.z - p.z, 0, p.z - x.max.z), out = Math.hypot(dx, dy, dz); m = Math.min(m, out > 0 ? out : -Math.min(p.x - x.min.x, x.max.x - p.x, p.y - x.min.y, x.max.y - p.y, p.z - x.min.z, x.max.z - p.z)); } return m; };
 const nearBox = (world, p, m) => world.boxes.some(x => p.x > x.min.x - m && p.x < x.max.x + m && p.y > x.min.y - m && p.y < x.max.y + m && p.z > x.min.z - m && p.z < x.max.z + m);
 // 무릎이 굽는 쪽(극 방향의 각 a: 0 = 벽 쪽, 90 = 옆 바깥). p3d-0.9.0: 발이 놓인 자리에서 정한다.
 //   0.8.8까지는 다리가 접힐수록 30° → 72°로 바깥을 향했다 — 발이 어디에 있든 같아서, 발이 몸 안쪽(엇갈림)이나 몸 아래에 있을 때 넓적다리가 옆으로 눕고 정강이가 안으로 꺾였다("제기차기").
@@ -317,13 +319,13 @@ function legIK(S, hj, ank, yaw, sx, placed = true) {
   if (np) { const py = yaw + K.po.yaw, d = ank.clone().sub(hj), ox = sx * (d.x * Math.cos(py) - d.z * Math.sin(py)), fz = d.x * Math.sin(py) + d.z * Math.cos(py);
     // 거의 편 다리는 무릎의 쪽이 정해지지 않는다(늘어뜨린 발이 조금만 흔들려도 각이 크게 바뀐다) → 접힌 만큼만 발의 자리를 따른다
     const a0 = clamp(26 - 6 * bend + 0.75 * clamp((bend - 0.08) / 0.30, 0, 1) * Math.atan2(ox, Math.max(fz, 0.12)) / deg, -35, 85), list = [0, 12, 24, 36, 48, 60, 75, 90, -15, -30].map(x => a0 + x).filter(a => a <= 115 && a >= -50);
-    // 닿지 않는 첫 후보. 모두 닿으면 벽·턱에서 가장 멀리 있는 후보(0.8.8은 마지막 후보 = 안쪽을 썼다 — 벽에 바짝 붙은 자세에서 무릎이 벽 안에 남았다)
-    // 닿지 않는 후보 가운데 "지금 굽어 있는 쪽에 가깝고 바라는 각(a0)에도 가까운 것"을 고른다. 차례대로 첫 후보를 쓰면, 몸이 조금 움직여 앞 후보가 벽에 닿는 순간 반대쪽 후보로 넘어가며 무릎이 벽을 가로질렀다(교차로 디딘 뒤 5걸음 — wall_check 24에서 찾음)
-    const prev = S.poleS && S.poleS['kn' + (sx > 0 ? 'L' : 'R')]; let best = null, clear = null;
-    for (const a of list) { const pl = V(sx * Math.sin(a * deg), 0.1, Math.cos(a * deg)).applyAxisAngle(UP, py).normalize(), k2 = twoBone(hj, ank, DIM.thigh, DIM.shin, pl); let m = 0.05;
-      if (!nearBox(S.world, k2.mid, 0.05)) { const sc = (prev ? 0.35 * prev.angleTo(pl) / deg : 0) + Math.abs(a - a0); if (!clear || sc < clear.sc) clear = { ik: k2, pole: pl, sc }; continue; }
-      while (m > -0.04 && nearBox(S.world, k2.mid, m)) m -= 0.015; if (!best || m > best.m) best = { ik: k2, pole: pl, m }; }
-    return clear ? { ik: clear.ik, pole: clear.pole } : { ik: best.ik, pole: best.pole }; }
+    // 후보(5°마다)마다 값을 매겨 가장 싼 것을 고른다(p3d-0.9.0 고침): 바라는 각(a0)에서 먼 만큼 + 지금 굽어 있는 쪽에서 먼 만큼 + 무릎이 벽·턱에서 6cm보다 가까운 만큼(실제 거리. 1cm = 8°).
+    //   처음에는 "닿지 않는 후보(5cm) 가운데 고르고, 없으면 가장 덜 닿는 것"이었다. 발판에 올라서며 엉덩이가 벽 10cm까지 다가가면 모든 후보가 5cm 안이 되고, 후보끼리 거의 같아 걸음마다 먼 쪽으로 바뀌어
+    //   무릎이 0.06초 사이에 반대쪽으로 넘어갔다(초속 11m — 사용자가 영상 21초쯤에서 짚었다. 장면을 0.1초 간격으로 뽑아 본 그림에서는 놓쳤다). 지금 쪽에서 먼 만큼을 값에 넣어 이어지게 한다
+    const PS0 = S.poleS && S.poleS['kn' + (sx > 0 ? 'L' : 'R') + 'p'], aCur = PS0 ? (() => { const l = PS0.clone().applyAxisAngle(UP, -py); return Math.atan2(sx * l.x, l.z) / deg; })() : a0; let best = null;
+    for (let a = -50; a <= 115; a += 5) { const pl = V(sx * Math.sin(a * deg), 0.1, Math.cos(a * deg)).applyAxisAngle(UP, py).normalize(), k2 = twoBone(hj, ank, DIM.thigh, DIM.shin, pl), dist = boxDist(S.world, k2.mid);
+      const sc = Math.abs(a - a0) + 0.6 * Math.abs(a - aCur) + 800 * Math.max(0, 0.06 - dist); if (!best || sc < best.sc) best = { ik: k2, pole: pl, sc }; }
+    return { ik: best.ik, pole: best.pole }; }
   const a0 = lerp(30, 72, bend);
   for (const a of [a0, 60, 80, 95, 110, 10, -15]) { if (a > 0 && a < a0) continue; pole = V(sx * Math.sin(a * deg), 0.1, Math.cos(a * deg)).applyAxisAngle(UP, yaw).normalize(); ik = twoBone(hj, ank, DIM.thigh, DIM.shin, pole); if (!nearBox(S.world, ik.mid, 0.05)) break; }
   return { ik, pole };
@@ -1005,9 +1007,11 @@ export function poseClimb(S) {
   for (const H of K.hands) { const sx = H.i ? -1 : 1, tgt = H.st === 'hold' ? H.goal : H.st === 'reach' ? H.w : H.w.copy(T.sh[H.i]).add(H.rel); poseArm(S, H.s, T.sh[H.i], tgt, b.yaw, sx, H.st === 'hold' || (H.st === 'reach' && H.edge) ? H.grip : null, H.st === 'hold', H.goal, H.st === 'reach' && (H.poleWant || true), H.st === 'reach' && H.edge ? H.edge.box : null); }
   for (const F of K.feet) {
     const hj = T.hj[F.i], tgt = F.st === 'plant' ? F.ank : F.a, want = legIK(S, hj, tgt, b.yaw, F.i ? -1 : 1, F.st !== 'free').pole;
-    let pole = bendDir(S, 'kn' + F.s, hj, tgt, want), ik = twoBone(hj, tgt, DIM.thigh, DIM.shin, pole), lim = F.st === 'plant' ? 0 : 14;
+    // 디딘 다리의 무릎이 도는 빠르기(p3d-0.9.0 고침): 몸통 자세의 층을 켠 채 디딘 다리는 초속 3.5라디안(200°)까지, 벽·턱에 2cm 안으로 닿았을 때도 8라디안까지. 0.8.8까지는 7 / 26이었다 — 26은 무릎을 0.06초에 반대쪽으로 돌릴 수 있다
+    const pl0 = F.st === 'plant' && poseOn(K), r0 = pl0 ? 3.5 : 7, r1 = pl0 ? 8 : 26;
+    let pole = bendDir(S, 'kn' + F.s, hj, tgt, want, r0), ik = twoBone(hj, tgt, DIM.thigh, DIM.shin, pole), lim = F.st === 'plant' ? 0 : 14;
     // 무릎이 벽·턱에 닿았으면(2cm 안) 고른 쪽으로 더 빨리 돌려 빼낸다(천천히 돌리는 동안 벽 안에 남지 않게)
-    if (nearBox(S.world, ik.mid, 0.02)) { pole = bendDir(S, 'kn' + F.s, hj, tgt, want, 26); ik = twoBone(hj, tgt, DIM.thigh, DIM.shin, pole); lim = lim && 30; }
+    if (nearBox(S.world, ik.mid, 0.02)) { pole = bendDir(S, 'kn' + F.s, hj, tgt, want, r1); ik = twoBone(hj, tgt, DIM.thigh, DIM.shin, pole); lim = lim && 30; }
     aimCont(S, B[`upLeg.${F.s}`], ik.mid.clone().sub(hj), pole, 8, lim); aimCont(S, B[`leg.${F.s}`], ik.end.clone().sub(ik.mid), pole, 8, lim);
     if (F.st === 'plant') setWorldQuat(B[`foot.${F.s}`], F.q); else turnCont(S, B[`foot.${F.s}`], F.st === 'free' ? Q().setFromAxisAngle(UP, b.yaw).multiply(Q().setFromAxisAngle(X, 0.35 * clamp((F.clear ?? 9) / 0.15, 0, 1))) : F.q);
     B[`toe.${F.s}`].quaternion.identity();
