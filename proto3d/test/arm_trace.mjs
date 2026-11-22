@@ -15,7 +15,8 @@ const all = [...SCENES_FOOT.map((s, i) => ['foot' + (i + 1), ...s]), ...SCENES.m
 const [, title, fn, assist, mode, st0] = all.find(s => s[0] === id), rig = buildCharacter(), sim = makeSim(rig, makeWorld(), null);
 sim.reset({ pos: st0 || START, yaw: Math.PI }); sim.opt.wallRest = false; sim.opt.footAssist = !!assist; if (mode) sim.opt.handMode = mode; if (process.env.VARIANT) sim.opt.posture = process.env.VARIANT;
 const inputs = [], put = (inp = {}, cmd = []) => inputs.push({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd }), rep = (n, inp, cmd) => { for (let i = 0; i < n; i++) put(inp, i ? [] : cmd); }; fn(sim, put, rep);
-const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion(), deg = 180 / Math.PI, r1 = v => +v.toFixed(1), mm = v => +(v * 1000).toFixed(1);
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z), Q = () => new THREE.Quaternion(), // p3d-0.10.4: V가 인자를 받지 않아 V(0,1,0)이 영벡터였다(손의 swing 10,800°/s는 이 오류 — GPT 지적)
+  deg = 180 / Math.PI, r1 = v => +v.toFixed(1), mm = v => +(v * 1000).toFixed(1);
 const B = rig.bones, names = [`upperArm.${sideS}`, `foreArm.${sideS}`, `hand.${sideS}`], child = { [`upperArm.${sideS}`]: `foreArm.${sideS}`, [`foreArm.${sideS}`]: `hand.${sideS}` };
 const prev = {}, rows = [];
 for (let k = 0; k < inputs.length; k++) {
@@ -24,14 +25,15 @@ for (let k = 0; k < inputs.length; k++) {
   for (const n of names) { const q = B[n].getWorldQuaternion(Q()), ax = child[n] ? B[child[n]].getWorldPosition(V()).sub(B[n].getWorldPosition(V())).normalize() : V(0, 1, 0).applyQuaternion(q), p = prev[n];
     if (p) { const dq = q.clone().multiply(p.q.clone().invert()), full = 2 * Math.acos(Math.min(1, Math.abs(dq.w))) * deg * 120, swing = p.ax.angleTo(ax) * deg * 120;
       // 비틀림 = 앞 걸음의 축을 지금 축으로 가장 적게 돌린 뒤 남는 축 둘레 회전
-      const sw = Q().setFromUnitVectors(p.ax, ax), rest = sw.clone().multiply(p.q).invert().multiply(q), tw = 2 * Math.asin(Math.min(1, Math.abs(V(rest.x, rest.y, rest.z).dot(V(0, 1, 0).applyQuaternion(p.q.clone().invert()).applyQuaternion(Q()).normalize())))) * deg * 120;
-      rec[n] = { full: r1(full), swing: r1(swing), twist: r1(Math.max(0, Math.sqrt(Math.max(0, full * full - swing * swing)))) }; }
+      // 비틀림(정확한 분해, p3d-0.10.4): 회전 dq = 비틀림(축 = 지금 뼈 축) × 휘돌림. 비틀림 = dq의 벡터부를 지금 축에 투영한 사원수의 각
+      const pr = V(dq.x, dq.y, dq.z).dot(ax), tq = Q().set(ax.x * pr, ax.y * pr, ax.z * pr, dq.w); const tl = Math.hypot(tq.x, tq.y, tq.z, tq.w); const twist = tl > 1e-9 ? 2 * Math.acos(Math.min(1, Math.abs(tq.w / tl))) * deg * 120 : 0;
+      rec[n] = { full: r1(full), swing: r1(swing), twist: r1(twist) }; }
     prev[n] = { q, ax }; }
   if (t < t0 - 1e-9 || t > t1 + 1e-9) continue;
   const ps = sim.poleS || {}, pl = ps['el' + sideS], plp = ps['el' + sideS + 'p'];
-  rows.push({ t: +t.toFixed(4), 손: H.st, 목표: H.st === 'hold' ? H.goal.toArray().map(mm) : H.w.toArray().map(mm), 팔꿈치_극: pl ? pl.toArray().map(v => +v.toFixed(3)) : null, 극_바람: plp ? plp.toArray().map(v => +v.toFixed(3)) : null,
-    뼈: rec, 손목: B[`hand.${sideS}`].getWorldPosition(V()).toArray().map(mm), 팔꿈치: B[`foreArm.${sideS}`].getWorldPosition(V()).toArray().map(mm), 사건: sim.climb.events.filter(e => e.type !== 'try').map(e => e.type + (e.limb ? ':' + e.limb + e.i : '') + (e.why ? '(' + e.why + ')' : '')).join(',') });
+  rows.push({ t: +t.toFixed(4), 손: H.st, 최종_목표: H.goal.toArray().map(mm), 진행_손목: H.w.toArray().map(mm), 어깨_손목_mm: sim.climb.T ? mm(sim.climb.T.sh[HI].distanceTo(H.w)) : null, 팔꿈치_극: pl ? pl.toArray().map(v => +v.toFixed(3)) : null, 극_바람: plp ? plp.toArray().map(v => +v.toFixed(3)) : null,
+    뼈: rec, 표시_손목: B[`hand.${sideS}`].getWorldPosition(V()).toArray().map(mm), 팔꿈치: B[`foreArm.${sideS}`].getWorldPosition(V()).toArray().map(mm), 사건: sim.climb.events.filter(e => e.type !== 'try').map(e => e.type + (e.limb ? ':' + e.limb + e.i : '') + (e.why ? '(' + e.why + ')' : '')).join(',') });
 }
 console.log(`■ ${id} ${title.slice(0, 50)} 팔 ${sideS} ${t0}~${t1}초 (뼈: 전체 / 축 방향 변화 / 비틀림 °/s)`);
-for (const x of rows) console.log(`${x.t.toFixed(4)} ${x.손.padEnd(5)} ` + names.map(n => x.뼈[n] ? `${n.split('.')[0]} ${x.뼈[n].full}/${x.뼈[n].swing}/${x.뼈[n].twist}` : '').join(' | ') + ` | 팔꿈치${x.팔꿈치} 손목${x.손목} 극${x.팔꿈치_극} ${x.사건}`);
+for (const x of rows) console.log(`${x.t.toFixed(4)} ${x.손.padEnd(5)} ` + names.map(n => x.뼈[n] ? `${n.split('.')[0]} ${x.뼈[n].full}/${x.뼈[n].swing}/${x.뼈[n].twist}` : '').join(' | ') + ` | 어깨–손목 ${x.어깨_손목_mm}mm 팔꿈치${x.팔꿈치} 표시 손목${x.표시_손목} 극${x.팔꿈치_극} ${x.사건}`);
 if (outF) fs.writeFileSync(outF, JSON.stringify({ 실행_출처: __P, id, rows }, null, 1));
