@@ -106,11 +106,12 @@ export function makeRetarget(ctrl, H) {
     const dir = H.bindP[c].clone().sub(H.bindP[n]).normalize(), palm = V(0, -1, 0), ax = f === 'thumb' ? dir.clone().cross(V(h === 'l' ? 0.6 : -0.6, -0.8, 0).normalize()) : dir.clone().cross(palm);
     fingerAxis[n] = ax.normalize().applyQuaternion(H.bindQ[n].clone().invert()); }
   const spine2Fix = H.bindQ.spine_01.clone().slerp(H.bindQ.spine_03, 0.5).invert().multiply(H.bindQ.spine_02);
-  const tmp = { maxIKGap: 0 };
+  const tmp = { maxIKGap: 0 }, armPos0 = Object.fromEntries(['upperarm_l', 'upperarm_r'].map(n => [n, H.bones[n].position.clone()])); // 팔을 곧게 펴려고 옮긴 어깨 자리는 매번 원래 자리에서 다시 시작한다
   // 원본(T자) 자세로 돌려 둔 뒤 매번 다시 만든다 → 앞 장면의 값에 기대지 않는다(그리기 빈도와 무관)
   function apply(fing = [0.3, 0.3], pron = [0, 0], K = null, world = null, gwv = null) {
     ctrl.root.updateMatrixWorld(true);
     for (const b of H.list) b.quaternion.copy(H.bindL[b.name]);
+    for (const n in armPos0) H.bones[n].position.copy(armPos0[n]);
     H.root.position.set(0, 0, 0); H.root.quaternion.identity(); H.root.updateMatrixWorld(true);
     const qO = n => wq(ctrl.bones[n]), mapQ = m => qO(m.o).multiply(alignQ(m.aHL, m.sHL, m.aOL, m.sOL));
     // ① 골반(자리 + 회전), 척추, 쇄골, 목·머리
@@ -128,8 +129,12 @@ export function makeRetarget(ctrl, H) {
         const e = Math.acos(THREE.MathUtils.clamp(-ua.y, -1, 1)) * 180 / Math.PI, up = THREE.MathUtils.clamp((e - 70) / 110, 0, 1) * SCAP_UP, fw = THREE.MathUtils.clamp(ua.z, 0, 1) * SCAP_FWD;
         if (up || fw) { const B = H.bones[`clavicle_${h}`], q0 = wq(B), put = k => setWorld(B, Q().setFromAxisAngle(V(0, 0, 1).applyQuaternion(qc), sx * up * k).multiply(Q().setFromAxisAngle(V(0, 1, 0).applyQuaternion(qc), -sx * fw * k)).multiply(q0));
           // 들린 어깨(어깨 관절 둘레 반지름 7.5cm)가 벽·턱에 들면 덜 든다(p3d-0.10.1, GPT 지적 "표시 쪽 쇄골 보정 뒤의 팔 형상도 충돌 검증에"): 1 → 0.66 → 0.33 → 0 가운데 들지 않는 가장 큰 것
-          put(1); if (world) { const nb = world.boxes.filter(bx => bx.kind !== 'floor'), hit = () => { const p = wp(H.bones[`upperarm_${h}`]); return nb.some(bx => inBox(p, bx, SH_R) > 0); };
-            for (const k of [0.66, 0.33, 0]) { if (!hit()) break; put(k); } } } }
+          // p3d-0.11.2(사용자 지적: 한 손으로 매달린 팔이 "편 것도 굽힌 것도 아닌" 꺾인 모양): 어깨를 든 만큼 마네킹의 어깨–손목 거리가 짧아져, 계산 쪽 팔은 거의 다 폈는데(166~169°) 마네킹 팔은 117~139°로 굽고
+          //   굽는 쪽의 기준이 없어 팔꿈치가 1초 사이에 바깥 → 반대쪽으로 넘어갔다. 마네킹 팔이 계산 쪽 팔보다 더 굽지 않는 만큼만 든다(펴진 비율이 계산 쪽보다 0.5% 넘게 작아지지 않는 가장 큰 들기. 2%로 두었을 때는 마네킹 팔이 155°로 아직 굽어 보였다)
+          const ext = () => { if (globalThis.OLDSCAP) return true; const t = wp(ctrl.bones[`hand.${s}`]), [l1, l2] = by[`upperarm_${h}`].len, rc = wp(ctrl.bones[`upperArm.${s}`]).distanceTo(t) / (DIM.upperArm + DIM.foreArm); return wp(H.bones[`upperarm_${h}`]).distanceTo(t) / (l1 + l2) >= Math.min(rc, 0.995) - 0.005; };
+          let kk = 1; put(1); for (let j = 9; j >= 0; j--) { if (ext()) break; kk = j / 10; put(kk); }
+          if (world) { const nb = world.boxes.filter(bx => bx.kind !== 'floor'), hit = () => { const p = wp(H.bones[`upperarm_${h}`]); return nb.some(bx => inBox(p, bx, SH_R) > 0); };
+            for (const k of [0.66, 0.33, 0].filter(k => k < kk)) { if (!hit()) break; put(k); } } } }
       // ② 팔: 어깨 → 제어 뼈대의 손목 자리로 IK. 굽는 쪽 = 제어 뼈대의 팔꿈치 쪽(팔이 거의 펴지면 제어 뼈의 앞 축이 정하는 쪽)
       for (const [up, lo, end] of [[`upperarm_${h}`, `lowerarm_${h}`, `hand_${h}`], [`thigh_${h}`, `calf_${h}`, `foot_${h}`]]) {
         const mU = by[up], mL = by[lo], s = mU.side, arm = mU.limb === 'arm', oU = ctrl.bones[mU.o], oL = ctrl.bones[mL.o], oE = ctrl.bones[arm ? `hand.${s}` : `foot.${s}`];
@@ -139,9 +144,14 @@ export function makeRetarget(ctrl, H) {
         if (pole.lengthSq() < 1e-6) pole.copy(fold).addScaledVector(u, -fold.dot(u));
         if (pole.lengthSq() < 1e-8) pole.copy(V(0, 0, 1).applyQuaternion(qU)).addScaledVector(u, -V(0, 0, 1).applyQuaternion(qU).dot(u));
         pole.normalize();
-        const dd = THREE.MathUtils.clamp(dist, Math.abs(l1 - l2) + 1e-4, (l1 + l2) * 0.9999), ca = THREE.MathUtils.clamp((l1 * l1 + dd * dd - l2 * l2) / (2 * l1 * dd), -1, 1);
+        // p3d-0.11.2: 계산 쪽 팔이 98% 넘게 펴졌으면(매달린 팔) 그림에서는 곧게 편다 — 물리의 팔 길이 한계가 뼈 길이의 99.5%라 다 편 팔도 168°로 12° 굽어 보였다.
+        //   손목 자리는 그대로 두고 마네킹 어깨를 팔을 따라 손목 쪽으로 모자란 만큼(최대 약 8mm) 옮긴다. 다리는 그대로(디딘 다리는 굽어 있는 것이 보통이다)
+        if (arm && !globalThis.OLDSTRAIGHT) { const rc = wp(oU).distanceTo(t) / (DIM.upperArm + DIM.foreArm), w = THREE.MathUtils.clamp((rc - 0.98) / 0.015, 0, 1), want = (l1 + l2) * 0.9999;
+          if (w > 0 && dist < want) { const shf = Math.min(want - dist, 0.012) * w; a.addScaledVector(u, -shf); H.bones[up].parent.updateMatrixWorld(true); setWorld(H.bones[up], wq(H.bones[up]), a); } }
+        const d1 = t.clone().sub(a).length();
+        const dd = THREE.MathUtils.clamp(d1, Math.abs(l1 - l2) + 1e-4, (l1 + l2) * 0.9999), ca = THREE.MathUtils.clamp((l1 * l1 + dd * dd - l2 * l2) / (2 * l1 * dd), -1, 1);
         const mid = a.clone().addScaledVector(u, l1 * ca).addScaledVector(pole, l1 * Math.sqrt(1 - ca * ca)), endP = a.clone().addScaledVector(u, dd);
-        gap = Math.max(gap, Math.max(0, dist - dd));
+        gap = Math.max(gap, Math.max(0, d1 - dd));
         setWorld(H.bones[up], alignQ(mU.aHL, mU.sHL, mid.clone().sub(a), V().copy(mU.sOL).applyQuaternion(qO(mU.o))));
         setWorld(H.bones[lo], alignQ(mL.aHL, mL.sHL, endP.clone().sub(mid), V().copy(mL.sOL).applyQuaternion(qO(mL.o))));
         // ③ 손·발: 제어 뼈의 회전을 옮긴다

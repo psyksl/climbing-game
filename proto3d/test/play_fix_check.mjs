@@ -36,6 +36,13 @@ for (let off = -48; off <= 54; off += 6) { const T = mk([0.62, 0, -2.65]); const
   const P = n => T.rig.bones[n].getWorldPosition(new THREE.Vector3()), kn = P('leg.L').distanceTo(P('leg.R')), hp = P('upLeg.L').distanceTo(P('upLeg.R')), ft = P('foot.L').distanceTo(P('foot.R'));
   out.cases['늘어뜨린 다리'] = { 무릎_간격_cm: +(kn * 100).toFixed(1), 엉덩이_폭_cm: +(hp * 100).toFixed(1), 발_간격_cm: +(ft * 100).toFixed(1) };
   check('발 없이 매달린 다리: 무릎 간격이 엉덩이 폭 + 6cm 안(0.11.1: 무릎 29cm · 엉덩이 18cm — O자 다리)', T.sim.climb.feet.every(f => f.st === 'free') && kn <= hp + 0.06, `무릎 ${(kn * 100).toFixed(1)}cm · 엉덩이 ${(hp * 100).toFixed(1)}cm · 발 ${(ft * 100).toFixed(1)}cm`); }
+// ⑤ 매달린 팔의 그림(p3d-0.11.3, 사용자 지적 "편 것도 굽힌 것도 아닌 팔"): 한 손 매달림에서 마네킹의 팔꿈치가 계산 쪽 팔보다 더 굽지 않고, 계산 쪽이 다 펴졌으면 곧게(170° 넘게) 그려진다
+{ const { buildHuman, makeRetarget } = await imp('human.js'), world = W.makeWorld(), rig = buildCharacter(), sim = makeSim(rig, world, clips); sim.opt.posture = POST; sim.reset({ pos: [0.62, 0, -2.65], yaw: Math.PI }); sim.opt.posture = POST; sim.opt.footAssist = false; const Hm = buildHuman(), R = makeRetarget(rig, Hm);
+  const run = (n, inp = {}, cmd = []) => { for (let k = 0; k < n; k++) sim.step({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd: k ? [] : cmd }); }, P = o => o.getWorldPosition(new THREE.Vector3()), ang = (a, b, c) => a.clone().sub(b).angleTo(c.clone().sub(b)) * 180 / Math.PI;
+  run(30); run(1, { jump: true }, [hand(1, [0.9, 2.32, -2.86])]); run(59, { jump: true }); const rows = [];
+  for (let k = 0; k < 6; k++) { run(30); R.apply(sim.fing, sim.pron, sim.climb, world, sim.gw); rig.root.updateMatrixWorld(true); const c = ang(P(rig.bones['upperArm.R']), P(rig.bones['foreArm.R']), P(rig.bones['hand.R'])), h = ang(P(Hm.bones.upperarm_r), P(Hm.bones.lowerarm_r), P(Hm.bones.hand_r)); rows.push([+c.toFixed(0), +h.toFixed(0)]); }
+  out.cases['매달린 팔: 계산 / 마네킹 팔꿈치(°)'] = rows; const ok = sim.climb.hands[1].st === 'hold' && rows.every(([c, h]) => h >= c - 3 && (c < 165 || h >= 170));
+  check('매달린 팔: 마네킹 팔꿈치가 계산 쪽보다 3° 넘게 더 굽지 않고, 계산 쪽이 165° 넘게 펴졌으면 170° 넘게 곧다(0.11.2: 계산 166~169° · 마네킹 117~139°)', ok, rows.map(([c, h]) => `${c}/${h}`).join(' · ')); }
 console.log(`\n통과 ${out.checks.filter(c => c.ok).length} · 실패 ${fail}`);
 if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify({ 실행_출처: __P, ...out }, null, 1));
 process.exitCode = fail ? 1 : 0;

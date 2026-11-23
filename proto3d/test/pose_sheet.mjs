@@ -13,6 +13,7 @@ const all = [...SCENES_FOOT.map((s, i) => ['foot' + (i + 1), ...pad(s)]), ...SCE
 const sc = all.find(s => s[0] === id); if (!sc) throw new Error('장면 없음: ' + id);
 const [, title, fn, assist, mode, st0, yaw0, wname] = sc, inputs = [], put = (inp = {}, cmd = []) => inputs.push({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd }), rep = (n, inp, cmd) => { for (let i = 0; i < n; i++) put(inp, i ? [] : cmd); }; fn(null, put, rep);
 const times = ts.includes(':') ? (() => { const [a, b, d] = ts.split(':').map(Number), o = []; for (let t = a; t <= b + 1e-9; t += d) o.push(+t.toFixed(3)); return o; })() : ts.split(',').map(Number);
+const cam = (process.env.CAM || '3.0,1.05').split(',').map(Number);
 const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }), CW = 300, CH = 470;
 const rows = [];
 for (const [vname, off] of [['뒤', Math.PI], ['옆', -Math.PI / 2]]) for (const m of modes) {
@@ -20,7 +21,7 @@ for (const [vname, off] of [['뒤', Math.PI], ['옆', -Math.PI / 2]]) for (const
   await pg.evaluate(([st, assist, mode, post, y0]) => { __p3.pause(true); for (const i of ['help', 'hud']) document.getElementById(i).style.display = 'none'; __p3.opt({ handMode: mode || 1, footAssist: !!assist, wallRest: false, diag: false }); __p3.posture(post); __p3.reset({ pos: st, yaw: y0 }); __p3.posture(post); }, [st0 || START, assist, mode, m, yaw0 ?? Math.PI]);
   const cells = []; let k = 0;
   for (const t of times) { const k1 = Math.min(inputs.length, Math.round(t * 120)); if (k1 > k) await pg.evaluate(([part]) => { for (const x of part) { for (const c of x.cmd || []) __p3.cmd(c); __p3.run(1, x); } }, [inputs.slice(k, k1)]); k = Math.max(k, k1);
-    await pg.evaluate(([off, y0]) => { __p3.shot({ off: off + y0 - __p3.body().yaw, dist: 3.0, pitch: 0.06, h: 1.05 }); }, [off, yaw0 ?? Math.PI]);
+    await pg.evaluate(([off, y0, cam]) => { __p3.shot({ off: off + y0 - __p3.body().yaw, dist: cam[0], pitch: 0.06, h: cam[1] }); }, [off, yaw0 ?? Math.PI, cam]);
     cells.push((await pg.screenshot({ type: 'jpeg', quality: 86, clip: { x: (560 - CW) / 2, y: 60, width: CW, height: CH } })).toString('base64')); }
   rows.push([`${m} · ${vname}`, cells]); await pg.close(); }
 const html = `<html><body style="margin:0;font:13px sans-serif;background:#fff"><div style="padding:5px"><b>${id}</b> ${title.replace(/</g, '&lt;').slice(0, 90)} — 스크립트 입력(사람 손 아님). 그림은 판정이 아니다</div><table style="border-collapse:collapse"><tr><td></td>${times.map(t => `<td style="text-align:center">${t}초</td>`).join('')}</tr>` +
