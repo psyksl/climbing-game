@@ -1,4 +1,5 @@
 // 뻗는 손을 가까이서 계산 걸음마다 찍어 한 장에 늘어놓는다(p3d-0.11.6, 사용자 "손목·손등·손가락이 뒤집히고 난리"). 스크립트 입력(사람 손 아님).
+// 다른 뼈를 가운데로: BONE=upperArm.L (p3d-0.11.6 뒤 Blender 어깨 무게 비교에서 씀)
 // 사용: node test/hand_closeup.mjs <출력.png> <장면 id> <L|R> <시작 초> <끝 초> [간격 걸음=3]   비교 스위치: GLOB=OLDPALM,OLDFINGAV   캡처 동작: MODE=clip
 import path from 'path'; import { fileURLToPath } from 'url'; import { createRequire } from 'module';
 const HERE = path.dirname(fileURLToPath(import.meta.url)), require = createRequire(import.meta.url), { chromium } = require('playwright');
@@ -16,7 +17,7 @@ const k0 = Math.round(t0 * 120), k1 = Math.round(t1 * 120); await pg.evaluate(([
 const rows = { 뒤: [], 옆: [] };
 for (let k = k0; k <= Math.min(k1, inputs.length - 1); k += every) {
   if (k > k0) await pg.evaluate(([part]) => { for (const x of part) { for (const c of x.cmd || []) __p3.cmd(c); __p3.run(1, x); } }, [inputs.slice(k - every, k)]);
-  for (const [nm, off] of [['뒤', Math.PI], ['옆', -Math.PI / 2]]) { await pg.evaluate(([off, side]) => { const e = __p3.rig.bones['hand.' + side].matrixWorld.elements; __p3.shot({ off: off + Math.PI - __p3.body().yaw, dist: 0.75, pitch: 0.05, at: [e[12], e[13] - 0.05, e[14]] }); }, [off, side]);
+  for (const [nm, off] of [['뒤', Math.PI], ['옆', -Math.PI / 2]]) { await pg.evaluate(([off, side, BONE]) => { const e = __p3.rig.bones[BONE || ('hand.' + side)].matrixWorld.elements; __p3.shot({ off: off + Math.PI - __p3.body().yaw, dist: 0.75, pitch: 0.05, at: [e[12], e[13] - 0.05, e[14]] }); }, [off, side, process.env.BONE || '']);
     rows[nm].push([(await pg.screenshot({ type: 'jpeg', quality: 85 })).toString('base64'), ((k + 1) / 120).toFixed(3)]); }
 }
 const sheet = await b.newPage({ viewport: { width: 1500, height: 900 } }), n = rows.뒤.length, cols = Math.min(n, 12), w = Math.floor(1480 / cols);
