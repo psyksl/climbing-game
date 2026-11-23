@@ -20,7 +20,7 @@ export function makeSim(rig, world, clips = null) {
   const pose = dt => {
     const K = S.climb;
     if (K.on) { poseClimb(S); if (S.tc) S.tc.a = 0; }
-    else { poseProc(S.motion, S.body); if (S.clip) poseClip(S.clip, S.motion, S.body, world, groundAt, dt); outBlend(S, dt); torsoClear(S, dt); groundHands(S, dt); measure(S.motion, S.body); }
+    else { poseProc(S.motion, S.body); if (S.clip) { S.clip.reach = S.climb.hands.map(h => h.st === 'reach'); poseClip(S.clip, S.motion, S.body, world, groundAt, dt); } outBlend(S, dt); torsoClear(S, dt); groundHands(S, dt); measure(S.motion, S.body); }
     afterPose(S);
   };
   S.reset = o => { S.body = o ? makeBody(new THREE.Vector3(...o.pos), o.yaw ?? 0) : makeBody(); S.climb = makeClimb(); ground(); S.tick = 0; S.pw = null; S.poleS = null; S.tc = null; S.fing = [0.3, 0.3]; S.pron = [1, 1]; S.gw = [0, 0]; pose(0); };
