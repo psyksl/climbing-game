@@ -29,10 +29,11 @@ const KEYS = ['frog', 'legx', 'touch', 'gfeet', 'wing', 'handhip'], NAME = { fro
 const out = { scenes: {} }, TOT = Object.fromEntries(KEYS.map(k => [k, 0])); let TOTN = 0; const worst = Object.fromEntries(KEYS.map(k => [k, { v: 0, at: '' }]));
 for (const [id, title, fn, assist, , st0] of all) {
   const rig = buildCharacter(), world = makeWorld(), sim = makeSim(rig, world, clips); sim.reset({ pos: st0 || SC.START, yaw: Math.PI }); sim.opt.wallRest = false; sim.opt.footAssist = !!assist; sim.opt.posture = process.env.VARIANT || 'fb'; sim.opt.grabAssist = !process.env.NOASSIST;
-  const inputs = [], put = (inp = {}, cmd = []) => inputs.push({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd }), rep = (n, inp, cmd) => { for (let i = 0; i < n; i++) put(inp, i ? [] : cmd); }; fn(sim, put, rep);
+  // p3d-0.11.7: 걸음마다 바로 진행하며 잰다 — 전에는 입력을 먼저 다 만든 뒤 돌려서, 진행 중의 상태를 보고 입력을 정하는 장면(C의 흔들기 swingThen 등)은 흔들지 않은 채로 재고 있었다
+  let k = -1; const put = (inp = {}, cmd = []) => { k++; measure(k, { mx: 0, mz: 0, cxSign: 1, ...inp, cmd }); }, rep = (n, inp, cmd) => { for (let i = 0; i < n; i++) put(inp, i ? [] : cmd); };
   const B = rig.bones, P = n => B[n].getWorldPosition(V()), cnt = Object.fromEntries(KEYS.map(k => [k, 0])), mx = Object.fromEntries(KEYS.map(k => [k, { v: 0, t: 0, x: '' }])); let frogHip = 9, frogKK = 0;
   const note = (k, v, t, x = '') => { cnt[k]++; if (v > mx[k].v) mx[k] = { v, t, x }; if (v > worst[k].v) worst[k] = { v, at: `${id} @${t}s ${x}` }; };
-  for (let k = 0; k < inputs.length; k++) { sim.step(inputs[k]); rig.root.updateMatrixWorld(true); const t = +((k + 1) / 120).toFixed(3), K = sim.climb, onW = K.on;
+  function measure(k, inp) { sim.step(inp); rig.root.updateMatrixWorld(true); const t = +((k + 1) / 120).toFixed(3), K = sim.climb, onW = K.on;
     const qH = qA(B.hips.getWorldQuaternion(Q())), L = s => ({ hip: P(`upLeg.${s}`), knee: P(`leg.${s}`), ank: P(`foot.${s}`), toe: P(`toe.${s}`) }), legs = [L('L'), L('R')];
     // ① 개구리
     if (onW) for (const [i, lg] of legs.entries()) { const F = K.feet[i]; if (F.st !== 'plant') continue; const sx = i ? -1 : 1, turn = AN.kneeTurn(qH, vA(lg.hip), vA(lg.knee), vA(lg.ank), sx) * deg, fold = lg.hip.distanceTo(lg.ank) / DIM.leg;
@@ -49,8 +50,9 @@ for (const [id, title, fn, assist, , st0] of all) {
     // ⑦ 빈손이 엉덩이·허벅지에
     if (onW) for (const [i, H] of K.hands.entries()) { if (H.st !== 'free') continue; const wr = P(`hand.${i ? 'R' : 'L'}`), pel = P('hips'); let d = 9; for (const lg of legs) d = Math.min(d, ptSeg(wr, lg.hip, lg.knee) - 0.11); d = Math.min(d, wr.distanceTo(pel) - 0.17); if (d < 0) note('handhip', -d * 100, t, `${i ? 'R' : 'L'} ${(-d * 100).toFixed(1)}cm`); }
   }
-  for (const k of KEYS) TOT[k] += cnt[k]; TOTN += inputs.length;
-  out.scenes[id] = { 제목: title, 걸음: inputs.length, 걸음수: cnt, 가장_큰: Object.fromEntries(KEYS.map(k => [k, mx[k].v ? `${mx[k].v.toFixed(1)} @${mx[k].t}s ${mx[k].x}` : ''])) };
+  fn(sim, put, rep);
+  for (const k of KEYS) TOT[k] += cnt[k]; TOTN += k + 1;
+  out.scenes[id] = { 제목: title, 걸음: k + 1, 걸음수: cnt, 가장_큰: Object.fromEntries(KEYS.map(k => [k, mx[k].v ? `${mx[k].v.toFixed(1)} @${mx[k].t}s ${mx[k].x}` : ''])) };
   const s = KEYS.filter(k => cnt[k]).map(k => `${NAME[k]} ${cnt[k]}걸음(${mx[k].x} @${mx[k].t}s)`).join(' · ');
   if (s) console.log(`■ ${id.padEnd(7)} ${s}`);
 }

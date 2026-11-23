@@ -13,7 +13,11 @@ const [outPng, id, t0s, t1s, everyS] = process.argv.slice(2); if (!outPng || !id
 const t0 = +t0s, t1 = +t1s, every = +(everyS || 2), clip = process.env.MODE === 'clip', build = process.env.BUILD ? path.resolve(process.env.BUILD) : path.join(HERE, '..', process.env.MODE === 'clip' ? 'climb3d_mocap.html' : 'climb3d.html');
 const list = [...SCENES_FOOT.map((s, i) => ['foot' + (i + 1), ...s]), ...SCENES.map((s, i) => ['reach' + (i + 1), ...s]), ...SCENES_H.map(s => [s[0].split(' ')[0], ...s]), ...SCENES_V115.map(s => [s[0].split(' ')[0], ...s]), ...SCENES_U.map(s => [s[0].split(' ')[0], ...s]), ...SCENES_GW.map(s => [s[0].split(' ')[0], ...s])], sc = list.find(s => s[0] === id); if (!sc) throw new Error('장면 없음: ' + id);
 const [, title, fn, assist, mode, st0] = sc, inputs = [], put = (inp = {}, cmd = []) => inputs.push({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd }), rep = (n, inp, cmd) => { for (let i = 0; i < n; i++) put(inp, i ? [] : cmd); };
-fn(null, put, rep);
+// p3d-0.11.7: 진행 중의 상태를 보고 입력을 정하는 장면(흔들기 swingThen 등 — 함수 안에서 sim을 읽음)은 node 쪽 시뮬레이션을 함께 돌리며 입력을 만든다(record_reach.mjs와 같은 방법). 화면 쪽과 같은 설정(자세 fb, 잡기 보정 켬, 손 조작)
+if (/\bsim\.|swingThen/.test(fn.toString())) { const imp = f => import(new URL('../src/' + f, import.meta.url).href), { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js');
+  const sim = makeSim(buildCharacter(), makeWorld(), clip ? JSON.parse(fs.readFileSync(path.join(HERE, '../assets_local/clips.json'), 'utf8')) : null); sim.reset({ pos: st0 || START, yaw: Math.PI }); sim.opt.wallRest = false; sim.opt.footAssist = !!assist; sim.opt.grabAssist = true; sim.opt.posture = process.env.POSTURE || 'fb'; sim.opt.handMode = mode || 1;
+  const putL = (inp = {}, cmd = []) => { const x = { mx: 0, mz: 0, cxSign: 1, ...inp, cmd }; inputs.push(x); sim.step(x); }, repL = (n, inp, cmd) => { for (let i = 0; i < n; i++) putL(inp, i ? [] : cmd); }; fn(sim, putL, repL); }
+else fn(null, put, rep);
 const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const pg = await b.newPage({ viewport: { width: 460, height: 500 } }), errs = []; pg.on('pageerror', e => errs.push(e.message)); if (process.env.GLOB) await pg.addInitScript(g => { for (const k of g.split(',')) globalThis[k] = 1; }, process.env.GLOB); // p3d-0.11.6: 비교 스위치(OLDPALM 등)를 페이지에 켠다
 await pg.goto('file://' + build + '?test&noshadow'); await pg.waitForTimeout(1800);
