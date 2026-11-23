@@ -29,6 +29,7 @@ export const CL = {
   //   어깨가 목표 쪽으로 움직이는 중이면(반동·점프) 그 빠르기 1m/s당 ASSIST_D만큼 더 허용한다(ASSIST_MAX까지). 끌려가는 동안 다른 손이 버티지 못하면 그 손을 놓는다. 발은 다리가 닿는 범위를 벗어나면 떨어진다(원래 규칙). 실험값
   GRIP_BAD_CAP: 0.10, // p3d-0.11.4: 당기는 방향이 턱이 버티는 범위 밖인 손이 당기는 힘의 한계(몸무게 배수, GRIP_MIN 0.15보다 작게)
   ASSIST_S: 0.08, ASSIST_D: 0.10, ASSIST_MAX: 0.28, ASSIST_V: 1.2,
+  ASSIST_BURST1: 1.3, // 잡기 보정: 한 손만 잡고 뛸 때 그 팔의 순간 힘(몸무게 배. 기본 ARM_BURST 0.85). 두 손 점프는 그대로
   NEW_T: 1.0, ASSIST_GRIP_ANG: 72 * Math.PI / 180, ASSIST_SHOCK_V: 2.4, // 잡기 보정: 막 잡은 손으로 보는 시간(초)
   ASSIST_WRIST: 15, // 잡기 보정이 켜져 있으면 손목 한계(wristMax 70°)를 이만큼 더 허용한다(비스듬히 잡을 때 아래팔을 돌려 손을 옆으로 세워 잡는 몫. 그림은 70°에서 멈춘다)
   HAND_V: 3.2, HAND_ACC: 30, HAND_V_DYN: 5.5, HAND_ACC_DYN: 60, STAND_SH: 1.42, HAND_T0: 0.22, HAND_T1: 0.60, FOOT_V: 1.1, FOOT_T0: 0.28, FOOT_T1: 0.90,
@@ -187,7 +188,7 @@ const armPole = (yaw, sx) => V(sx * 0.5, -1, -0.35).applyAxisAngle(UP, yaw).norm
 // 팔이 사람 어깨·위팔의 범위를 넘은 각(rad, 안이면 0). qC = 가슴의 방향(없으면 몸이 보는 쪽). 사람형 몸에서만(p3d-0.11.1, src/anat.js)
 // ELBOW_UP = 팔꿈치가 어깨와 손목 둘 다보다 높이 올라간 만큼의 값(1m = 0.25): 접은 팔의 위팔이 몸통에 조금 닿는다고 팔꿈치를 머리 위로 세우지 않게(손은 어깨 옆에 있고 팔꿈치만 하늘을 가리키는 팔이 뻗는 중에 그려졌다)
 // ARM_AW(1rad = 0.12 → 10° ≈ 지형 겹침 2mm·제 몸 겹침 7mm): 0.5로 두었을 때는 보통의 팔 교차가 "다른 팔에 막혀" 거부됐다(잡은 팔이 범위를 지키느라 비켜 주지 못했다). 0.12에서 잡은 팔의 범위 밖 걸음은 그대로 0
-const ARM_AW = 0.12, ELBOW_UP = 0.25, ELBOW_WING = 0.07; // ELBOW_WING(p3d-0.11.4, 잡은 팔 — 날개 값이 걸린 걸음에는 판정(armCheck)이 거부할 후보(제 몸 5mm 넘게, 팔이 벽·턱을 지나감)에 0.5를 더한다. 더하지 않았더니 그런 후보가 뽑혀 잡은 손이 놓쳤다(다른 벽 시험 A→B→A)): 손이 어깨 위일 때 위팔이 바깥으로 벌어진 몫(0.35 넘는 만큼) 1당 값(최대 0.045 — 팔꿈치가 지형에 드는 값 0.05보다 작게. 0.15로 두었더니 다른 벽의 턱을 잡을 때 벽 속 팔꿈치가 뽑혀 "팔이 벽·턱을 지나감"으로 거부됐다). 실험값
+const ARM_AW = 0.12, ELBOW_UP = 0.25, ELBOW_IN = 0.4, ELBOW_WING = 0.07; // ELBOW_WING(p3d-0.11.4, 잡은 팔 — 날개 값이 걸린 걸음에는 판정(armCheck)이 거부할 후보(제 몸 5mm 넘게, 팔이 벽·턱을 지나감)에 0.5를 더한다. 더하지 않았더니 그런 후보가 뽑혀 잡은 손이 놓쳤다(다른 벽 시험 A→B→A)): 손이 어깨 위일 때 위팔이 바깥으로 벌어진 몫(0.35 넘는 만큼) 1당 값(최대 0.045 — 팔꿈치가 지형에 드는 값 0.05보다 작게. 0.15로 두었더니 다른 벽의 턱을 잡을 때 벽 속 팔꿈치가 뽑혀 "팔이 벽·턱을 지나감"으로 거부됐다). 실험값
 function armOver(sh, ik, sx, q, yaw) { if (!(DIM.boxCollide && !globalThis.NOANAT)) return 0; const qq = q || Q().setFromAxisAngle(UP, yaw); return Math.max(0, armExcess([qq.x, qq.y, qq.z, qq.w], [sh.x, sh.y, sh.z], [ik.mid.x, ik.mid.y, ik.mid.z], [ik.end.x, ik.end.y, ik.end.z], sx)); }
 function armIK(world, sh, tgt, yaw, sx, q = null, full = false, tb = null) {
   let ik, pole, best = null;
@@ -512,9 +513,11 @@ export function probeHand(S, i, pt) {
   if (!g) return { ok: false, why: '잡을 수 있는 턱이 아님', sure: true };
   const goal = anchorOf(g), sh = joints(S).sh[i], d = sh.distanceTo(goal), sure = S.body.vel.length() < 0.3, base = { grip: g.p.toArray(), name: g.edge.box.name, sure };
   if (handPathBlocked(S.world, H, goal, g)) return { ...base, ok: false, why: '손이 가는 길이 막힘' };
-  if (d > CL.ARM) return { ...base, ok: false, short: d - CL.ARM, why: `닿지 않음(${short(d - CL.ARM)} 모자람)` };
-  const c = armCheck(S, i, sh, goal, g.n) || sidePull(S, i, sh, goal, g.n);
-  return c ? { ...base, ok: false, why: c } : { ...base, ok: true, why: '' };
+  // p3d-0.11.5: 미리보기도 잡기 보정과 같은 판정(정지 ASSIST_S + 목표 쪽으로 움직이는 빠르기만큼). 0.11.4는 미리보기가 보정을 몰라 잡히는 거리에서도 "조금 더 가까이"라고 보였다
+  const u = goal.clone().sub(sh).normalize(), A = assistOn(S) ? Math.min(CL.ASSIST_MAX, CL.ASSIST_S + CL.ASSIST_D * Math.min(Math.max(0, S.body.vel.dot(u)), 2)) : 0, far = d - CL.ARM;
+  if (far > A) return { ...base, ok: false, short: far, why: `닿지 않음(${short(far)} 모자람)` };
+  const c = armCheck(S, i, far > 0 ? sh.clone().addScaledVector(u, far) : sh, goal, g.n) || (assistOn(S) ? '' : sidePull(S, i, sh, goal, g.n));
+  return c ? { ...base, ok: false, why: c } : { ...base, ok: true, why: '', assist: far > 0 ? far : 0 };
 }
 export function probeFoot(S, i, pt) {
   const K = S.climb, g = resolveFoot(S.world, pt, S.body.yaw);
@@ -907,7 +910,11 @@ function heldPole(S, s, sh, goal, yaw, sx, qC) {
   //   재 보니 팔꿈치는 손보다 21cm 낮았지만 위팔이 바깥으로 거의 수평(어깨에서 옆 23cm·위 11cm)이었다 — 손이 어깨 앞·위에 있으면 사람은 팔꿈치를 앞(벽 쪽)·아래로 두고 팔뚝을 세운다.
   //   전신 자세 풀이(fb, 화면 기본)에서만 쓴다(옛 규칙에서는 앞으로 옮긴 위팔이 턱에 닿아 가슴이 열리며 다른 벽 시험의 흐름이 갈라졌다 — 그 규칙은 어깨가 벽에 가까워 앞쪽 후보가 대개 벽에 든다). 팔을 굽혔고(어깨–손 거리가 팔 길이의 85% 안 — 거의 편 팔은 팔꿈치 방향이 모양을 바꾸지 않는데 서서 잡는 보통 자세에까지 걸려 다른 벽 시험의 흐름이 갈라졌다) 손이 어깨보다 10cm 넘게 위일 때 위팔이 바깥으로 벌어진 몫(위팔 방향 · 바깥, 0.35 넘는 만큼)을 값에 넣고, 기본 후보가 그만큼 벌어져 있으면 둘레를 다 돌려 본다
   const outW = V(sx, 0, 0); if (qC) outW.applyQuaternion(qC); else outW.applyAxisAngle(UP, yaw);
-  const ehi = ik => (DIM.boxCollide && !globalThis.OLDPOLE && S.climb.post === 'fb' && goal.y > sh.y + 0.10 && sh.distanceTo(goal) < 0.85 * CL.ARM ? ELBOW_WING * Math.max(0, ik.mid.clone().sub(sh).dot(outW) / DIM.upperArm - 0.35) : 0), e0hi = ehi(base.ik);
+  // p3d-0.11.5(사용자 스크린샷 0.11.4: 잡은 팔이 머리 위로 접힘): 몸이 손 밑으로 들어가 손이 머리 위(어깨보다 안쪽)에 오면 기본 후보의 팔꿈치가 얼굴 앞·안쪽으로 가 팔뚝이 머리를 덮었다.
+  //   팔을 엇갈려 잡은 것이 아니면(이 손의 목표가 다른 손의 목표를 넘어 반대쪽에 있지 않으면) 손이 어깨보다 10cm 넘게 위일 때 팔꿈치가 어깨에서 바깥 5cm보다 안쪽인 만큼을 값에 넣는다(ELBOW_IN — 처음에는 안쪽으로 든 만큼만 넣었더니 팔꿈치가 정면 앞에 섰다). 사람형 몸·fb에서만. 실험값
+  const oH = S.climb.hands[s === 'L' ? 1 : 0], crossed = oH && oH.st !== 'free' && goal.clone().sub(oH.goal).dot(outW) < -0.02;
+  const ein = ik => (DIM.boxCollide && !globalThis.OLDPOLE && S.climb.post === 'fb' && !crossed && goal.y > sh.y + 0.10 ? ELBOW_IN * Math.max(0, 0.05 - ik.mid.clone().sub(sh).dot(outW)) : 0);
+  const ehi = ik => (DIM.boxCollide && !globalThis.OLDPOLE && S.climb.post === 'fb' && goal.y > sh.y + 0.10 && sh.distanceTo(goal) < 0.85 * CL.ARM ? ELBOW_WING * Math.max(0, ik.mid.clone().sub(sh).dot(outW) / DIM.upperArm - 0.35) : 0), e0hi = ehi(base.ik) + ein(base.ik);
   if (!s0 && !(base.over > 0) && !(e0hi > 0.004)) return { pole: base.pole, ik: base.ik, self: null };
   const u = goal.clone().sub(sh); if (u.lengthSq() < 1e-8) return { pole: base.pole, ik: base.ik, self: s0 }; u.normalize();
   const e0 = base.pole.clone().addScaledVector(u, -base.pole.dot(u)); if (e0.lengthSq() < 1e-8) return { pole: base.pole, ik: base.ik, self: s0 }; e0.normalize();
@@ -915,7 +922,7 @@ function heldPole(S, s, sh, goal, yaw, sx, qC) {
   for (let j = 0; j < 24; j++) { const a = j * Math.PI / 12, an = a > Math.PI ? a - 2 * Math.PI : a, pl = e0.clone().multiplyScalar(Math.cos(a)).addScaledVector(e1, Math.sin(a)), ik = twoBone(sh, goal, DIM.upperArm, DIM.foreArm, pl), sf = armSelf(B, ik, sh), sm = XA ? armSelf(B, ik, sh, 0, XA) : sf;
     let dp = Math.abs(an - pa); if (dp > Math.PI) dp = 2 * Math.PI - dp;
     // 실제 겹침(머리·몸통, 여유 밖의 다른 팔)이 먼저다. 다른 팔과의 여유(6cm 안)는 가볍게만 본다 — 여유를 벌리려고 팔꿈치를 머리 쪽으로 돌리면 머리에 닿는다(0.8.6 작업 중에, 그것을 윗몸이 비키느라 엇갈려 잡은 몸이 36cm 옆으로 밀려갔다)
-    const cost = 3 * sd(sf, 'body') + 3 * sd(sf, 'arm') + (globalThis.MW ?? 0.2) * Math.max(0, sd(sm, 'arm') - sd(sf, 'arm')) + (elbowIn(S.world, ik.mid) ? 0.05 : 0) + (e0hi > 0.004 && (sd(sf, 'body') > 0.005 || rayHit(S.world, sh.clone().lerp(ik.mid, 0.2), ik.mid) < 1 || rayHit(S.world, ik.mid, ik.mid.clone().lerp(ik.end, 0.9)) < 1) ? 0.5 : 0) + ARM_AW * armOver(sh, ik, sx, qC, yaw) + ehi(ik) + 0.004 * Math.abs(an) + (prev ? 0.006 * dp : 0);
+    const cost = 3 * sd(sf, 'body') + 3 * sd(sf, 'arm') + (globalThis.MW ?? 0.2) * Math.max(0, sd(sm, 'arm') - sd(sf, 'arm')) + (elbowIn(S.world, ik.mid) ? 0.05 : 0) + (e0hi > 0.004 && (sd(sf, 'body') > 0.005 || rayHit(S.world, sh.clone().lerp(ik.mid, 0.2), ik.mid) < 1 || rayHit(S.world, ik.mid, ik.mid.clone().lerp(ik.end, 0.9)) < 1) ? 0.5 : 0) + ARM_AW * armOver(sh, ik, sx, qC, yaw) + ehi(ik) + ein(ik) + 0.004 * Math.abs(an) + (prev ? 0.006 * dp : 0);
     if (!best || cost < best.cost - 1e-7) best = { cost, pole: pl, ik, self: sf }; }
   return best;
 }
@@ -1119,7 +1126,8 @@ export function stepClimb(S, inp, dt) {
   // p3d-0.11.4(사용자 "손이 닿을 거리인데 잡을 수 없다"): 땅에 서서 턱을 비스듬히 잡으면 힘 나누기가 손에 몸무게의 15% 넘게 실어, 발로 설 수 있는데도 0.1초 뒤 "당기는 방향이 턱에서 벗어남"으로 놓쳤다(서는 자리 4cm 차이로 잡음·놓침이 갈렸다).
   //   사람은 버티지 못하는 방향으로는 손에 힘을 싣지 않는다 → 발이 디뎌 있고 뛰는 중이 아니면, 당기는 방향이 턱이 버티는 범위(GRIP_ANG)를 벗어난 손은 GRIP_BAD_CAP까지만 당긴다(뛰는 중에도 묶었더니 벽을 디딘 채 뛰는 높이가 35.8 → 25.1cm로 줄었다). 발이 받치지 못하면(매달림) 몸이 처지며 다 편 팔이 받는 몫(pas)이 생겨 전처럼 놓친다
   const gripOk = h => { const pull = T.sh[h.i].clone().sub(h.goal).normalize(), down = -pull.y, out = Math.max(0, pull.dot(h.n)), lat = pull.clone().addScaledVector(h.n, -pull.dot(h.n)).setY(0).length(); return down > 0.05 && Math.hypot(out, lat) / down <= Math.tan(CL.GRIP_ANG); };
-  for (const h of held) { const cap = (K.push ? CL.ARM_BURST : CL.ARM_F) * BW; C.push({ arm: true, f0: h.F, u: h.goal.clone().sub(T.sh[h.i]).normalize(), cap: DIM.boxCollide && !globalThis.OLDGRIPCAP && !K.push && planted.length && !gripOk(h) ? Math.min(cap, CL.GRIP_BAD_CAP * BW) : cap, r: h.goal.clone().sub(com) }); who.push(h); }
+  // p3d-0.11.5 점프 보정(사용자: "점프를 하면 보정을 해 줘야 되는데 반응도 없다"): 한 손으로 매달려 뛰면 한 팔의 순간 힘 0.85배로는 중력도 못 이겨 0.0~0.3cm(발을 벽에 대면 7cm) 올랐다 → 잡기 보정이 켜져 있으면 한 손만 잡고 뛸 때 ASSIST_BURST1
+  for (const h of held) { const cap = (K.push ? (assistOn(S) && held.length === 1 && !globalThis.OLDBURST ? CL.ASSIST_BURST1 : CL.ARM_BURST) : CL.ARM_F) * BW;  C.push({ arm: true, f0: h.F, u: h.goal.clone().sub(T.sh[h.i]).normalize(), cap: DIM.boxCollide && !globalThis.OLDGRIPCAP && !K.push && planted.length && !gripOk(h) ? Math.min(cap, CL.GRIP_BAD_CAP * BW) : cap, r: h.goal.clone().sub(com) }); who.push(h); }
   const Fs = solveForces(C, Fd, held.length ? 0 : CL.MOM), acc = V(0, -PHY.G, 0), v0 = b.vel.clone(), p0 = b.pos.clone();
   Fs.forEach((f, i) => { acc.addScaledVector(f, 1 / m); who[i].load = who[i].act = f.length() / BW; who[i].pas = 0; who[i].cap = C[i].cap / BW; who[i].F = f; if (!C[i].arm) who[i].ok = f.lengthSq() > 1; });
   // 흔들기: 손으로만 매달렸을 때 A/D는 벽과 나란한 쪽으로 몸을 미는 힘(엉덩이·다리를 차서 흔드는 것을 질점 몸에 옮긴 근사. 팔 길이 구속이 진자 운동으로 바꾼다)

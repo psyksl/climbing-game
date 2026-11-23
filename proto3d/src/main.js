@@ -14,7 +14,7 @@ import GALLERY from 'gallery-data'; // 동작 보기용 자료(받은 동작 전
 import { poseRaw } from './clipmotion.js';
 import { buildProps, makeSwingRope, applyGrips } from './demo.js'; // 캡처 동작 자료(빌드할 때 assets_local/clips.json이 있으면 들어온다. 없으면 null)
 
-export const VERSION = 'p3d-0.11.4';
+export const VERSION = 'p3d-0.11.5';
 const params = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: params.has('test') });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = !params.has('noshadow');
@@ -204,7 +204,7 @@ function drawTags() {
   // 단추 이름표(임시 모양, GPT 답): 발 선택을 누르고 있으면 같은 단추의 이름이 왼손·오른손 → 왼발·오른발로 바뀐다. 키 설정에서 읽는다(이름을 코드에 고정해 쓰지 않는다)
   const cap = id => { const bd = BIND.find(x => x.id === id); return bd && bd.keys[0] ? `<span style="display:inline-block;padding:0 5px;margin-right:4px;border:1px solid ${foot ? '#e0a94f' : '#8fa3b5'};border-radius:4px;font-size:11px;color:${foot ? '#ffd58a' : '#cfd9e2'}">${keyName(bd.keys[0])}</span>` : ''; };
   const act = x => (/닿지 않음/.test(x.why) ? '조금 더 가까이' + (OPT.diag ? ` (${x.why})` : '') : x.why);
-  const line = (x, n) => `${x.ok ? '●' : x.short !== undefined ? '○' : '✕'} ${n} ${x.ok ? (foot ? '디딜 수 있음' : '닿음') : act(x)}${x.sure === false ? ' <i>? 지금 자세 기준</i>' : ''}`;
+  const line = (x, n) => `${x.ok ? '●' : x.short !== undefined ? '○' : '✕'} ${n} ${x.ok ? (foot ? '디딜 수 있음' : x.assist ? '닿음(잡기 보정)' : '닿음') : act(x)}${x.sure === false ? ' <i>? 지금 자세 기준</i>' : ''}`;
   tip((g ? `<b>${g.name}</b>${g.kind ? (g.kind === 'top' ? ' 윗면' : ' 벽면') : ''}<br>` : '') + (P[0].why === P[1].why && !P[0].ok && !g ? `✕ ${P[0].why}` : cap('limbL') + line(P[0], foot ? '왼발' : '왼손') + '<br>' + cap('limbR') + line(P[1], foot ? '오른발' : '오른손')), sa.front ? sa.x : input.st.mx, sa.front ? sa.y : input.st.my);
 }
 function stateName() {

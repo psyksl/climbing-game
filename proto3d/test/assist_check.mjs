@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 const __P = prov(); console.log(provLine(__P));
 const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pathToFileURL(path.join(HERE, '../src', f)).href);
 const THREE = await import('three');
-const { buildCharacter } = await imp('rig.js'), W = await imp('world.js'), { makeSim } = await imp('sim.js');
+const CLM = await imp('climb.js'), { buildCharacter } = await imp('rig.js'), W = await imp('world.js'), { makeSim } = await imp('sim.js');
 const CLP = path.join(HERE, '../assets_local/clips.json'); if (process.env.MODE === 'clip' && !fs.existsSync(CLP)) { console.log('clips.json 없음 → 건너뜀'); process.exit(0); }
 const clips = process.env.MODE === 'clip' ? JSON.parse(fs.readFileSync(CLP, 'utf8')) : null, POST = process.env.VARIANT || 'fb';
 const hand = (i, p) => ({ type: 'hand', i, p }), out = { 자세: POST, 동작: clips ? '캡처' : '자작', checks: [], cases: {} }; let fail = 0;
@@ -19,10 +19,11 @@ const mk = (pos, assist) => { const rig = buildCharacter(), sim = makeSim(rig, W
   return { rig, sim, run, ev, st: () => ({ pop: +(pop * 100).toFixed(1), gap: +(Math.max(0, gap) * 100).toFixed(1) }) }; };
 const seq = T => T.ev.map(e => `${e.type}${e.i !== undefined ? (e.i ? 'R' : 'L') : ''}${e.why ? '(' + e.why + ')' : ''}`).join(' → ');
 // ① 땅에서 오른손을 턱 A의 오른쪽 끝으로(몸의 오른쪽. 서 있는 자리를 왼쪽으로 옮겨 가며 거리를 바꾼다)
-{ const rows = []; for (const x of [-1.00, -1.06, -1.10, -1.14, -1.20, -1.30]) { const r = { 서는_자리: x }; for (const as of [false, true]) { const T = mk([x, 0, -2.58], as); T.run(30); T.run(260, {}, [hand(1, [-0.65, 1.92, -2.84])]); r[as ? '켬' : '끔'] = seq(T) || '없음'; if (as) Object.assign(r, T.st(), { 끝: T.sim.climb.hands.map(h => h.st).join('/') }); } rows.push(r); }
+{ const rows = []; for (const x of [-1.00, -1.06, -1.10, -1.14, -1.20, -1.30]) { const r = { 서는_자리: x }; for (const as of [false, true]) { const T = mk([x, 0, -2.58], as); T.run(30); r[(as ? '켬' : '끔') + '_미리보기'] = (CLM.probeHand(T.sim, 1, new THREE.Vector3(-0.65, 1.92, -2.84)).ok ? '닿음' : '못 닿음'); T.run(260, {}, [hand(1, [-0.65, 1.92, -2.84])]); r[as ? '켬' : '끔'] = seq(T) || '없음'; if (as) Object.assign(r, T.st(), { 끝: T.sim.climb.hands.map(h => h.st).join('/') }); } rows.push(r); }
   out.cases['① 땅에서 조금 모자란 손'] = rows; for (const r of rows) console.log('  ', JSON.stringify(r));
   const sh = r => +((/닿지 않음\((\d+)(mm|cm)/.exec(r.끔) || [])[1] || 0) / ((/mm/.test(r.끔)) ? 10 : 1);
   check('① 땅: 보정 끔에서 "닿지 않음 N cm" 거부였던 거리 가운데 8cm 이하는 켬에서 잡고, 9cm 넘게 모자라면 켬에서도 거부한다', rows.every(r => !/닿지 않음/.test(r.끔) || (sh(r) <= 8 ? /grab/.test(r.켬) : /reject/.test(r.켬) && !/grab/.test(r.켬)) || (sh(r) > 8 && sh(r) <= 9)), rows.map(r => `${r.서는_자리}: 끔 ${sh(r) || '잡음'}cm → 켬 ${/grab/.test(r.켬) ? '잡음' : '거부'}`).join(' · '));
+  check('① 땅: 미리보기(probeHand)와 실제 결과가 같다(보정 끔·켬 모두. 0.11.4는 미리보기가 보정을 몰랐다)', rows.every(r => ['끔', '켬'].every(a => (r[a + '_미리보기'] === '닿음') === /grab/.test(r[a]))), rows.map(r => `${r.서는_자리}: 끔 ${r['끔_미리보기']}/${/grab/.test(r.끔) ? '잡음' : '못 잡음'} 켬 ${r['켬_미리보기']}/${/grab/.test(r.켬) ? '잡음' : '못 잡음'}`).join(' · '));
   check('① 땅: 보정으로 잡은 뒤 몸이 한 걸음에 2cm 넘게 옮겨지지 않는다(끌려가는 빠르기 초속 1.2m = 한 걸음 1cm)', rows.filter(r => /assist/.test(r.켬)).every(r => r.pop <= 2.0), rows.filter(r => /assist/.test(r.켬)).map(r => `${r.pop}cm`).join(', ')); }
 // ② 한 손 매달림(왼손 턱 B, 발 없음)에서 오른손을 오른쪽 아래의 턱 E로. 매달린 자리 0.8 = 가만히는 23cm 모자람, 0.9 = 10cm 모자람(3cm 안팎은 몸을 옮기는 사이에 메워진다)
 //   흔들기 = A/D를 0.375초씩 번갈아 눌러 키운 뒤, 오른쪽으로 흔들려 가는 빠르기가 그동안의 최대의 80%를 넘는 걸음에 뻗는다(이 장면의 흔들림은 초속 0.5m쯤)
@@ -49,6 +50,16 @@ if (POST !== 'fb') { console.log('② 건너뜀: 장면(매달린 자리 0.8·0.
   out.cases['③ 점프하며 잡기'] = rows; const g = (n, a) => rows.find(r => r.턱 === n && r.보정 === a);
   check('③ 점프 잡기: 보정 켬에서 잡히는 클릭 시각이 끔보다 줄지 않고, 두 턱 모두 끔보다 늘거나 같다', ['턱 B', '턱 F(바로 밑)'].every(n => g(n, '켬').잡은_수 >= g(n, '끔').잡은_수), rows.map(r => `${r.턱} ${r.보정} ${r.잡은_수}/${r.결과.length}`).join(' · '));
   check('③ 점프 잡기: 보정 켬에서 잡은 손이 잡자마자 놓치는 경우가 없다(끝에 잡혀 있지 않은 경우의 까닭이 "놓침"이 아니다)', rows.filter(r => r.보정 === '켬').every(r => !r.결과.some(x => /충격|당기는 방향/.test(x))), rows.filter(r => r.보정 === '켬').map(r => r.결과.filter(x => /충격|당기는 방향/.test(x)).join(',') || '없음').join(' · ')); }
+// ④ 한 손 매달림에서 벽 점프(사용자: "점프를 하면 보정을 해 줘야 되는데 반응도 없다"): 두 손으로 턱 B를 잡고 두 발을 벽면(0.8m)에 댄 뒤 왼손을 놓고 Space 0.3초. 몸이 오른 높이(끔 / 켬), 두 손 점프는 켬·끔 같아야 한다
+{ const foot = (i, p) => ({ type: 'foot', i, p }), rel = (l, i) => ({ type: 'release', limb: l, i }), rows = [];
+  for (const n of [1, 2]) for (const as of [false, true]) { const T = mk([0.7, 0, -2.65], as); T.run(30); T.run(1, { jump: true }, [hand(0, [0.5, 2.32, -2.86]), hand(1, [0.9, 2.32, -2.86])]); T.run(59, { jump: true }); T.run(200);
+    T.run(240, {}, [foot(0, [0.45, 0.8, -3.0])]); T.run(240, {}, [foot(1, [0.95, 0.8, -3.0])]); if (n === 1) T.run(120, {}, [rel('hand', 0)]); T.run(120);
+    const pre = T.sim.climb.hands.map(h => h.st).join('/') + ' ' + T.sim.climb.feet.map(f => f.st).join('/'), y0 = T.sim.body.pos.y; let ym = y0; for (let k = 0; k < 150; k++) { T.run(1, { jump: k < 36 }); ym = Math.max(ym, T.sim.body.pos.y); }
+    rows.push({ 손: n, 보정: as ? '켬' : '끔', 뛰기_전: pre, 오른_높이_cm: +((ym - y0) * 100).toFixed(1) }); }
+  out.cases['④ 벽 점프'] = rows; for (const r of rows) console.log('  ', JSON.stringify(r)); const g = (n, a) => rows.find(r => r.손 === n && r.보정 === a);
+  check('④ 앞 조건: 뛰기 전 한 손 경우는 오른손만, 두 손 경우는 두 손이 잡혀 있고 두 발이 벽면을 디뎠다', g(1, '켬').뛰기_전 === 'free/hold plant/plant' && g(2, '켬').뛰기_전 === 'hold/hold plant/plant', rows.map(r => r.뛰기_전).join(' · '));
+  check(POST === 'fb' ? '④ 한 손 + 두 발 벽면 점프(fb, 화면 기본): 보정 켬이면 25cm 넘게 오른다(0.11.4: 7cm)' : '④ 한 손 + 두 발 벽면 점프(옛 규칙 — 25cm 기준은 fb의 측정에 맞춘 것이라 여기서는 끔보다 5cm 넘게 높은지만 본다)', POST === 'fb' ? g(1, '켬').오른_높이_cm > 25 : g(1, '켬').오른_높이_cm > g(1, '끔').오른_높이_cm + 5, `끔 ${g(1, '끔').오른_높이_cm}cm → 켬 ${g(1, '켬').오른_높이_cm}cm`);
+  check('④ 두 손 점프는 보정 켬·끔이 같다(한 손 점프만 돕는다)', Math.abs(g(2, '켬').오른_높이_cm - g(2, '끔').오른_높이_cm) < 0.5, `끔 ${g(2, '끔').오른_높이_cm}cm · 켬 ${g(2, '켬').오른_높이_cm}cm`); }
 console.log(`\n통과 ${out.checks.filter(c => c.ok).length} · 실패 ${fail}`);
 if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify({ 실행_출처: __P, ...out }, null, 1));
 process.exitCode = fail ? 1 : 0;
