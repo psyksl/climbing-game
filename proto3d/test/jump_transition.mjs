@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+await import('./provenance.mjs'); // p3d-0.11.7: 비교 스위치(OLDJUMPARMS 등)를 환경 변수로 켠다
 const SRC = process.env.SRC ? path.resolve(process.env.SRC) : path.resolve(HERE, '../src');
 const CL = process.env.CLIPS || path.resolve(HERE, '../assets_local/clips.json');
 if (!fs.existsSync(CL)) { console.log('clips.json 없음 → 건너뜀'); process.exit(0); }

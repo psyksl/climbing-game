@@ -28,7 +28,7 @@ export const CLIP = { AIR_SYM: 0.8,
   CROUCH_V: 1.6,            // 웅크린 채 이 속도에서 낮은 걸음(sneak)이 다 섞인다(조작의 웅크려 걷기 0.8m/s에서는 절반쯤 섞여 보폭이 절반)
   PLANT_V: 0.35,            // 모으기·밀기·착지에서 이 속도(m/s) 아래일 때만 두 발을 땅에 붙든다
   LAND_V: 3.2,              // 이 빠르기(m/s)로 내려앉으면 착지 동작을 다 쓴다(더 느리면 그만큼 얕게, 0.3까지)
-  LAND_GAP0: 0.12, AIR_LAND_T: 1.033, LAND_GAP1: 0.40, // p3d-0.11.4: 착지할 때 무릎 높이(발에서 0.15~0.7m)의 막힌 것까지 이 거리 사이면 착지 웅크림을 그만큼 얕게(0.35배까지)
+  LAND_GAP0: 0.12, AIR_LAND_T: 1.033, AIR_ARM_T: 0.40, LAND_GAP1: 0.40, // p3d-0.11.4: 착지할 때 무릎 높이(발에서 0.15~0.7m)의 막힌 것까지 이 거리 사이면 착지 웅크림을 그만큼 얕게(0.35배까지)
   DROP_FALL_T: 0.45,         // p3d-0.11.4: 뛰지 않고 떨어질 때(벽에서 놓음·턱에서 걸어 내려감) 낙하 자세(Falling Idle: 무릎 50°로 당기고 한 팔을 쳐듦)로 넘어가기 시작하는 시각. 전에는 0.09초에 다 섞여 손을 놓자마자 무릎을 당기고 팔을 휘둘렀다(사용자 영상 0.11.3 v3 49초 "스파이더맨 같은 점프"). 0.45초 = 약 1m 떨어진 뒤
   RUNJUMP_V0: 1.5, RUNJUMP_V1: 3.5, // 뜨는 순간의 수평 속도가 이 사이면 달리며 뛰는 공중 자세를 그만큼 섞는다
   RESTEP_D: 0.18, RESTEP_D_STILL: 0.30, RESTEP_T: 0.24, RESTEP_LIFT: 0.05, // 고정한 발이 캡처 자리에서 이만큼(m) 벗어나면 들어서 고쳐 디딘다
@@ -50,6 +50,7 @@ export function makeClipSet(data) {
 }
 const newSnap = rig => ({ hip: V(), q: rig.list.map(() => new THREE.Quaternion()), ank: [V(), V()], footQ: [new THREE.Quaternion(), new THREE.Quaternion()], pole: [V(), V()], legQ: [[new THREE.Quaternion(), new THREE.Quaternion()], [new THREE.Quaternion(), new THREE.Quaternion()]] });
 const copySnap = (a, b) => { b.hip.copy(a.hip); a.q.forEach((q, i) => b.q[i].copy(q)); for (let i = 0; i < 2; i++) { b.ank[i].copy(a.ank[i]); b.footQ[i].copy(a.footQ[i]); b.pole[i].copy(a.pole[i]); b.legQ[i][0].copy(a.legQ[i][0]); b.legQ[i][1].copy(a.legQ[i][1]); } };
+let _arms = null; const ARMS = names => _arms || (_arms = names.map((n, i) => (/^(shoulder|upperArm|foreArm|hand)/.test(n) ? i : -1)).filter(i => i >= 0)); // 팔 뼈(빗장뼈부터 손까지)
 let _upper = null; const UPPER = names => _upper || (_upper = names.map((n, i) => (/^(hips|upLeg|leg|foot|toe)/.test(n) ? -1 : i)).filter(i => i >= 0)); // 윗몸 뼈(엉덩이·다리 빼고)
 // 떠 있는 발의 목표를 다리 길이 안으로 부드럽게 당기기(soft)와 그 거꾸로(softInv): 고관절에서의 거리 d가 SOFT_A를 넘으면 SOFT_A + SOFT_S·(1 - e^(-(d - SOFT_A)/SOFT_S))
 // 다리가 거의 펴진 곳에서는 발목이 조금만 멀어져도 무릎 각도가 크게 바뀐다(무릎 굽힘 = 2·acos(거리/다리 길이)). 그래서 거리가 0.955L을 넘으면 0.995L에 다가가도록 눌러 준다.
@@ -175,10 +176,16 @@ export function poseClip(C, M, body, world, groundAt, dt) {
     const m = W.jump.marks; sampleAt(W.jump, act.tt, C.Bp);
     // p3d-0.11.6(사용자 "제자리 점프할 때 아직 스파이더맨 포즈가 있다 — 점프 자세 자체를 수정"): 받은 점프 동작은 꼭대기에서 무릎을 가슴까지 당기고(넓적다리–정강이 126~135°) 팔꿈치를 옆으로 벌린다.
     //   선 채 뛴 공중(v0 > 0.3)은 그 장면을 지나가지 않는다: 오르는 동안·꼭대기는 뜨는 장면(TO: 다리를 편 채 팔을 위로)에 머물고, 내려오는 뒤쪽(u 0.7 → 1)에 착지를 준비하는 장면(1.03초 → 착지 LD: 다리를 아래로 뻗고 무릎을 조금 굽힘)으로 넘어간다
-    if (act.kind === 'air' && act.v0 > 0.3 && !globalThis.OLDJUMPPOSE) { const e = smooth(clamp((act.u - 0.7) / 0.3, 0, 1)); sampleAt(W.jump, m.TO, C.Dp); sampleAt(W.jump, lerp(CLIP.AIR_LAND_T, m.LD, e), C.Cp); mix(C.Dp, C.Cp, e, C.Bp); }
-    if (act.kind === 'air' && (act.tuckW ?? 1) < 1) { sampleAt(W.jump, m.G, C.Dp); mix(C.Dp, C.Bp, smooth(act.tuckW), C.Bp); } // 웅크린 채 뛴 직후: 뜨는 장면의 자세에서 공중 자세로
+    if (act.kind === 'air' && act.v0 > 0.3 && !globalThis.OLDJUMPPOSE) { const e = smooth(clamp((act.u - 0.7) / 0.3, 0, 1)); sampleAt(W.jump, m.TO, C.Dp); sampleAt(W.jump, lerp(CLIP.AIR_LAND_T, m.LD, e), C.Cp); mix(C.Dp, C.Cp, e, C.Bp);
+      // p3d-0.11.7(자세 정리 ⑩): 받은 점프 동작은 뜨는 장면부터 공중 내내 두 팔을 옆으로 수평 가까이 벌린다(위팔의 옆 몫 0.75~0.98 — 달리며 뛰는 동작·낙하 동작도 같다). 제자리 점프에서 팔은 밀 때 앞으로 흔들려 공중에서 앞에 있다.
+      //   받은 동작 가운데 팔이 앞으로 온 장면(밀기 직전의 흔들기 AIR_ARM_T: 위팔 앞 0.4~0.6·옆 0.3~0.6·아래)의 팔을 오르는 동안·꼭대기에 쓰고, 내려오는 뒤쪽(e)에 착지 장면의 팔로 넘어간다. 다리·몸통은 그대로. OLDJUMPARMS = 전처럼
+      //   착지 쪽 팔은 착지 장면(LD) 하나로 — 1.03초 장면은 팔이 다시 옆으로 수평(옆 몫 0.83~0.94)이라 내려오며 팔을 벌렸다
+      if (!globalThis.OLDJUMPARMS) { sampleAt(W.jump, CLIP.AIR_ARM_T, C.Dp); sampleAt(W.jump, m.LD, C.Cp); for (const i of ARMS(C.set.names)) C.Bp.q[i].slerpQuaternions(C.Dp.q[i], C.Cp.q[i], e); } }
+    if (act.kind === 'air' && (act.tuckW ?? 1) < 1) { sampleAt(W.jump, m.G, C.Dp); if (!globalThis.OLDJUMPARMS) for (const i of ARMS(C.set.names)) C.Dp.q[i].copy(C.Bp.q[i]); mix(C.Dp, C.Bp, smooth(act.tuckW), C.Bp); } // p3d-0.11.7(⑩): 팔은 섞지 않는다(G 장면의 팔은 옆으로 벌어져 있어 웅크려 뛴 걸음에 팔이 28° 튀었다) // 웅크린 채 뛴 직후: 뜨는 장면의 자세에서 공중 자세로
     if (act.kind === 'push') { // 밀기: 다리·엉덩이는 높이를 맞춘 시각(act.tt), 윗몸(팔 흔들기)은 가장 낮은 장면 → 뜨는 장면을 미는 진행만큼. 모으던 자세에서 그쪽으로 넘어간다
       sampleAt(W.jump, lerp(m.A, m.G, act.pu), C.Cp); UPPER(C.set.names).forEach(i => C.Bp.q[i].copy(C.Cp.q[i]));
+      // p3d-0.11.7(⑩): 팔은 흔들기 장면(AIR_ARM_T)까지만 — 뒤쪽 장면(G)은 팔이 이미 옆으로 벌어져 있고, 공중의 팔(AIR_ARM_T)과 뜨는 걸음에 22° 어긋났다. OLDJUMPARMS = 전처럼
+      if (!globalThis.OLDJUMPARMS) { sampleAt(W.jump, lerp(m.A, Math.min(m.G, CLIP.AIR_ARM_T), act.pu), C.Cp); for (const i of ARMS(C.set.names)) C.Bp.q[i].copy(C.Cp.q[i]); }
       if (act.xf < 1) { sampleAt(W.jump, act.tt0, C.Dp); mix(C.Dp, C.Bp, act.xf, C.Bp); } }
     if (act.kind === 'air' || act.runW > 1e-3 || act.fallW > 1e-3) { if (act.runW > 1e-3) { const mr = W.runJump.marks; sampleAt(W.runJump, lerp(mr.TO, mr.LD, clamp((act.tt - m.G) / (m.LD - m.G), 0, 1)), C.Cp); mix(C.Bp, C.Cp, act.runW, C.Bp); }
       if (act.fallW > 1e-3) { sample(W.fall, C.idleT / W.fall.dur, C.Cp); C.Cp.hip.y = C.Bp.hip.y; mix(C.Bp, C.Cp, smooth(act.fallW), C.Bp); } }
