@@ -165,7 +165,7 @@ export function makeRetarget(ctrl, H) {
             // 세우는 정도는 손가락 굽힘 값(S.fing — 계산 걸음에서 0 → 1로 0.1초쯤에 오른다)을 따라간다. 한 걸음에 세우면 잡는 걸음에 아래팔이 크게 돌았다(6,674°/s — human_check로 찾음)
             const gw = gwv ? gwv[h === 'l' ? 0 : 1] : THREE.MathUtils.clamp((fing[h === 'l' ? 0 : 1] - 0.3) / 0.7, 0, 1); setWorld(H.bones[end], wq(H.bones[end]).slerp(alignQ(by[end].aHL, by[end].sHL, fd, n.clone().negate()), gw * gw * (3 - 2 * gw))); }
           const B = H.bones[lo], ax = V().copy(mL.aHL).applyQuaternion(wq(B)).normalize(), handQ = wq(H.bones[end]);
-          const rel = wq(B).invert().multiply(handQ).multiply(H.bindQ[lo].clone().invert().multiply(H.bindQ[end]).invert()), tw = twistAbout(rel, mL.aHL);
+          const rel = wq(B).invert().multiply(handQ).multiply(H.bindQ[lo].clone().invert().multiply(H.bindQ[end]).invert()), tw = twistAbout(rel, mL.aHL); if (globalThis.__HTW) globalThis.__HTW.push([h, tw * 180 / Math.PI]);
           setWorld(B, Q().setFromAxisAngle(ax, tw * 0.5).multiply(wq(B))); setWorld(H.bones[end], handQ);
           // 놓인 손: 손바닥이 몸 쪽을 보게 아래팔째 돌린다(PRON). 손목 = 아래팔과 같은 만큼 → 비틀림이 손목에 몰리지 않는다
           const pr = pron[h === 'l' ? 0 : 1] * PRON * (h === 'l' ? 1 : -1);
@@ -184,7 +184,11 @@ export function makeRetarget(ctrl, H) {
           const pts = () => [`${f}_02_${h}`, `${f}_03_${h}`, `${f}_04_leaf_${h}`].map(nm => wp(H.bones[nm])).concat(DIM.grip && f === 'thumb' ? [wp(H.bones[`${f}_01_${h}`]).lerp(wp(H.bones[`${f}_02_${h}`]), 0.5)] : []); // p3d-0.10.2: 엄지는 뿌리 마디(01) 가운데도 본다 — 잡은 손의 엄지 뿌리가 턱 앞면에 11mm 들었다(grip_check)
           const penAt = () => Math.max(0, ...pts().flatMap(p => nb.map(bx => inBox(p, bx, FINGER_R))));
           if (penAt() <= 1e-4) continue; const base = ang(0); let bst = null;
-          for (let a = -20; a <= 110; a += 10) { const r = a * Math.PI / 180; setF(f, r, r * 0.35, r * 0.2); const pn = penAt(), sc = pn * 1000 + Math.abs(r - base) * 2; if (!bst || sc < bst.sc) bst = { r, sc }; }
+          if (!globalThis.OLDFINGAV) { // p3d-0.11.6: 정한 굽힘에서 가장 조금 바꾼 들지 않는 굽힘(2°마다, 굽히는 쪽을 먼저. 턱으로 뻗는 손은 굽히는 쪽만 — 펴는 쪽과 번갈아 고르면 걸음마다 앞뒤로 떤다). 0.11.5까지는 10° 격자에서 "덜 듦 + 바꾼 양"의 값으로 골라 들기 직전의 두 끝(−20°와 110°)이 걸음마다 바뀌었다 — 뻗는 손의 손가락이 14,580°/s로 떨었다(test/hand_flip.mjs)
+            const lo = -20 * Math.PI / 180, hi = 110 * Math.PI / 180, stp = 2 * Math.PI / 180;
+            for (let dd = stp; dd <= hi - lo + 1e-6 && !bst; dd += stp) for (const r of (Hd && Hd.st === 'reach' && Hd.edge ? [base + dd] : [base + dd, base - dd])) { if (r < lo || r > hi) continue; setF(f, r, r * 0.35, r * 0.2); const pn = penAt(); if (pn <= 0.001) { bst = { r }; break; } if (!bst || pn < (bst.pn ?? 9)) bst = { r, pn, miss: true }; }
+            if (bst && bst.miss) { let b2 = null; for (let a = -20; a <= 110; a += 2) { const r = a * Math.PI / 180; setF(f, r, r * 0.35, r * 0.2); const pn = penAt(), sc = pn * 1000 + Math.abs(r - base) * 2; if (!b2 || sc < b2.sc) b2 = { r, sc }; } bst = b2; } }
+          else for (let a = -20; a <= 110; a += 10) { const r = a * Math.PI / 180; setF(f, r, r * 0.35, r * 0.2); const pn = penAt(), sc = pn * 1000 + Math.abs(r - base) * 2; if (!bst || sc < bst.sc) bst = { r, sc }; }
           setF(f, bst.r, bst.r * 0.35, bst.r * 0.2); continue; }
         // 잡은 손가락(p3d-0.10.1): 첫 마디를 0~110°(가운데·끝 마디는 0.35·0.2배)로 놓아 보고, 마디 자리가 턱 상자(손가락 굵기만큼 부풀림)에 들지 않는 가장 큰 굽힘을 고른다 — 손가락이 턱 윗면을 덮는다.
         //   모두 들면 가장 덜 드는 것. 0.10.0은 정해진 각(70°·25°·12°)으로 굽혀 손가락이 턱에 들었다

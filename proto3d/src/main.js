@@ -14,7 +14,7 @@ import GALLERY from 'gallery-data'; // 동작 보기용 자료(받은 동작 전
 import { poseRaw } from './clipmotion.js';
 import { buildProps, makeSwingRope, applyGrips } from './demo.js'; // 캡처 동작 자료(빌드할 때 assets_local/clips.json이 있으면 들어온다. 없으면 null)
 
-export const VERSION = 'p3d-0.11.5';
+export const VERSION = 'p3d-0.11.6';
 const params = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: params.has('test') });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = !params.has('noshadow');
@@ -313,7 +313,7 @@ window.__p3 = {
     const snap = () => { if (sim.tick % every) return; out.push({ k: sim.tick, vel: body.vel.toArray(), climb: JSON.stringify(limbState(sim.climb)), pos: body.pos.toArray(), bones: rig.list.map(b => { b.updateWorldMatrix(true, false); return new THREE.Vector3().setFromMatrixPosition(b.matrixWorld).toArray(); }), modes: sim.motion.legs.map(L => L.mode), plants: sim.motion.legs.map(L => L.plant.toArray()) }); };
     try { for (const d of frameDts) { if (sim.tick >= inputs.length) break; frameCore(d, null, snap); } } finally { tickInput = null; acc = 0; } return out; },
   // 시험용 한 장: 시점을 몸 기준으로 바로 놓고 그린다(멈춘 채 찍을 때). off = 몸이 보는 쪽 기준 시점 각도
-  shot(o = {}) { cam.yaw = body.yaw + (o.off ?? Math.PI / 2); cam.pitch = o.pitch ?? 0.1; cam.dist = cam.eff = o.dist ?? 3.2; cam.follow = null; cam.dirEff = null; cam.target.set(body.pos.x, body.pos.y + (o.h ?? 0.95), body.pos.z); updateCamera(0); draw(); drawHud(fpsS); },
+  shot(o = {}) { cam.yaw = body.yaw + (o.off ?? Math.PI / 2); cam.pitch = o.pitch ?? 0.1; cam.dist = cam.eff = o.dist ?? 3.2; cam.follow = null; cam.dirEff = null; if (o.at) cam.target.set(o.at[0], o.at[1], o.at[2]); else cam.target.set(body.pos.x, body.pos.y + (o.h ?? 0.95), body.pos.z); updateCamera(0); draw(); drawHud(fpsS); },
   boneNames: () => rig.list.map(b => b.name),
   galleryList: () => GALLERY ? gal.names.map(n => ({ name: n, cat: GALLERY.clips[n].cat, kind: GALLERY.clips[n].kind, dur: GALLERY.clips[n].dur, holds: (GALLERY.clips[n].holds || []).length })) : null,
   galleryInfo: () => gal.built ? { ...gal.built.info, name: gal.names[gal.i], inside: (() => { stage.updateMatrixWorld(true); const h = rig.bones.hips.getWorldPosition(new THREE.Vector3()); let n = 0; stage.traverse(o => { if (o.isMesh && o.geometry.type === 'BoxGeometry' && new THREE.Box3().setFromObject(o).expandByScalar(-0.03).containsPoint(stage.worldToLocal(h.clone()).applyMatrix4(stage.matrixWorld))) n++; }); return n > 0; })(), grips: gal.built.holds.filter(h => h.grip).length, palmErr: ['L', 'R'].map((s, e) => { const h = gal.built.holds.find(h => h.e === e && h.grip && gal.t * gal.built.clip.fps >= h.f0 && gal.t * gal.built.clip.fps <= h.f1); return h ? rig.bones[`hand.${s}`].localToWorld(new THREE.Vector3(0, -0.08, 0)).distanceTo(galToWorld(h.grip)) : null; }) } : null,

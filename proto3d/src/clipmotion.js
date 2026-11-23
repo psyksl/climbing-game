@@ -28,7 +28,7 @@ export const CLIP = { AIR_SYM: 0.8,
   CROUCH_V: 1.6,            // 웅크린 채 이 속도에서 낮은 걸음(sneak)이 다 섞인다(조작의 웅크려 걷기 0.8m/s에서는 절반쯤 섞여 보폭이 절반)
   PLANT_V: 0.35,            // 모으기·밀기·착지에서 이 속도(m/s) 아래일 때만 두 발을 땅에 붙든다
   LAND_V: 3.2,              // 이 빠르기(m/s)로 내려앉으면 착지 동작을 다 쓴다(더 느리면 그만큼 얕게, 0.3까지)
-  LAND_GAP0: 0.12, LAND_GAP1: 0.40, // p3d-0.11.4: 착지할 때 무릎 높이(발에서 0.15~0.7m)의 막힌 것까지 이 거리 사이면 착지 웅크림을 그만큼 얕게(0.35배까지)
+  LAND_GAP0: 0.12, AIR_LAND_T: 1.033, LAND_GAP1: 0.40, // p3d-0.11.4: 착지할 때 무릎 높이(발에서 0.15~0.7m)의 막힌 것까지 이 거리 사이면 착지 웅크림을 그만큼 얕게(0.35배까지)
   DROP_FALL_T: 0.45,         // p3d-0.11.4: 뛰지 않고 떨어질 때(벽에서 놓음·턱에서 걸어 내려감) 낙하 자세(Falling Idle: 무릎 50°로 당기고 한 팔을 쳐듦)로 넘어가기 시작하는 시각. 전에는 0.09초에 다 섞여 손을 놓자마자 무릎을 당기고 팔을 휘둘렀다(사용자 영상 0.11.3 v3 49초 "스파이더맨 같은 점프"). 0.45초 = 약 1m 떨어진 뒤
   RUNJUMP_V0: 1.5, RUNJUMP_V1: 3.5, // 뜨는 순간의 수평 속도가 이 사이면 달리며 뛰는 공중 자세를 그만큼 섞는다
   RESTEP_D: 0.18, RESTEP_D_STILL: 0.30, RESTEP_T: 0.24, RESTEP_LIFT: 0.05, // 고정한 발이 캡처 자리에서 이만큼(m) 벗어나면 들어서 고쳐 디딘다
@@ -173,6 +173,9 @@ export function poseClip(C, M, body, world, groundAt, dt) {
   if (C.cw > 0) { sample(W.crouchIdle, C.idleT / W.crouchIdle.dur, C.Bp); if (C.wLocC > 1e-3) { sample(W.sneak, cyc(W.sneak, C.phase, C.turns), C.Cp); mix(C.Bp, C.Cp, C.wLocC, C.Bp); } mix(A, C.Bp, smooth(C.cw), A); } // 웅크림
   if (act.w > 0) { // 점프 층
     const m = W.jump.marks; sampleAt(W.jump, act.tt, C.Bp);
+    // p3d-0.11.6(사용자 "제자리 점프할 때 아직 스파이더맨 포즈가 있다 — 점프 자세 자체를 수정"): 받은 점프 동작은 꼭대기에서 무릎을 가슴까지 당기고(넓적다리–정강이 126~135°) 팔꿈치를 옆으로 벌린다.
+    //   선 채 뛴 공중(v0 > 0.3)은 그 장면을 지나가지 않는다: 오르는 동안·꼭대기는 뜨는 장면(TO: 다리를 편 채 팔을 위로)에 머물고, 내려오는 뒤쪽(u 0.7 → 1)에 착지를 준비하는 장면(1.03초 → 착지 LD: 다리를 아래로 뻗고 무릎을 조금 굽힘)으로 넘어간다
+    if (act.kind === 'air' && act.v0 > 0.3 && !globalThis.OLDJUMPPOSE) { const e = smooth(clamp((act.u - 0.7) / 0.3, 0, 1)); sampleAt(W.jump, m.TO, C.Dp); sampleAt(W.jump, lerp(CLIP.AIR_LAND_T, m.LD, e), C.Cp); mix(C.Dp, C.Cp, e, C.Bp); }
     if (act.kind === 'air' && (act.tuckW ?? 1) < 1) { sampleAt(W.jump, m.G, C.Dp); mix(C.Dp, C.Bp, smooth(act.tuckW), C.Bp); } // 웅크린 채 뛴 직후: 뜨는 장면의 자세에서 공중 자세로
     if (act.kind === 'push') { // 밀기: 다리·엉덩이는 높이를 맞춘 시각(act.tt), 윗몸(팔 흔들기)은 가장 낮은 장면 → 뜨는 장면을 미는 진행만큼. 모으던 자세에서 그쪽으로 넘어간다
       sampleAt(W.jump, lerp(m.A, m.G, act.pu), C.Cp); UPPER(C.set.names).forEach(i => C.Bp.q[i].copy(C.Cp.q[i]));

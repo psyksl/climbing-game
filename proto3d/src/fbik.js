@@ -15,7 +15,7 @@ const LO = [-0.16, -0.10, -0.18, -0.8, -0.6, -0.5, -0.9, -0.6, -0.5, -0.25, -0.2
 export const FBW = {
   com: 25, axis: 1.5, regP: 2.0, regH: [1.0, 1.6, 1.6], regC: [2.2, 0.5, 0.5], spineLim: 10, spine: 0.7, clav: 2.2, clavLim: 15,
   armOver: 80, armFold: 30, armPref: 3.5, grip: 12, behind: 30, armBack: 10, armCross: 5, reach: 30, reachSat: 0.25,
-  legOver: 60, legFold: 30, legAdd: 6, knee: 12, thigh: 12, moveK: 0.6, over: 3.0, hip: 9, body: 25, head: 30,
+  legOver: 60, legFold: 30, legAdd: 6, knee: 12, thigh: 12, legX: 120, moveK: 0.6, over: 3.0, hip: 9, body: 25, head: 30,
   wP: 0.42, wC: 0.58, spineT: 0.55, // wP·wC = 무게중심을 셀 때 골반·윗몸의 몫, spineT = 척추 뼈가 골반과 가슴 사이에서 도는 몫
   hl: [0.10, 0.10, 0.10, 0.12, 0.12, 0.12, 0.09, 0.09, 0.09, 0.07, 0.07], // 풀이 값이 뒤따르는 반감기(초): 골반 자리 · 골반 회전 · 가슴 회전 · 빗장뼈
   step: 0.025, lambda: 0.05, // 한 걸음에 풀이가 옮기는 가장 큰 양(m·rad), 감쇠
@@ -37,6 +37,10 @@ const hp = (x, e = 0.004) => 0.5 * (x + Math.sqrt(x * x + e * e)); // 매끄러�
 function sdBoxes(boxes, p) { let m = 9; for (const b of boxes) { const dx = Math.max(b.min[0] - p[0], 0, p[0] - b.max[0]), dy = Math.max(b.min[1] - p[1], 0, p[1] - b.max[1]), dz = Math.max(b.min[2] - p[2], 0, p[2] - b.max[2]), o = Math.hypot(dx, dy, dz);
     const d = o > 0 ? o : -Math.min(p[0] - b.min[0], b.max[0] - p[0], p[1] - b.min[1], b.max[1] - p[1], p[2] - b.min[2], b.max[2] - p[2]); if (d < m) m = d; } return m; }
 // 두 마디 IK의 가운데 관절(무릎·팔꿈치) 자리
+const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+function segDist(p1, q1, p2, q2) { const d1 = sub(q1, p1), d2 = sub(q2, p2), r = sub(p1, p2), a = dot(d1, d1), e = dot(d2, d2), f = dot(d2, r), cc = dot(d1, r), bb = dot(d1, d2), den = a * e - bb * bb, cl = x => Math.min(1, Math.max(0, x));
+  let s = den > 1e-9 ? cl((bb * f - cc * e) / den) : 0, t = e > 1e-9 ? (bb * s + f) / e : 0; if (t < 0) { t = 0; s = a > 1e-9 ? cl(-cc / a) : 0; } else if (t > 1) { t = 1; s = a > 1e-9 ? cl((bb - cc) / a) : 0; }
+  return len(sub(add(p1, mul(d1, s)), add(p2, mul(d2, t)))); }
 function midJoint(a, t, l1, l2, pole) { const d0 = sub(t, a), dist = len(d0) || 1e-6, u = mul(d0, 1 / dist), d = Math.min(Math.max(dist, Math.abs(l1 - l2) + 1e-4), l1 + l2 - 1e-4), ca = Math.min(1, Math.max(-1, (l1 * l1 + d * d - l2 * l2) / (2 * l1 * d)));
   let pp = sub(pole, mul(u, dot(pole, u))); const pl = len(pp); pp = pl > 1e-6 ? mul(pp, 1 / pl) : [0, 0, 0]; return add(add(a, mul(u, l1 * ca)), mul(pp, l1 * Math.sqrt(1 - ca * ca))); }
 
@@ -81,6 +85,7 @@ function resid(x, c, out) {
     else { const e = hp(d - 0.92 * c.ARM), sat = W.reachSat * Math.tanh(e / W.reachSat); r[n++] = W.reach * sat * A.w; r[n++] = 0; r[n++] = 0; r[n++] = 0.5 * W.armBack * hp(-0.10 - u[2]) * A.w; r[n++] = 0.5 * W.armCross * hp(-0.45 - out) * A.w; r[n++] = 0; r[n++] = 0.3 * W.behind * hp(-0.10 - (d3[0] * g.F[0] + d3[2] * g.F[2]) / d) * A.w; } }
   // ⑤ 다리: 디딘 발은 늘어나지 않게·다 접히지 않게, 다리가 몸 건너편으로 깊이 넘어가지 않게, 무릎·넓적다리가 지형에 닿지 않게(골반이 물러나거나 돌아서 자리를 만든다). 가는 발은 그 자리를 미리 본다(약하게)
   const qHi = qinv(g.qH);
+  const KN = [null, null];
   for (let i = 0; i < 2; i++) { const Lg = c.legs[i], sx = i ? -1 : 1;
     if (Lg.st === 0) { r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; continue; }
     const k = Lg.st === 1 ? 1 : W.moveK * Lg.w, d3 = sub(Lg.ank, g.hj[i]), d = len(d3) || 1e-6, v = qrot(qHi, mul(d3, 1 / d)), out = v[0] * sx;
@@ -90,7 +95,11 @@ function resid(x, c, out) {
     const pole = qrot(g.qH, nrm([sx * 0.57, 0.1, 0.82])), kn = midJoint(g.hj[i], Lg.ank, DIM.thigh, DIM.shin, pole), th = [(g.hj[i][0] + kn[0]) / 2, (g.hj[i][1] + kn[1]) / 2, (g.hj[i][2] + kn[2]) / 2];
     r[n++] = W.knee * hp(c.kneeClr - sdBoxes(c.boxes, kn)) * k; r[n++] = W.thigh * hp(c.kneeClr * 0.8 - sdBoxes(c.boxes, th)) * k;
     // 고관절의 범위(src/anat.js): 넘으려 하면 골반이 돌거나 기울어 범위 안으로 들인다(여유 6°부터)
-    r[n++] = W.hip * hp(legExcess(g.qH, g.hj[i], kn, Lg.ank, sx) + 0.10, 0.02) * k; }
+    r[n++] = W.hip * hp(legExcess(g.qH, g.hj[i], kn, Lg.ank, sx) + 0.10, 0.02) * k; KN[i] = Lg.pole ? midJoint(g.hj[i], Lg.ank, DIM.thigh, DIM.shin, Lg.pole) : kn; }
+  // p3d-0.11.6: 두 다리가 서로 지나가지 않게(정강이 ↔ 다른 다리의 넓적다리·정강이). 엇갈려 디딘 다리가 있으면 골반이 돌거나 물러나 자리를 만든다 — 몸 위로(W)에 엉덩이가 벽으로 다가가며 디딘 오른쪽 넓적다리가 엇갈린 왼쪽 정강이를 12cm 지나갔다(leg_cross)
+  if (KN[0] && KN[1] && !globalThis.OLDLEGX && !globalThis.NOLX_FB) { let gp = 9; for (let i = 0; i < 2; i++) { const j = 1 - i, sh0 = KN[i], sh1 = c.legs[i].ank, tA = lerp3(g.hj[j], KN[j], 0.35);
+      gp = Math.min(gp, segDist(sh0, sh1, tA, KN[j]) - 0.12, segDist(sh0, sh1, KN[j], c.legs[j].ank) - 0.10); }
+    r[n++] = W.legX * hp(0.015 - gp); } else r[n++] = 0;
   // ⑥ 몸통·머리가 지형에 들지 않게(가슴 세 곳, 골반 두 곳, 머리)
   { const R = 0.105, m = 0.025; for (const o of [[0, 0.03, 0.03], [0.10, 0.03, 0.02], [-0.10, 0.03, 0.02]]) r[n++] = W.body * hp(R + m - sdBoxes(c.boxes, add(g.chest, qrot(g.qC, o))));
     for (const o of [[0.07, 0.07, 0.04], [-0.07, 0.07, 0.04]]) r[n++] = W.body * hp(0.10 + m - sdBoxes(c.boxes, add(g.hip, qrot(g.qH, o))));
