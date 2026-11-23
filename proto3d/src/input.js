@@ -33,6 +33,7 @@ const DEFAULT = [
   { id: 'camZoom', ctx: ['any'], keys: ['Wheel'], label: '시점 가까이·멀리' },
   { id: 'handMode', ctx: ['any'], keys: ['KeyH'], label: '손 조작 방식 바꾸기(눌러 보내기 ↔ 누르는 동안 뻗기)' },
   { id: 'footAssist', ctx: ['any'], keys: ['KeyF'], label: '발 보조 켬·끔' },
+  { id: 'grabAssist', ctx: ['any'], keys: ['KeyU'], label: '잡기 보정 켬·끔' }, // p3d-0.11.4(임시 키)
   { id: 'wallRest', ctx: ['any'], keys: ['KeyJ'], dev: true, label: '실험: 벽 딛기(매달리면 발을 벽에 대고 버팀) 켬·끔 · 기본 끔' },
   { id: 'poseMode', ctx: ['any'], keys: ['KeyO'], dev: true, label: '비교: 몸 자세(전신 자세 풀이 ↔ 옛 규칙 0.10.4) · 기본 전신 자세 풀이' },
   { id: 'wallStart', ctx: ['any'], keys: ['KeyT'], label: '작은 벽 앞에서 시작' },

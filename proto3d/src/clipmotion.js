@@ -28,6 +28,8 @@ export const CLIP = { AIR_SYM: 0.8,
   CROUCH_V: 1.6,            // 웅크린 채 이 속도에서 낮은 걸음(sneak)이 다 섞인다(조작의 웅크려 걷기 0.8m/s에서는 절반쯤 섞여 보폭이 절반)
   PLANT_V: 0.35,            // 모으기·밀기·착지에서 이 속도(m/s) 아래일 때만 두 발을 땅에 붙든다
   LAND_V: 3.2,              // 이 빠르기(m/s)로 내려앉으면 착지 동작을 다 쓴다(더 느리면 그만큼 얕게, 0.3까지)
+  LAND_GAP0: 0.12, LAND_GAP1: 0.40, // p3d-0.11.4: 착지할 때 무릎 높이(발에서 0.15~0.7m)의 막힌 것까지 이 거리 사이면 착지 웅크림을 그만큼 얕게(0.35배까지)
+  DROP_FALL_T: 0.45,         // p3d-0.11.4: 뛰지 않고 떨어질 때(벽에서 놓음·턱에서 걸어 내려감) 낙하 자세(Falling Idle: 무릎 50°로 당기고 한 팔을 쳐듦)로 넘어가기 시작하는 시각. 전에는 0.09초에 다 섞여 손을 놓자마자 무릎을 당기고 팔을 휘둘렀다(사용자 영상 0.11.3 v3 49초 "스파이더맨 같은 점프"). 0.45초 = 약 1m 떨어진 뒤
   RUNJUMP_V0: 1.5, RUNJUMP_V1: 3.5, // 뜨는 순간의 수평 속도가 이 사이면 달리며 뛰는 공중 자세를 그만큼 섞는다
   RESTEP_D: 0.18, RESTEP_D_STILL: 0.30, RESTEP_T: 0.24, RESTEP_LIFT: 0.05, // 고정한 발이 캡처 자리에서 이만큼(m) 벗어나면 들어서 고쳐 디딘다
   YAW_MAX: 0.6,             // 고정한 발의 방향이 몸과 이만큼(rad) 넘게 벌어지면 디딘 점을 축으로 발을 돌린다(제자리 돌기 = 발볼로 돈다. 디딘 점은 그대로)
@@ -122,10 +124,12 @@ export function stepClip(C, M, body, input, dt, enabled) {
     if (!body.onGround) a.apex = Math.max(a.apex ?? body.pos.y, body.pos.y);
     const J = W.jump; if (ev('push')) { a.tt0 = C.cw > 0.15 ? J.timeFor(J.hipAt(m.G) - 0.30 * C.cw, 0, m.A) : 0; C.limOn = C.cw > 0.15; a.tuckW = C.limOn ? 0 : 1; }
     const pushD = k => (2.0 + 1.1 * k) * (0.14 + 0.10 * k) / 2; // 미는 동안 엉덩이가 올라가야 하는 거리 = 뛰는 속도 × 미는 시간 / 2(고르게 빨라질 때). controller.js의 JUMP_V0·V1, PUSH_T0·T1과 같은 값
-    if (ev('land')) { a.kind = 'land'; a.tt = m.LD; a.landK = clamp(ev('land').impact / CLIP.LAND_V, 0.3, 1); a.rate = clamp(ev('land').impact / (a.landK * 4 * m.rise / (m.LD - m.G)), 0.6, 1.6); } // 착지 동작의 빠르기: 동작 속 점프(오른 높이 rise)의 내려앉는 빠르기 = 4·rise/공중 시간. 물리의 내려앉는 빠르기가 그보다 느리면 그만큼 느리게 튼다(엉덩이 빠르기가 이어지게)
+    // p3d-0.11.4(사용자 영상 0.11.3: 벽에서 놓고 내려앉으면 한쪽 무릎이 가슴까지 올라감): 착지 동작은 무릎이 앞으로 나가는 깊은 웅크림이라 벽에 붙어(몸 중심이 벽에서 17cm) 내려앉으면 무릎이 벽에 막혀 한쪽 다리만 들렸다 → 무릎 높이에 막힌 것이 가까우면 그만큼 얕게 웅크린다(사람도 벽 앞에서는 엉덩이를 깊이 내리지 못한다)
+    const frontK = () => { if (!C.world || globalThis.OLDWALLFALL) return 1; let g = Infinity; const p = body.pos; for (const b of C.world.boxes) { if (b.max.y <= p.y + 0.15 || b.min.y >= p.y + 0.7) continue; const dx = Math.max(b.min.x - p.x, 0, p.x - b.max.x), dz = Math.max(b.min.z - p.z, 0, p.z - b.max.z); g = Math.min(g, Math.hypot(dx, dz)); } return clamp((g - CLIP.LAND_GAP0) / (CLIP.LAND_GAP1 - CLIP.LAND_GAP0), 0.35, 1); };
+    if (ev('land')) { a.kind = 'land'; a.tt = m.LD; a.landK = clamp(ev('land').impact / CLIP.LAND_V, 0.3, 1) * frontK(); a.rate = clamp(ev('land').impact / (a.landK * 4 * m.rise / (m.LD - m.G)), 0.6, 1.6); } // 착지 동작의 빠르기: 동작 속 점프(오른 높이 rise)의 내려앉는 빠르기 = 4·rise/공중 시간. 물리의 내려앉는 빠르기가 그보다 느리면 그만큼 느리게 튼다(엉덩이 빠르기가 이어지게)
     else if (!body.onGround) { a.kind = 'air'; a.u = a.v0 > 0.3 ? (body.vel.y > 0 ? 0.5 * (1 - body.vel.y / a.v0) : 0.5 + 0.5 * -body.vel.y / Math.sqrt(2 * 9.81 * Math.max(0.02, a.apex - a.y0))) : 1 + body.airT / 0.25; // 웅크린 채 뛴 직후에는 공중 동작(무릎을 당기는 자세)으로 넘어가는 것을 늦춘다(p3d-0.8.3): 엉덩이가 다 올라와 다리가 펴질 때까지(C.limOn) 뜨는 장면의 자세에 머물고, 그 뒤 0.1초쯤에 걸쳐 공중 자세로 섞인다(a.tuckW).
       // 늦추지 않으면 펴지던 다리가 0.72에서 멈춘 채 곧바로 접힌다(다리 길이비. 선 채 뛰면 0.98에서 접기 시작한다). 낮게 뛰어 곧 내려설 때는 내려서기 전에 공중 자세로 다 넘어가 있게 한다(u 0.6~0.9)
-      a.tt = lerp(m.G, m.LD, Math.min(a.u, 1)); a.tuckW = Math.min(1, Math.max(C.limOn ? 0 : (a.tuckW ?? 1) + 6 * dt, clamp((a.u - 0.6) / 0.3, 0, 1))); a.fallW = clamp((a.u - 1) / 0.35, 0, 1); }
+      a.tt = lerp(m.G, m.LD, Math.min(a.u, 1)); a.tuckW = Math.min(1, Math.max(C.limOn ? 0 : (a.tuckW ?? 1) + 6 * dt, clamp((a.u - 0.6) / 0.3, 0, 1))); a.fallW = a.v0 > 0.3 || globalThis.OLDWALLFALL ? clamp((a.u - 1) / 0.35, 0, 1) : clamp((body.airT - CLIP.DROP_FALL_T) / 0.35, 0, 1); }
     else if (body.push) { a.kind = 'push'; const pu = clamp((body.push.t + dt) / body.push.dur, 0, 1), h0 = J.hipAt(a.tt0); a.tt = J.timeFor(h0 + (J.hipAt(m.G) - h0) * (C.limOn ? pu : pu * pu), m.A, m.G); a.xf = smooth(clamp(pu / 0.35, 0, 1)); a.pu = pu; }
     // ↑ 엉덩이가 고르게 빨라지며 올라가 뜨는 순간 뛰는 속도가 된다. 동작의 "올라가는 쪽"(가장 낮은 장면 뒤)에서 같은 높이를 찾아 쓰고, 모으던 자세(내려가는 쪽, tt0)에서 그쪽으로 미는 시간의 첫 35% 동안 넘어간다
     else if (body.charging) { a.kind = 'charge'; const k = clamp(body.charge / 0.6, 0, 1); a.tt = J.timeFor(J.hipAt(m.G) - pushD(k), 0, m.A); } // 모은 만큼만 웅크린다: 그 깊이에서 밀면 뜨는 순간의 빠르기가 물리의 뛰는 속도와 맞는다(동작의 가장 낮은 장면까지 가지 않는다)

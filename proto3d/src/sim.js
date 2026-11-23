@@ -16,7 +16,7 @@ import { DIM } from './rig.js';
 export function makeSim(rig, world, clips = null) {
   // opt.footAssist = 발 보조(간편 조작). 시험의 기본값은 끔(직접 보낸 발만) — 화면 쪽이 켠다
   const S = { rig, world, opt: { footAssist: false, wallRest: false, rockOver: true }, inp: null, body: null, motion: null, clip: null, climb: null, clipSet: clips ? makeClipSet(clips) : null, useClip: !!clips, tick: 0 };
-  const ground = () => { S.motion = makeMotion(rig, S.body); S.clip = S.clipSet ? makeClipState(S.clipSet, rig, S.body) : null; if (S.clip && S.useClip) { S.clip.w = 1; S.clip.on = true; S.clip.init = true; } };
+  const ground = () => { S.motion = makeMotion(rig, S.body); S.clip = S.clipSet ? makeClipState(S.clipSet, rig, S.body) : null; if (S.clip) S.clip.world = world; if (S.clip && S.useClip) { S.clip.w = 1; S.clip.on = true; S.clip.init = true; } };
   const pose = dt => {
     const K = S.climb;
     if (K.on) { poseClimb(S); if (S.tc) S.tc.a = 0; }
