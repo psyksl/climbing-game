@@ -4,7 +4,7 @@
 //      + 함께 적는 값: 무릎 사이 거리 ÷ 고관절 사이 거리, 골반(hips)이 가장 가까운 벽·턱까지의 거리
 //   ② 엇갈린 다리 겹침: leg_cross와 같은 캡슐(넓적다리 7·정강이 5·발 4cm)이 1cm 넘게 겹침
 //   ③ 닿아만 있는 발: 디딘 발인데 하중이 몸무게의 5% 이하이고 발목이 고관절 높이 −25cm보다 위(들린 채 벽에 댐)
-//   ④ 땅에서 손 뻗는 동안 두 발목 거리 > 55cm, 또는 좌우가 엇갈림(왼발이 몸의 오른쪽)
+//   ④ 땅에 선 채(몸 0.3m/s 아래, 두 발목 높이 20cm 아래) 손을 뻗거나 잡은 동안 두 발목 거리 > 55cm, 또는 좌우가 엇갈림(왼발이 몸의 오른쪽)
 //   ⑥ 닭 날개: 잡은 손이 어깨에서 30cm 안이고 팔꿈치가 어깨보다 위
 //   ⑦ 빈손이 엉덩이·허벅지에 듦: 벽 문맥에서 놓인(free) 손목(반지름 4cm)이 넓적다리 캡슐(7cm)·골반 공(13cm)과 겹침
 // 사용: node test/posture_audit.mjs [JSON]   캡처 동작: MODE=clip   장면: ONLY=h1,F   자세: VARIANT=rule   보정 끔: NOASSIST=1
@@ -41,8 +41,8 @@ for (const [id, title, fn, assist, , st0] of all) {
     { let g = 9; for (const [x, y] of [[legs[0], legs[1]], [legs[1], legs[0]]]) for (const [p, q, r] of [[x.knee, x.ank, R.sh], [x.ank, x.toe, R.ft]]) for (const [p2, q2, r2] of [[y.hip, y.knee, R.th], [y.knee, y.ank, R.sh], [y.ank, y.toe, R.ft]]) g = Math.min(g, segSeg(p, q, p2, q2) - r - r2); if (g < -0.01) note('legx', -g * 100, t, `${(-g * 100).toFixed(1)}cm`); }
     // ③ 닿아만 있는 발(들린 채)
     if (onW) for (const [i, F] of K.feet.entries()) if (F.st === 'plant' && (F.loadS || 0) <= 0.05 && legs[i].ank.y > legs[i].hip.y - 0.25 && F.box && F.box.kind !== 'floor') note('touch', legs[i].ank.y - legs[i].hip.y + 0.25, t, `${i ? 'R' : 'L'}`);
-    // ④ 땅에서 손 뻗는 동안 발
-    if (!onW && K.hands.some(h => h.st === 'reach')) { const d = legs[0].ank.clone().setY(0).distanceTo(legs[1].ank.clone().setY(0)), yaw = sim.body.yaw, left = V().set(Math.cos(yaw), 0, -Math.sin(yaw)), cross = legs[0].ank.clone().sub(legs[1].ank).dot(left) < -0.02;
+    // ④ 땅에 선 채 손을 뻗거나 잡은 동안의 발(p3d-0.11.7에 바꿈: 걷는 중의 보폭 74cm는 보통 걸음이라 세지 않는다 — 몸의 수평 빠르기 0.3m/s 아래, 두 발목이 바닥 높이(20cm 아래)일 때만. 벽 문맥에 들어온 뒤도 센다)
+    if (K.hands.some(h => h.st === 'reach' || h.st === 'hold') && Math.hypot(sim.body.vel.x, sim.body.vel.z) < 0.3 && Math.max(legs[0].ank.y, legs[1].ank.y) < 0.2) { const d = legs[0].ank.clone().setY(0).distanceTo(legs[1].ank.clone().setY(0)), yaw = sim.body.yaw, left = V().set(Math.cos(yaw), 0, -Math.sin(yaw)), cross = legs[0].ank.clone().sub(legs[1].ank).dot(left) < -0.02;
       if (d > 0.55 || cross) note('gfeet', d * 100, t, `${(d * 100).toFixed(0)}cm${cross ? ' 엇갈림' : ''}`); }
     // ⑥ 닭 날개
     if (onW) for (const [i, H] of K.hands.entries()) { if (H.st !== 'hold') continue; const s = i ? 'R' : 'L', sh = P(`upperArm.${s}`), el = P(`foreArm.${s}`), wr = P(`hand.${s}`), dsw = sh.distanceTo(wr); if (dsw < 0.30 && el.y > sh.y) note('wing', (el.y - sh.y) * 100, t, `${s} 손–어깨 ${(dsw * 100).toFixed(0)}cm 팔꿈치 +${((el.y - sh.y) * 100).toFixed(0)}cm`); }

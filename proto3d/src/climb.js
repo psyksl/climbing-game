@@ -801,8 +801,9 @@ function limbsStep(S, dt) {
         // (p3d-0.8.1에서 "발끝이 벽 가까이 오는 비접촉 자세"를 넣었다가 뺐다: 발이 엉덩이 아래·앞에 늘어져 있다가 바닥에 닿아 디디면 벽 바로 앞에 서게 되어 굽힌 무릎이 벽에 들어갔다 — 한 손 매달림 뒤 다시 잡는 장면 60조합 가운데 25조합, 최대 750걸음. 쉬는 자리는 0.7.0처럼 엉덩이 조금 뒤다)
         const rest = V(sx * 0.02, -CL.DANGLE + (F.cool > 0 ? 0.05 * Math.sin(Math.PI * F.cool / 0.22) : 0) + 0.36 * tk + (lead ? 0.10 : 0.04) * Math.abs(sd), -0.06 - 0.30 * tk).applyAxisAngle(UP, yaw).addScaledVector(V(Math.cos(yaw), 0, -Math.sin(yaw)), sd * (lead ? 0.30 : 0.15));
         // 한 발만 디디고 있으면 놓인 다리는 디딘 발의 반대쪽으로 뻗어 둔다(실제 영상에서 되풀이해 보이는 모양 — 품질 검토 13절). 지금 몸 모델에서는 균형에 효과가 없는 "모양"이다(연출 후보라고 적어 둔다)
+        // p3d-0.11.7(자세 정리 ④): 다른 발이 바닥에 서 있으면 뻗지 않는다 — 땅에 서서 손을 잡다 몸이 1cm 들려 떨어진 발이 26cm 옆으로 뻗었다가 넓게(60cm) 디뎠다. 발판에 디딘 매달림의 모양으로만 둔다(OLDFLAGFLOOR = 전처럼)
         // p3d-0.11.6: 다른 발이 이 다리 쪽으로 엇갈려 디뎠으면(crossed) 제 쪽 바깥으로 뻗는다 — 엇갈린 다리를 가로질러 뻗으면 그 다리를 지나간다
-        { const O = Kc.feet[1 - F.i], wf = O.st === 'plant' && Kc.hands.some(h => h.st === 'hold') ? clamp(((O.loadS || 0) - 0.05) / 0.15, 0, 1) : 0; if (wf > 0) { const lf = V(Math.cos(yaw), 0, -Math.sin(yaw)), dd = hj.clone().sub(O.p).dot(lf), crossed = DIM.boxCollide && !globalThis.OLDLEGX && !globalThis.NOLX_FLAG && O.p.clone().sub(S.climb.T ? S.climb.T.hj[0].clone().lerp(S.climb.T.hj[1], 0.5) : S.body.pos).dot(lf) * sx > 0.02, sg = crossed ? sx : Math.abs(dd) < 0.06 ? sx : dd > 0 ? 1 : -1; rest.addScaledVector(lf, sg * 0.26 * wf); rest.y += 0.05 * wf; } }
+        { const O = Kc.feet[1 - F.i], wf = O.st === 'plant' && Kc.hands.some(h => h.st === 'hold') && (globalThis.OLDFLAGFLOOR || !DIM.boxCollide || (O.box && O.box.kind !== 'floor')) ? clamp(((O.loadS || 0) - 0.05) / 0.15, 0, 1) : 0; if (wf > 0) { const lf = V(Math.cos(yaw), 0, -Math.sin(yaw)), dd = hj.clone().sub(O.p).dot(lf), crossed = DIM.boxCollide && !globalThis.OLDLEGX && !globalThis.NOLX_FLAG && O.p.clone().sub(S.climb.T ? S.climb.T.hj[0].clone().lerp(S.climb.T.hj[1], 0.5) : S.body.pos).dot(lf) * sx > 0.02, sg = crossed ? sx : Math.abs(dd) < 0.06 ? sx : dd > 0 ? 1 : -1; rest.addScaledVector(lf, sg * 0.26 * wf); rest.y += 0.05 * wf; } }
         const w = F.cool > 0 ? 16 : (F.i ? 6.4 : 5.6) + 5 * tk + 3 * Math.abs(sd), zeta = F.cool > 0 ? 1 : 0.55; F.relV = F.relV || V();
         F.relV.addScaledVector(F.rel.clone().sub(rest), -w * w * dt).multiplyScalar(1 / (1 + 2 * zeta * w * dt)).addScaledVector(Kc.accS, -0.55 * dt);
         F.rel.addScaledVector(F.relV, dt); if (F.lmax > DIM.leg * 0.985) F.lmax = Math.max(DIM.leg * 0.985, F.lmax - 0.12 * dt); const L = F.rel.length(), L1 = clamp(L, 0.45, Math.max(DIM.leg * 0.985, F.lmax || 0)); if (L !== L1) { F.rel.multiplyScalar(L1 / L); const n = F.rel.clone().normalize(); F.relV.addScaledVector(n, -F.relV.dot(n)); } }
@@ -1231,7 +1232,8 @@ export function stepClimb(S, inp, dt) {
   for (const H of K.hands) if (H.st === 'free') { H.relV = H.relV || V(); const goal = V((H.i ? -1 : 1) * 0.08, -0.5, 0.1).applyAxisAngle(UP, b.yaw);
     // p3d-0.11.7(자세 정리 ⑦): 늘어뜨린 손의 쉬는 자리가 넓적다리·골반과 겹치면 비킨다(넓적다리에서 수직인 쪽 + 뒤, 골반에서는 바깥 + 조금 뒤) — 옆으로 든 넓적다리가 늘어뜨린 손을 지나갔다(posture_audit ⑦, foot4: 무릎이 엉덩이 높이로 옆에 올라오는 동안).
     //   손목 둘레 반지름 5cm + 넓적다리 7cm + 여유 3cm. 바뀐 쉬는 자리로는 지금의 스프링이 따라간다(한 걸음에 옮기지 않는다)
-    if (K.T && DIM.boxCollide && !globalThis.OLDHANDHIP) { const sh = K.T.sh[H.i], out = left.clone().multiplyScalar(H.i ? -1 : 1).addScaledVector(fwd, -0.35).normalize();
+    //   실험(기본 끔, HANDHIP=1): 늘어뜨린 손의 자리가 바뀌면 다음에 그 손을 뻗는 길이 바뀌어, 잡는 걸음의 팔꿈치(뻗는 팔의 규칙)와 잡은 팔이 고르는 팔꿈치가 어긋나 한 걸음에 튀었다 — human_check에서 2,000°/s 넘는 한 걸음 튐 4 → 32번(foot2·foot3·foot8·reach2 …, 아래팔 최대 20,957°/s). ⑦ 차례에 다시 한다
+    if (K.T && DIM.boxCollide && globalThis.HANDHIP) { const sh = K.T.sh[H.i], out = left.clone().multiplyScalar(H.i ? -1 : 1).addScaledVector(fwd, -0.35).normalize();
       for (let it = 0; it < 4; it++) { const p = sh.clone().add(goal); let worst = 0, dir = null;
         for (const o of [0, 1]) { const lg = otherLeg(S, o), a = lg.hip, k2 = lg.knee, c = closestOnSeg(a, k2, p), dd = p.distanceTo(c) - 0.15; if (dd < worst) { worst = dd; const h = p.clone().sub(c); dir = h.lengthSq() > 1e-6 ? h.normalize().lerp(fwd.clone().negate(), 0.5).normalize() : fwd.clone().negate(); } }
         { const c = K.T.hip, dd = p.distanceTo(c) - 0.19; if (dd < worst) { worst = dd; const h = p.clone().sub(c); h.y = 0; dir = h.lengthSq() > 1e-6 ? h.normalize().lerp(out, 0.5).normalize() : out.clone(); } }
@@ -1388,6 +1390,9 @@ function poseArm(S, s, sh, target, yaw, sx, grip, held = !!grip, anchor = null, 
     if (pv && S.pw) { const a = pv.angleTo(pole), mx = CL.REACH_POLE_W * PHY.DT; if (a > mx) { pole = pv.clone().lerp(pole, mx / a).normalize(); ik = twoBone(sh, target, DIM.upperArm, DIM.foreArm, pole); } }
     PSr[kr] = pole.clone(); } else if (S.poleS) delete S.poleS['elA' + s];
   // lim(회전 빠르기 누르기)은 놓인 팔만. 뻗는 손의 자리는 물리 상태(H.w)라 그림이 늦게 따라가면 그림의 손·팔뚝이 벽 속을 지나간다(0.8.0~0.8.1: 겨누는 곳을 바꾸는 순간 그림의 손목이 벽 안 7~10cm)
+  // p3d-0.11.7: 비틀림의 기준(hint)은 어깨–손목 축에 수직인 몫으로 — 범위 보정·빠르기 한계(0.11.6)를 거친 뻗는 팔의 극 방향은 축 방향 몫이 커서, 위팔에 수직으로 눕히면 부호가 뒤집혀 위팔·아래팔의 비틀림이 잡은 팔과 180° 달랐다(잡는 걸음부터 초속 456°로 되돌아 돎, foot8 5.59초).
+  //   twoBone은 수직 몫만 쓰므로 팔꿈치 자리는 그대로다. OLDHINTPERP = 전처럼
+  if (R && pole !== R.pole && !globalThis.OLDHINTPERP) { const ax = target.clone().sub(sh); if (ax.lengthSq() > 1e-8) { ax.normalize(); const pp = pole.clone().addScaledVector(ax, -pole.dot(ax)); if (pp.lengthSq() > 1e-8) pole = pp.normalize(); } }
   const hint = pole.clone().negate();
   aimCont(S, B[`upperArm.${s}`], ik.mid.clone().sub(sh), hint, 8, lim); aimCont(S, B[`foreArm.${s}`], ik.end.clone().sub(ik.mid), hint, 8, lim);
   // 손의 방향: 잡았으면 턱 쪽(정확히). 뻗는 중에는 가까워질수록(40cm 안) 팔뚝 방향에서 턱 쪽으로 미리 돌려 둔다(잡는 걸음에 손이 꺾이지 않게). 놓인 손은 팔뚝을 따라가되 천천히 돈다
