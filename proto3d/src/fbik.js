@@ -5,6 +5,7 @@
 // 몸의 자리(무게중심)·손발 접촉·판정은 물리(climb.js)가 정한다. 이 풀이는 그 둘레에 몸을 놓을 뿐이다 — 닿지 않는 곳을 닿게 하지 않는다(어깨가 목표 쪽으로 몇 cm 가는 만큼은 닿는 거리가 달라진다. 잰 값은 문서).
 // 계산은 고정 계산 걸음(stepClimb)에서만 한다. 물리와 그림은 같은 fk()로 어깨·고관절 자리를 읽는다. 숫자(무게)는 모두 실험값이다.
 import { DIM } from './rig.js';
+import { legExcess } from './anat.js';
 
 // 풀 값 11개: 골반의 벗어남(왼쪽·위·벽 쪽, m) · 골반의 회전(돌림·숙임·옆 기울기, rad. 몸이 보는 쪽 기준) · 가슴의 회전(같은 순서, 몸이 보는 쪽 기준) · 빗장뼈 올림(왼·오른, rad)
 export const NF = 11;
@@ -14,7 +15,7 @@ const LO = [-0.16, -0.10, -0.18, -0.8, -0.6, -0.5, -0.9, -0.6, -0.5, -0.25, -0.2
 export const FBW = {
   com: 25, axis: 1.5, regP: 2.0, regH: [1.0, 1.6, 1.6], regC: [2.2, 0.5, 0.5], spineLim: 10, spine: 0.7, clav: 2.2, clavLim: 15,
   armOver: 80, armFold: 30, armPref: 3.5, grip: 12, behind: 30, armBack: 10, armCross: 5, reach: 30, reachSat: 0.25,
-  legOver: 60, legFold: 30, legAdd: 6, knee: 12, thigh: 12, moveK: 0.6, over: 3.0, body: 25, head: 30,
+  legOver: 60, legFold: 30, legAdd: 6, knee: 12, thigh: 12, moveK: 0.6, over: 3.0, hip: 9, body: 25, head: 30,
   wP: 0.42, wC: 0.58, spineT: 0.55, // wP·wC = 무게중심을 셀 때 골반·윗몸의 몫, spineT = 척추 뼈가 골반과 가슴 사이에서 도는 몫
   hl: [0.10, 0.10, 0.10, 0.12, 0.12, 0.12, 0.09, 0.09, 0.09, 0.07, 0.07], // 풀이 값이 뒤따르는 반감기(초): 골반 자리 · 골반 회전 · 가슴 회전 · 빗장뼈
   step: 0.025, lambda: 0.05, // 한 걸음에 풀이가 옮기는 가장 큰 양(m·rad), 감쇠
@@ -81,13 +82,15 @@ function resid(x, c, out) {
   // ⑤ 다리: 디딘 발은 늘어나지 않게·다 접히지 않게, 다리가 몸 건너편으로 깊이 넘어가지 않게, 무릎·넓적다리가 지형에 닿지 않게(골반이 물러나거나 돌아서 자리를 만든다). 가는 발은 그 자리를 미리 본다(약하게)
   const qHi = qinv(g.qH);
   for (let i = 0; i < 2; i++) { const Lg = c.legs[i], sx = i ? -1 : 1;
-    if (Lg.st === 0) { r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; continue; }
+    if (Lg.st === 0) { r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; continue; }
     const k = Lg.st === 1 ? 1 : W.moveK * Lg.w, d3 = sub(Lg.ank, g.hj[i]), d = len(d3) || 1e-6, v = qrot(qHi, mul(d3, 1 / d)), out = v[0] * sx;
     // 하중을 받는 발 위로 고관절이 간다(다리가 받치는 힘의 방향과 다리 축이 맞도록 — "엉덩이를 디딘 발 위로"). 하중만큼만
     if (Lg.st === 1) { const dl = d3[0] * g.L[0] + d3[2] * g.L[2], df = d3[0] * g.F[0] + d3[2] * g.F[2]; r[n++] = W.over * Lg.load * dl; r[n++] = W.over * 0.5 * Lg.load * df; } else { r[n++] = 0; r[n++] = 0; }
     const over = hp(d - 0.975 * c.LEG); r[n++] = W.legOver * (Lg.st === 1 ? over : 0.15 * Math.tanh(over / 0.15)) * k; r[n++] = W.legFold * hp(c.LEGMIN - d) * k; r[n++] = W.legAdd * hp(-0.30 - out) * k;
     const pole = qrot(g.qH, nrm([sx * 0.57, 0.1, 0.82])), kn = midJoint(g.hj[i], Lg.ank, DIM.thigh, DIM.shin, pole), th = [(g.hj[i][0] + kn[0]) / 2, (g.hj[i][1] + kn[1]) / 2, (g.hj[i][2] + kn[2]) / 2];
-    r[n++] = W.knee * hp(c.kneeClr - sdBoxes(c.boxes, kn)) * k; r[n++] = W.thigh * hp(c.kneeClr * 0.8 - sdBoxes(c.boxes, th)) * k; }
+    r[n++] = W.knee * hp(c.kneeClr - sdBoxes(c.boxes, kn)) * k; r[n++] = W.thigh * hp(c.kneeClr * 0.8 - sdBoxes(c.boxes, th)) * k;
+    // 고관절의 범위(src/anat.js): 넘으려 하면 골반이 돌거나 기울어 범위 안으로 들인다(여유 6°부터)
+    r[n++] = W.hip * hp(legExcess(g.qH, g.hj[i], kn, Lg.ank, sx) + 0.10, 0.02) * k; }
   // ⑥ 몸통·머리가 지형에 들지 않게(가슴 세 곳, 골반 두 곳, 머리)
   { const R = 0.105, m = 0.025; for (const o of [[0, 0.03, 0.03], [0.10, 0.03, 0.02], [-0.10, 0.03, 0.02]]) r[n++] = W.body * hp(R + m - sdBoxes(c.boxes, add(g.chest, qrot(g.qC, o))));
     for (const o of [[0.07, 0.07, 0.04], [-0.07, 0.07, 0.04]]) r[n++] = W.body * hp(0.10 + m - sdBoxes(c.boxes, add(g.hip, qrot(g.qH, o))));

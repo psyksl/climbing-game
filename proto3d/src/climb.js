@@ -9,6 +9,7 @@ import { PHY } from './controller.js';
 import { aimBone, setWorldQuat, twoBone, worldPos } from './ik.js';
 import { featOf, lookup } from './refpose.js';
 import { fk as fbFK, makeFB, stepFB, FBI, FBW } from './fbik.js';
+import { legExcess, kneeExcess, clampKnee, legMin, armExcess } from './anat.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z), Q = () => new THREE.Quaternion(), clamp = THREE.MathUtils.clamp, lerp = THREE.MathUtils.lerp, UP = V(0, 1, 0), X = V(1, 0, 0), deg = Math.PI / 180;
 const mj = u => u * u * u * (10 - 15 * u + 6 * u * u);
@@ -30,7 +31,7 @@ export const CL = {
   //   PO_W = 골반 쪽 무게 ÷ 윗몸 쪽 무게(골반·넓적다리 뿌리 0.22 : 가슴·머리·팔 0.48로 어림. 발에 붙은 다리의 나머지는 세지 않는다), PO_H = 골반에서 윗몸 무게중심까지의 높이.
   //   골반이 P만큼 가면 윗몸의 무게중심은 −PO_W × P만큼 간다(두 점의 무게를 단 평균이 물리의 기준 자리에 남는다 — 몸의 자리를 몰래 옮기지 않는다. 전신 균형을 검증한 것은 아니다)
   //   PO_SIDE = 받치는 발 쪽으로 가는 정도(발이 몸 가운데에서 벗어난 거리 × 이 값, PO_SIDE_MAX까지), PO_BACK = 깊이 접은 다리를 위해 엉덩이를 벽에서 빼는 거리(가장 클 때), PO_YAW = 발을 엇갈려 디딜 때 골반이 도는 각(가장 클 때), PO_REACH = 팔을 거의 다 펴야 닿는 손을 뻗을 때 골반이 반대쪽으로 가는 거리(가장 클 때. 윗몸이 그만큼 목표 쪽으로 간다 = 닿는 거리가 는다 → 고정 수치는 비교 측정 뒤)
-  KNEE_HYST: 6, SH_OMEGA: 8, SH_OMEGA_DYN: 12, WRIST_MIN: 0.14, SH_AVOID: 0.20, // SH_OMEGA = 뻗는 손목이 어깨 둘레를 도는 각속도의 한계(rad/s), WRIST_MIN = 어깨–손목 최소 거리(m), SH_AVOID = 손이 가는 길이 어깨에서 떨어질 거리(m. 그보다 가까이 지나면 경유점) — p3d-0.10.3 실험값
+  HIP_TOL: 15 * deg, PELVIS_ALLOW: 12 * deg, HIP_TOL_CMD: 15 * deg, HIP_TOL_HOLD: 22 * deg, HIP_HOLD_T: 0.25, KNEE_HYST: 6, SH_OMEGA: 8, SH_OMEGA_DYN: 12, WRIST_MIN: 0.14, SH_AVOID: 0.20, // SH_OMEGA = 뻗는 손목이 어깨 둘레를 도는 각속도의 한계(rad/s), WRIST_MIN = 어깨–손목 최소 거리(m), SH_AVOID = 손이 가는 길이 어깨에서 떨어질 거리(m. 그보다 가까이 지나면 경유점) — p3d-0.10.3 실험값
   SIDE_FACE: globalThis.SIDE_FACE ?? 1, TURN_ACC: globalThis.TURN_ACC ?? 18, // SIDE_FACE = 턱 옆면 법선의 몫(몸이 보는 쪽. 0.5로 줄여 봤으나 가속 한계와 함께 켜면 h3에서 늘어진 오른 다리가 발판 가까이 가 무릎을 빼내며 초속 464°로 디뎠다 → 1 = 그대로), TURN_ACC = 몸이 도는 빠르기의 가속 한계(rad/s²) — p3d-0.10.2 실험값
   // p3d-0.10.2: 디딘 무릎이 지금 쪽의 해를 두고 다른 쪽으로 넘어가는 값의 차이(1 = 1°만큼의 값). 실험값
   PO_W: 0.46, PO_H: 0.33, PO_SIDE: 0.30, PO_SIDE_MAX: 0.035, PO_BACK: 0.09, PO_YAW: 0.60, PO_REACH: 0, // PO_REACH는 0으로 둔다: 재 보니(test/reach_bound.mjs) 골반을 반대로 보내도 어깨가 목표에 가까워지지 않았다(0 ~ −1cm. 윗몸이 기울며 뻗는 어깨가 내려간다). 값은 실험용으로 남겨 둔다
@@ -176,8 +177,19 @@ const armPole = (yaw, sx) => V(sx * 0.5, -1, -0.35).applyAxisAngle(UP, yaw).norm
 // q = 가슴의 방향(벽 문맥). 팔꿈치의 기본 방향은 몸통을 따라 돈다(몸이 옆으로 기울어 흔들릴 때 팔꿈치가 머리 쪽으로 접히지 않게). 없으면 몸이 보는 쪽만
 // full(뻗는 팔, p3d-0.8.2): 팔꿈치 한 점만이 아니라 팔뚝·위팔의 캡슐(armHit)까지 지형에 겹치지 않는 후보를 고른다. 다 겹치면 가장 덜 겹치는 후보와 그 겹침(hit)을 돌려준다.
 //   잡은 팔과 판정(armCheck)은 전처럼 팔꿈치만 본다(잡은 손의 팔뚝은 턱에 닿아 있는 것이 정상이라 캡슐로 보면 후보가 걸음마다 바뀐다)
+// 팔이 사람 어깨·위팔의 범위를 넘은 각(rad, 안이면 0). qC = 가슴의 방향(없으면 몸이 보는 쪽). 사람형 몸에서만(p3d-0.11.1, src/anat.js)
+// ELBOW_UP = 팔꿈치가 어깨와 손목 둘 다보다 높이 올라간 만큼의 값(1m = 0.25): 접은 팔의 위팔이 몸통에 조금 닿는다고 팔꿈치를 머리 위로 세우지 않게(손은 어깨 옆에 있고 팔꿈치만 하늘을 가리키는 팔이 뻗는 중에 그려졌다)
+// ARM_AW(1rad = 0.12 → 10° ≈ 지형 겹침 2mm·제 몸 겹침 7mm): 0.5로 두었을 때는 보통의 팔 교차가 "다른 팔에 막혀" 거부됐다(잡은 팔이 범위를 지키느라 비켜 주지 못했다). 0.12에서 잡은 팔의 범위 밖 걸음은 그대로 0
+const ARM_AW = 0.12, ELBOW_UP = 0.25;
+function armOver(sh, ik, sx, q, yaw) { if (!(DIM.boxCollide && !globalThis.NOANAT)) return 0; const qq = q || Q().setFromAxisAngle(UP, yaw); return Math.max(0, armExcess([qq.x, qq.y, qq.z, qq.w], [sh.x, sh.y, sh.z], [ik.mid.x, ik.mid.y, ik.mid.z], [ik.end.x, ik.end.y, ik.end.z], sx)); }
 function armIK(world, sh, tgt, yaw, sx, q = null, full = false, tb = null) {
   let ik, pole, best = null;
+  // p3d-0.11.1: 후보 다섯 가운데 "팔꿈치가 지형에 들지 않는 첫 후보"가 아니라, 지형 겹침 + 사람 어깨의 범위를 넘는 만큼이 가장 작은 후보(같으면 앞의 것)
+  if (DIM.boxCollide && !globalThis.NOANAT) { let k = 0;
+    for (const c of [[0.5, -1, -0.35], [0.6, -0.6, -0.8], [0.3, -0.3, -1], [1, -0.3, -0.4], [0.2, 0.2, -1], [1, 0.1, 0.3], [0.7, -0.7, 0.5]]) { const pl = V(sx * c[0], c[1], c[2]); if (q) pl.applyQuaternion(q); else pl.applyAxisAngle(UP, yaw); pl.normalize(); const k2 = twoBone(sh, tgt, DIM.upperArm, DIM.foreArm, pl);
+      const eIn = world.boxes.some(x => k2.mid.x > x.min.x - 0.03 && k2.mid.x < x.max.x + 0.03 && k2.mid.y > x.min.y - 0.03 && k2.mid.y < x.max.y + 0.03 && k2.mid.z > x.min.z - 0.03 && k2.mid.z < x.max.z + 0.03), ov = armOver(sh, k2, sx, q, yaw);
+      const hit = full ? armHit(world, sh, k2, tb) : null, cost = (hit ? hit.d : 0) + (eIn ? 0.05 : 0) + ARM_AW * ov + 0.002 * k++; if (!best || cost < best.cost - 1e-6) best = { ik: k2, pole: pl.clone(), hit, cost: cost - 0.002 * (k - 1), over: ov }; }
+    return best; }
   for (const c of [[0.5, -1, -0.35], [0.6, -0.6, -0.8], [0.3, -0.3, -1], [1, -0.3, -0.4], [0.2, 0.2, -1]]) { pole = V(sx * c[0], c[1], c[2]); if (q) pole.applyQuaternion(q); else pole.applyAxisAngle(UP, yaw); pole.normalize(); ik = twoBone(sh, tgt, DIM.upperArm, DIM.foreArm, pole);
     const elbowIn = world.boxes.some(x => ik.mid.x > x.min.x - 0.03 && ik.mid.x < x.max.x + 0.03 && ik.mid.y > x.min.y - 0.03 && ik.mid.y < x.max.y + 0.03 && ik.mid.z > x.min.z - 0.03 && ik.mid.z < x.max.z + 0.03);
     if (!full) { if (!elbowIn) break; continue; }
@@ -261,13 +273,13 @@ const sd = (x, k) => (x && x[k] ? x[k].d : 0);
 // (0.8.4까지는 후보 다섯 가운데 지형만 보고 골라, 얼굴 앞 벽면처럼 가까운 곳을 짚을 때 지형도 몸도 비는 쪽이 있는데도 팔꿈치가 머리 위·가슴 속으로 갔다 — test/self_diag.mjs)
 function pickPole(S, sh, target, yaw, sx, qC, tb, B) {
   const base = armIK(S.world, sh, target, yaw, sx, qC, true, tb), s0 = armSelf(B, base.ik, sh);
-  if (!B || (!base.cost && !s0)) return { pole: base.pole, self: s0 };
+  if (!B || (base.cost < 1e-6 && !s0)) return { pole: base.pole, self: s0 };
   const u = target.clone().sub(sh); if (u.lengthSq() < 1e-8) return { pole: base.pole, self: s0 }; u.normalize();
   const e0 = base.pole.clone().addScaledVector(u, -base.pole.dot(u)); if (e0.lengthSq() < 1e-8) return { pole: base.pole, self: s0 }; e0.normalize();
   const e1 = u.clone().cross(e0), prev = S.pw && S.poleS && S.poleS['el' + (sx > 0 ? 'L' : 'R')], pa = prev ? Math.atan2(prev.dot(e1), prev.dot(e0)) : 0; let best = null;
   for (let j = 0; j < 24; j++) { const a = j * Math.PI / 12, an = a > Math.PI ? a - 2 * Math.PI : a, pl = e0.clone().multiplyScalar(Math.cos(a)).addScaledVector(e1, Math.sin(a)), ik = twoBone(sh, target, DIM.upperArm, DIM.foreArm, pl), th = armHit(S.world, sh, ik, tb), sf = armSelf(B, ik, sh);
     let dp = Math.abs(an - pa); if (dp > Math.PI) dp = 2 * Math.PI - dp;
-    const cost = 10 * (th ? th.d : 0) + 3 * sd(sf, 'body') + 3 * sd(sf, 'arm') + 0.004 * Math.abs(an) + (prev ? 0.006 * dp : 0); if (!best || cost < best.cost - 1e-7) best = { cost, pole: pl, self: sf }; }
+    const cost = 10 * (th ? th.d : 0) + 3 * sd(sf, 'body') + 3 * sd(sf, 'arm') + ARM_AW * armOver(sh, ik, sx, qC, yaw) + ELBOW_UP * Math.max(0, ik.mid.y - Math.max(sh.y, target.y)) + 0.004 * Math.abs(an) + (prev ? 0.006 * dp : 0); if (!best || cost < best.cost - 1e-7) best = { cost, pole: pl, self: sf }; }
   return best;
 }
 // 되돌린 시도(p3d-0.8.4): 제 머리(공)·몸통 가운데(캡슐)를 팔뚝의 장애물로 넣어 보았다. 손 조작 2로 손을 끌어 몸 앞을 가로지르는 장면에서 팔뚝 중심선이 머리·가슴에 드는 걸음이 123 → 142로 늘고,
@@ -369,7 +381,22 @@ function kneeEval(S, hj, ank, sx, py, a) { const pl = V(sx * Math.sin(a * deg), 
   const dist = DIM.boxCollide ? Math.min(...[0.45, 0.7, 1].map(t => boxDist(S.world, hj.clone().lerp(k2.mid, t))), boxDist(S.world, k2.mid.clone().lerp(k2.end, 0.25))) : boxDist(S.world, k2.mid); return { ik: k2, pole: pl, dist }; }
 // ㉮ 규칙의 바라는 무릎 각: 높이 디딘(디디러 가는) 발은 30~40°, 서 있는 낮은 발은 10°
 function kneeA0(S, sx, ank, bend) { const K = S.climb, i = sx > 0 ? 0 : 1, F = K.feet[i], O = K.feet[1 - i], oy = O.st === 'plant' ? O.ank.y : S.body.pos.y + DIM.ankleY, high = ank.y - oy > 0.10 || (F.st === 'move' && F.box && F.box.kind !== 'floor'); return high ? 30 + 10 * bend : 10; }
+// 사람 관절의 범위(p3d-0.11.1, src/anat.js)를 쓰는가: 사람형 몸에서만. 끄기 = 시험 스위치 NOANAT
+const anatOn = () => DIM.boxCollide && !globalThis.NOANAT, qArr = q => [q.x, q.y, q.z, q.w], vArr = v => [v.x, v.y, v.z];
+const pelvisQ = S => (S.climb.on && S.climb.T ? S.climb.T.tq.hips : Q().setFromAxisAngle(UP, S.body.yaw));
+// 다리 IK: 무릎이 굽는 쪽을 사람 다리의 범위 안에서 고른다(넓적다리의 방향 + 비틀림: 바깥 85°, 안쪽 40°). 디딘·가는 다리는 후보를 고를 때 범위를 값에 넣고(legIK0), 늘어뜨린 다리는 고른 뒤에 범위 안으로 누른다. 판정·그림 모두 이 함수를 쓴다
 function legIK(S, hj, ank, yaw, sx, placed = true, fixed = false) {
+  const r = legIK0(S, hj, ank, yaw, sx, placed, fixed); if (!anatOn() || r.picked) return r;
+  const c = clampKnee(qArr(pelvisQ(S)), vArr(hj), vArr(ank), vArr(r.pole), sx, DIM.thigh, DIM.shin); if (!c.moved) return r;
+  const pole = V(c.pole[0], c.pole[1], c.pole[2]); return { ...r, ik: twoBone(hj, ank, DIM.thigh, DIM.shin, pole), pole, kneeOver: Math.abs(c.moved) };
+}
+// 고관절이 범위를 넘은 각(rad. 안이면 음수): 지금 골반에서 그 발목 자리로 다리를 놓았을 때
+//   골반의 틀로 잰 것과, 몸이 보는 쪽의 곧은 틀로 잰 것에서 골반이 기울고 돌아 도와줄 수 있는 몫(PELVIS_ALLOW)을 뺀 것 가운데 큰 쪽 — 골반을 한껏 기울여 범위에 맞춘 자세(옆으로 일자로 벌린 다리)를 받아들이지 않는다
+const legOver = (S, hj, knee, ank, sx) => Math.max(legExcess(qArr(pelvisQ(S)), vArr(hj), vArr(knee), vArr(ank), sx), legExcess(qArr(Q().setFromAxisAngle(UP, S.body.yaw)), vArr(hj), vArr(knee), vArr(ank), sx) - CL.PELVIS_ALLOW);
+function hipOver(S, i, hj, ank) { const sx = i ? -1 : 1, r = legIK(S, hj, ank, S.body.yaw, sx); return legOver(S, hj, r.ik.mid, ank, sx); }
+// 디딘 채로 버틸 수 있는가(걸음마다): 골반의 틀과 곧은 틀 둘 다에서 넘을 때만 넘은 것으로 본다(골반이 돌아와 풀 수 있는 넘침으로는 발을 떼지 않는다 — 옛 규칙의 골반 층은 관절을 보지 않고 돌아서, 곧은 틀로는 멀쩡한 다리가 골반의 틀로 30° 넘게 재져 다른 벽 장면의 디딘 발이 떨어졌다)
+function hipHold(S, i, hj, ank) { const sx = i ? -1 : 1, r = legIK(S, hj, ank, S.body.yaw, sx), a = [vArr(hj), vArr(r.ik.mid), vArr(ank), sx], P = legExcess(qArr(pelvisQ(S)), ...a), B = legExcess(qArr(Q().setFromAxisAngle(UP, S.body.yaw)), ...a); return Math.max(Math.min(P, B), B - CL.PELVIS_ALLOW); }
+function legIK0(S, hj, ank, yaw, sx, placed = true, fixed = false) {
   // 새 규칙은 디딘 발과 보내는 발에만 쓴다(placed). 늘어뜨린 발·뛰는 중에 접어 올린 다리는 발이 고관절 바로 아래를 오가서 "발의 자리"가 뜻이 없다(해 보니 한 걸음 튐이 캡처 동작에서 65 → 166회로 늘었다) → 0.8.8의 규칙 그대로
   // (p3d-0.10.1에서 늘어뜨린 다리에도 여유로 무릎 방향을 고르게 해 봤으나 관통이 6 → 7.1cm로 늘고 디딘 다리가 초속 317°로 튀어 되돌렸다)
   const bend = clamp((1 - hj.distanceTo(ank) / DIM.leg - 0.05) / 0.35, 0, 1), K = S.climb, np = poseOn(K) && K.on && placed;
@@ -389,7 +416,9 @@ function legIK(S, hj, ank, yaw, sx, placed = true, fixed = false) {
     // 함께 고르는 자세(solve, p3d-0.10.2 실험 설정): 계산 걸음에서 골반과 함께 고른 각을 그대로 쓴다(poseClimb에서만. 미리보기 판정은 아래의 후보 고르기)
     if (fixed && K.post === 'solve' && K.knA && K.knA[sx > 0 ? 0 : 1] !== null && K.knA[sx > 0 ? 0 : 1] !== undefined) { const c = kneeEval(S, hj, ank, sx, py, K.knA[sx > 0 ? 0 : 1]); return { ik: c.ik, pole: c.pole }; }
     const PS0 = S.poleS && S.poleS['kn' + (sx > 0 ? 'L' : 'R') + 'p'], aCur = PS0 ? (() => { const l = PS0.clone().applyAxisAngle(UP, -py); return Math.atan2(sx * l.x, l.z) / deg; })() : a0; let best = null;
-    const evalA = a => { const c = kneeEval(S, hj, ank, sx, py, a), sc = Math.abs(a - a0) + 0.6 * Math.abs(a - aCur) + (K.post !== 'base' && DIM.boxCollide ? 2000 : 800) * Math.max(0, DIM.kneeClr - c.dist); return { ...c, sc, a }; };
+    // p3d-0.11.1: 사람 다리의 범위(넓적다리의 방향·비틀림)를 넘는 만큼도 값에 넣는다(1° = 4). 고른 뒤에 범위 안으로 누르면(첫 시도) 눌린 무릎이 벽·발판을 지나가 발 디딤이 "다리가 벽·턱을 지나감"으로 거부됐다 — 여유와 범위를 함께 따져 고른다
+    const qH = anatOn() ? qArr(pelvisQ(S)) : null, hjA = vArr(hj), anA = vArr(ank);
+    const evalA = a => { const c = kneeEval(S, hj, ank, sx, py, a), sc = Math.abs(a - a0) + 0.6 * Math.abs(a - aCur) + (K.post !== 'base' && DIM.boxCollide ? 2000 : 800) * Math.max(0, DIM.kneeClr - c.dist) + (qH ? 4 * Math.max(0, kneeExcess(qH, hjA, vArr(c.ik.mid), anA, sx)) / deg : 0); return { ...c, sc, a }; };
     for (let a = -50; a <= 115; a += 5) { const c = evalA(a); if (globalThis.__KT) globalThis.__KT.push({ sx, a, sc: c.sc, dist: c.dist }); if (!best || c.sc < best.sc) best = c; }
     // p3d-0.10.2(GPT의 0.10.1 검토 1번 — h3의 디딘 무릎 흔들림): 5° 격자에서 고른 각을 그대로 쓰면, 골반의 틀이 돌 때(손이 턱의 옆면을 잡아 몸이 초속 172°로 돈다) 세계 좌표의 바람이 +1.5°·+1.5°·−3.5°의 톱니가 되어
     //   무릎이 3걸음마다 ±15mm 왕복했다(knee_trace). 고른 격자점 둘레 ±5°에서 값이 가장 낮은 각을 연속으로 찾아 쓴다(황금 분할 10번 → 0.1° 안). 새 규칙에만(0.10.0 규칙과 옛 몸은 그대로)
@@ -401,7 +430,7 @@ function legIK(S, hj, ank, yaw, sx, placed = true, fixed = false) {
       let c = gold(best.a - 5, best.a + 5); if (c.sc < best.sc) best = c;
       if (PS0) { const lc = gold(Math.max(-50, aCur - 5), Math.min(115, aCur + 5)); if (lc.sc <= best.sc + CL.KNEE_HYST) best = lc; } }
     if (globalThis.__KT) globalThis.__KT.push({ sx, pick: best.a, a0, aCur, bend, sc: best.sc, dist: best.dist });
-    return { ik: best.ik, pole: best.pole }; }
+    return { ik: best.ik, pole: best.pole, picked: true }; }
   const a0 = lerp(30, 72, bend);
   for (const a of [a0, 60, 80, 95, 110, 10, -15]) { if (a > 0 && a < a0) continue; pole = V(sx * Math.sin(a * deg), 0.1, Math.cos(a * deg)).applyAxisAngle(UP, yaw).normalize(); ik = twoBone(hj, ank, DIM.thigh, DIM.shin, pole); if (!nearBox(S.world, ik.mid, 0.05)) break; }
   return { ik, pole };
@@ -447,8 +476,10 @@ function boxFacing(world, box, fallback, from = null) { if (box.face && !globalT
   const fb = fallback.clone().setY(0), fr = from ? from.clone().sub(c).setY(0) : null;
   if (cand.length === 4 && fr && fr.lengthSq() > 1e-6 && !globalThis.OLDTIE) { const fn = fr.clone().normalize(), hx = sz.x / 2, hz = sz.z / 2, side = n => (n.x ? Math.max(0, Math.abs(fr.x) - hx) * Math.sign(fr.x) * n.x : Math.max(0, Math.abs(fr.z) - hz) * Math.sign(fr.z) * n.z); cand.sort((a, b) => side(b[0]) - side(a[0]) || b[0].dot(fn) - a[0].dot(fn)); return cand[0][0].clone(); }
   cand.sort((a, b) => b[1] - a[1] || (fr && !globalThis.OLDTIE ? b[0].dot(fr) - a[0].dot(fr) : 0) || b[0].dot(fb) - a[0].dot(fb)); const f = cand.length ? cand[0][0] : fb.normalize(); if (cand.length < 2 || cand[0][1] > cand[1][1] + 1e-9) FACING.set(box, f); return f.clone(); } // 넓이가 같은 면이 둘이면(양쪽이 열린 벽) 잡은 면 쪽을 고르고 기억하지 않는다
-function legCheck(S, i, hj, ank) {
+function legCheck(S, i, hj, ank, tol = CL.HIP_TOL) {
   const { ik } = legIK(S, hj, ank, S.body.yaw, i ? -1 : 1);
+  // 사람 관절의 범위(p3d-0.11.1): 고관절이 그만큼 올라가거나 벌어지지 않으면, 또는 다리를 그만큼 접을 수 없으면 그 자리에는 발을 둘 수 없다(전에는 닿기만 하면 머리 높이의 벽면에도 발을 댔다)
+  if (anatOn()) { if (legOver(S, hj, ik.mid, ank, i ? -1 : 1) > tol) return '다리가 그렇게는 올라가지 않음'; if (hj.distanceTo(ank) < legMin(DIM.thigh, DIM.shin) - 0.01) return '다리를 그만큼 접을 수 없음'; }
   return nearBox(S.world, ik.mid, 0.03) || rayHit(S.world, hj.clone().lerp(ik.mid, 0.2), ik.mid) < 1 || rayHit(S.world, ik.mid, ik.mid.clone().lerp(ik.end, 0.85)) < 1 ? '다리가 벽·턱을 지나감' : '';
 }
 
@@ -467,7 +498,7 @@ export function probeFoot(S, i, pt) {
   if (!g) return { ok: false, why: '디딜 수 있는 면이 아님', sure: true };
   const G = footGeom(g.p, g.n, g.q), hj = joints(S).hj[i], d = hj.distanceTo(G.ank), sure = S.body.vel.length() < 0.3, base = { grip: g.p.toArray(), name: g.box.name, kind: g.kind, sure };
   if (d > DIM.leg * 0.995) return { ...base, ok: false, short: d - DIM.leg * 0.995, why: `발이 닿지 않음(${short(d - DIM.leg * 0.995)} 모자람)` };
-  const c = legCheck(S, i, hj, G.ank);
+  const c = legCheck(S, i, hj, G.ank, CL.HIP_TOL_CMD);
   return c ? { ...base, ok: false, why: c } : { ...base, ok: true, why: '' };
 }
 
@@ -511,6 +542,8 @@ export function command(S, c) {
     const G = footGeom(g.p, g.n, g.q), far = joints(S).hj[c.i].distanceTo(G.ank) - DIM.leg * 0.995;
     // 한참 닿지 않는 자리면 디딘 발을 떼지 않는다(몸을 옮기면 닿을 만한 거리는 보내 본다)
     if (far > 0.25) { deny(S, F, 'foot', `발이 닿지 않음(${short(far)} 모자람)`); return; }
+    // 사람 관절의 범위(p3d-0.11.1): 지금 골반에서 고관절이 한참(범위 + HIP_TOL_CMD) 넘게 꺾여야 하는 자리면 디딘 발을 떼지 않고 거부한다(골반이 돌아 들일 수 있는 만큼은 보내 본다 — 디딜 때 다시 본다)
+    if (anatOn() && hipOver(S, c.i, joints(S).hj[c.i], G.ank) > CL.HIP_TOL_CMD) { deny(S, F, 'foot', '다리가 그렇게는 올라가지 않음'); return; }
     // 손으로 잡지 않고도 발부터 올릴 수 있다(p3d-0.6.0, 사용자 의견 7). 땅에 선 채 벽 문맥으로 들어간다
     if (!K.on) enter(S, '발부터 올림');
     // 손 없이 디디고 있는 발을 옮길 때는 먼저 체중을 남는 발 위로 옮긴다(옮길 발이 밀어 준다). 그 뒤에 뗀다 — 바로 떼면 한 발로는 무게중심을 끌어올 수 없어 넘어간다
@@ -587,8 +620,13 @@ function limbsStep(S, dt) {
         // p3d-0.10.3(사람형 몸): 어깨 둘레를 도는 빠르기의 한계(어깨 관절의 각속도 SH_OMEGA). 손목이 어깨 가까이를 지날 때 같은 손 빠르기로도 어깨→손목 축이 한 걸음에 43° 돌아 팔꿈치가 뒤집혔다(reach3, 팔뚝 초속 3,002°). 어깨에서 먼 손(보통 뻗기)에는 걸리지 않는다
         // p3d-0.10.4: 어깨 둘레의 바닥(손목은 어깨에서 WRIST_MIN보다 가까이 가지 않는다). 0.10.3까지는 손목이 곧은 길로 가서 어깨 2.9cm 안을 지났다(팔을 다 접어도 손목은 어깨에서 14cm쯤 — 위팔·팔뚝 27cm, 팔꿈치 가장 작은 각 약 30°).
         //   어깨 쪽으로 들어가는 몫을 지우고, 지운 만큼 어깨를 돌아 목표 쪽으로 간다(어깨를 둘러싼 공의 겉을 따라). 도는 쪽이 몸 안쪽(머리 쪽)이면 그 몫을 지운다(위·앞으로 돈다 — 머리 앞을 지나며 팔뚝이 머리에 들었다. FLOORIN=1이면 지우지 않음) 이미 안쪽이면 한 걸음에 1.2cm까지만 밖으로 낸다(0.10.3의 WMIN 실험은 한 걸음에 바닥으로 옮겨 팔이 튀었다).
-        if (DIM.boxCollide && !globalThis.NOWFLOOR) { const r0v = H.w.clone().sub(sh), L0 = r0v.length(); if (L0 > 1e-4) { const ur = r0v.multiplyScalar(1 / L0), vr = stp.dot(ur), vMin = L0 >= CL.WRIST_MIN ? CL.WRIST_MIN - L0 : Math.min(CL.WRIST_MIN - L0, 0.012);
+        // p3d-0.11.1 되돌린 시도 둘(뻗는 팔이 사람 어깨의 범위를 벗어나는 걸음을 줄이려고): ① 뻗는 동안의 바닥을 14cm에서 20~30cm로 넓힘 — 범위 밖 걸음은 줄었지만(11% → 1.5%) 손이 턱 A를 돌아가지 못해 대표 장면 h1을 비롯한 7장면의 턱 F 잡기가 "팔이 턱에 걸려 닿지 않음"으로 바뀌었다
+        //   ② "손목은 가슴의 앞면보다 뒤로 가지 않는다" — 윗몸이 뒤로 누우면 머리 위의 턱이 가슴의 틀로는 뒤라서 걸리지 않았다. 남긴 것은 아래의 "어깨를 도는 쪽은 가슴의 뒤쪽이 아니다"뿐이다. 손이 가는 길을 어깨 둘레의 호로 다시 짜는 일은 다음 판의 재료다
+        const rF = CL.WRIST_MIN;
+        if (DIM.boxCollide && !globalThis.NOWFLOOR) { const r0v = H.w.clone().sub(sh), L0 = r0v.length(); if (L0 > 1e-4) { const ur = r0v.multiplyScalar(1 / L0), vr = stp.dot(ur), vMin = L0 >= rF ? rF - L0 : Math.min(rF - L0, 0.012);
           if (vr < vMin) { const lost = vMin - vr; stp.addScaledVector(ur, lost); const tgt = aimT.clone().sub(sh); tgt.addScaledVector(ur, -tgt.dot(ur)); if (!globalThis.FLOORIN) { const o = V(Math.cos(S.body.yaw), 0, -Math.sin(S.body.yaw)).multiplyScalar(H.i ? -1 : 1); o.addScaledVector(ur, -o.dot(ur)); const inw = -tgt.dot(o); if (inw > 0 && o.lengthSq() > 1e-6) tgt.addScaledVector(o.normalize(), inw); } if (tgt.lengthSq() < 1e-6) { tgt.copy(fwdW).multiplyScalar(0.5).add(V(Math.cos(S.body.yaw), 0, -Math.sin(S.body.yaw)).multiplyScalar(H.i ? -1 : 1)); tgt.addScaledVector(ur, -tgt.dot(ur)); }
+            // p3d-0.11.1: 어깨를 도는 쪽은 가슴의 뒤쪽이 아니다(가슴의 틀. 윗몸이 뻗는 쪽으로 돌아 있으면 "몸의 옆"이 가슴에서는 뒤다 — 손목이 어깨 뒤 21cm를 지나 위팔이 150° 비틀린 팔이 그려졌다). 뒤로 가는 몫을 지우고, 손목이 가슴 앞면보다 뒤에 있으면 앞으로 가는 몫을 더한다
+            if (DIM.boxCollide && !globalThis.NOANAT && K.on && K.T && K.T.qC) { const fC = V(0, 0, 1).applyQuaternion(K.T.qC), ft = fC.clone().addScaledVector(ur, -fC.dot(ur)); if (ft.lengthSq() > 1e-6) { ft.normalize(); const bk = tgt.dot(ft), tl = tgt.length(); if (bk < 0) tgt.addScaledVector(ft, -bk); if (H.w.clone().sub(sh).dot(fC) < 0.05) tgt.addScaledVector(ft, 0.7 * Math.max(tl, 0.1)); } }
             if (tgt.lengthSq() > 1e-8) stp.addScaledVector(tgt.normalize(), lost); H.shFloor = (H.shFloor || 0) + 1; } } }
         // p3d-0.10.3(사람형 몸): 어깨 둘레를 도는 빠르기의 한계(어깨 관절의 각속도 SH_OMEGA). 손목이 어깨 가까이를 지날 때 같은 손 빠르기로도 어깨→손목 축이 한 걸음에 43° 돌아 팔꿈치가 뒤집혔다(reach3, 팔뚝 초속 3,002°).
         //   p3d-0.10.4: 받쳐진 채 가만히 뻗을 때 8rad/s, 뛰는 중·떠 있는 중에는 12rad/s(SH_OMEGA_DYN — 손의 빠르기 곡선과 같은 calm으로 가른다. 실험값. 8로 두면 어깨를 돌아가는 길 때문에 뛰어 잡기가 지연 0초에서만 됐다)
@@ -819,14 +857,14 @@ const elbowIn = (world, p) => world.boxes.some(x => p.x > x.min.x - 0.03 && p.x 
 function heldPole(S, s, sh, goal, yaw, sx, qC) {
   const base = armIK(S.world, sh, goal, yaw, sx, qC), B = selfShapes(S, s === 'L' ? 0 : 1), XA = globalThis.NOYIELD ? 0 : (globalThis.XA ?? 0.06), s0 = armSelf(B, base.ik, sh, 0, XA);
   // p3d-0.8.6: 잡고 있는 팔은 다른 팔이 6cm 안으로 다가오면 팔꿈치를 돌려 미리 자리를 내 준다(뻗는 팔은 겹치기 전에 멈추므로, 겹친 뒤에야 비키면 둘 다 서 버린다)
-  if (!s0) return { pole: base.pole, ik: base.ik, self: null };
+  if (!s0 && !(base.over > 0)) return { pole: base.pole, ik: base.ik, self: null };
   const u = goal.clone().sub(sh); if (u.lengthSq() < 1e-8) return { pole: base.pole, ik: base.ik, self: s0 }; u.normalize();
   const e0 = base.pole.clone().addScaledVector(u, -base.pole.dot(u)); if (e0.lengthSq() < 1e-8) return { pole: base.pole, ik: base.ik, self: s0 }; e0.normalize();
   const e1 = u.clone().cross(e0), prev = S.pw && S.poleS && S.poleS['el' + s], pa = prev ? Math.atan2(prev.dot(e1), prev.dot(e0)) : 0; let best = null;
   for (let j = 0; j < 24; j++) { const a = j * Math.PI / 12, an = a > Math.PI ? a - 2 * Math.PI : a, pl = e0.clone().multiplyScalar(Math.cos(a)).addScaledVector(e1, Math.sin(a)), ik = twoBone(sh, goal, DIM.upperArm, DIM.foreArm, pl), sf = armSelf(B, ik, sh), sm = XA ? armSelf(B, ik, sh, 0, XA) : sf;
     let dp = Math.abs(an - pa); if (dp > Math.PI) dp = 2 * Math.PI - dp;
     // 실제 겹침(머리·몸통, 여유 밖의 다른 팔)이 먼저다. 다른 팔과의 여유(6cm 안)는 가볍게만 본다 — 여유를 벌리려고 팔꿈치를 머리 쪽으로 돌리면 머리에 닿는다(0.8.6 작업 중에, 그것을 윗몸이 비키느라 엇갈려 잡은 몸이 36cm 옆으로 밀려갔다)
-    const cost = 3 * sd(sf, 'body') + 3 * sd(sf, 'arm') + (globalThis.MW ?? 0.2) * Math.max(0, sd(sm, 'arm') - sd(sf, 'arm')) + (elbowIn(S.world, ik.mid) ? 0.05 : 0) + 0.004 * Math.abs(an) + (prev ? 0.006 * dp : 0); if (!best || cost < best.cost - 1e-7) best = { cost, pole: pl, ik, self: sf }; }
+    const cost = 3 * sd(sf, 'body') + 3 * sd(sf, 'arm') + (globalThis.MW ?? 0.2) * Math.max(0, sd(sm, 'arm') - sd(sf, 'arm')) + (elbowIn(S.world, ik.mid) ? 0.05 : 0) + ARM_AW * armOver(sh, ik, sx, qC, yaw) + 0.004 * Math.abs(an) + (prev ? 0.006 * dp : 0); if (!best || cost < best.cost - 1e-7) best = { cost, pole: pl, ik, self: sf }; }
   return best;
 }
 
@@ -1065,6 +1103,8 @@ export function stepClimb(S, inp, dt) {
   const noHands = !K.hands.some(h => h.st === 'hold');
   for (const f of planted) {
     if (K.T.hj[f.i].distanceTo(f.ank) > DIM.leg) { liftFoot(S, f.i, '다리가 닿는 범위를 벗어남'); continue; }
+    // 사람 관절의 범위(p3d-0.11.1): 몸이 움직여 디딘 다리의 고관절이 범위를 HIP_TOL_HOLD 넘게 벗어난 채 HIP_HOLD_T 동안 이어지면 그 발은 떨어진다(몸이 내려가 발이 엉덩이보다 한참 높아졌을 때 등)
+    if (anatOn()) { f.hipT = hipHold(S, f.i, K.T.hj[f.i], f.ank) > CL.HIP_TOL_HOLD ? (f.hipT || 0) + dt : 0; if (f.hipT > CL.HIP_HOLD_T) { f.hipT = 0; liftFoot(S, f.i, '다리가 꺾이는 한계를 넘음'); continue; } }
     // 잡은 손이 없으면: 벽면에 댄 발은 버티지 못하고 바로 떨어진다(손이 받아 주던 미는 힘이 없다. 저절로 벽을 차지 않는다). 몸이 떨어지는 중인데 누르는 힘이 없는 발도 그 자리에 남지 않는다(윗면에 가만히 올려 둔 발은 그대로 둔다)
     f.idle = noHands && (f.kind === 'smear' || (f.load < 0.02 && b.vel.y < -0.4)) ? (f.idle || 0) + dt : 0;
     if (f.idle > CL.IDLE_T) liftFoot(S, f.i, f.kind === 'smear' ? '손 없이는 벽면의 발로 버틸 수 없음' : '누르는 힘이 없어 떨어짐');
@@ -1203,12 +1243,14 @@ function reachArm(S, s, sh, target, yaw, sx, qC, want = null, tb = null) {
     if (q.lengthSq() > 1e-6 && pT.lengthSq() > 1e-6) { q.normalize(); pT.normalize(); const ang = q.angleTo(pT), ax = q.clone().cross(pT);
       if (ang > 0.35 && ax.lengthSq() > 1e-8) { ax.normalize(); const arc = (sg, tot) => { let d = 0; for (let a = 0.2; a < tot; a += 0.2) { const h = at(q.clone().applyAxisAngle(ax, sg * a)); if (h) d = Math.max(d, h.d); } return d; }, dS = arc(1, ang);
         if (dS > 0.004 && arc(-1, 2 * Math.PI - ang) < dS) { go = q.clone().applyAxisAngle(ax, -1.2); far = true; } } } }
-  const pole = bendDir(S, 'el' + s, sh, target, go, hit0 || want || far ? 23 : 7, false, true), ik = twoBone(sh, target, DIM.upperArm, DIM.foreArm, pole);
+  // p3d-0.11.1: 지금 굽은 쪽이 사람 어깨의 범위를 7° 넘게 벗어나 있으면(손목이 빨리 올라가 어깨→손목 축이 돌았는데 팔꿈치는 늘어뜨렸을 때의 쪽에 남아 등 뒤로 간 경우) 조금 빨리 돌린다(10rad/s. 23으로 두면 팔뚝이 초속 1,600°까지 돌았다 — 0.10.4에서 899로 줄인 것)
+  const ovPrev = prev ? armOver(sh, twoBone(sh, target, DIM.upperArm, DIM.foreArm, prev), sx, qC, yaw) : 0;
+  const pole = bendDir(S, 'el' + s, sh, target, go, hit0 || want || far ? 23 : ovPrev > 0.12 ? 10 : 7, false, true), ik = twoBone(sh, target, DIM.upperArm, DIM.foreArm, pole);
   if (globalThis.__AT) globalThis.__AT.push({ s, wp: wp.toArray(), go: go.toArray(), far, hit0: hit0 ? +hit0.d.toFixed(4) : 0, want: !!want, rate: hit0 || want || far ? 23 : 7 });
   return { pole, ik, hit: armHit(S.world, sh, ik, tb), self: armSelf(B, ik, sh), want: wp };
 }
 // 시험·진단용(test/self_diag.mjs): 게임 코드에서는 쓰지 않는다
-export const _dbg = { boxFacing: (...a) => boxFacing(...a), armHit: (...a) => armHit(...a), armIK: (...a) => armIK(...a), armSelf: (...a) => armSelf(...a), selfHits: (...a) => selfHits(...a), ARM_SQ, selfShapes: (...a) => selfShapes(...a), heldPole: (...a) => heldPole(...a) };
+export const _dbg = { footAnk: (S, pt) => { const g = resolveFoot(S.world, pt, S.body.yaw); return g ? footGeom(g.p, g.n, g.q).ank : null; }, legParts: (S, i, ank) => { const hj = joints(S).hj[i], sx = i ? -1 : 1, r = legIK(S, hj, ank, S.body.yaw, sx), qP = qArr(pelvisQ(S)), qB = qArr(Q().setFromAxisAngle(UP, S.body.yaw)), a = [vArr(hj), vArr(r.ik.mid), vArr(ank), sx]; return { hj: a[0], knee: a[1], ank: a[2], picked: !!r.picked, pelvis: { leg: legExcess(qP, ...a) / deg, knee: kneeExcess(qP, ...a) / deg }, body: { leg: legExcess(qB, ...a) / deg, knee: kneeExcess(qB, ...a) / deg }, over: hipOver(S, i, hj, ank) / deg }; }, boxFacing: (...a) => boxFacing(...a), armHit: (...a) => armHit(...a), armIK: (...a) => armIK(...a), armSelf: (...a) => armSelf(...a), selfHits: (...a) => selfHits(...a), ARM_SQ, selfShapes: (...a) => selfShapes(...a), heldPole: (...a) => heldPole(...a) };
 // 굽는 쪽의 상태를 바꾸지 않고 계산만 해 본다(물리 쪽 검사용. 상태는 그림을 확정할 때만 나아간다)
 function dryBend(S, key, f) { const PS = S.poleS || (S.poleS = {}), a = PS[key] ? PS[key].clone() : null, b = PS[key + 'p'] ? PS[key + 'p'].clone() : null, w = PS[key + 'w'], r = f(); if (a) PS[key] = a; else delete PS[key]; if (b) PS[key + 'p'] = b; else delete PS[key + 'p']; PS[key + 'w'] = w; return r; }
 function poseArm(S, s, sh, target, yaw, sx, grip, held = !!grip, anchor = null, reach = false, tb = null) {

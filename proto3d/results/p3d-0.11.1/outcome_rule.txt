@@ -1,0 +1,6 @@
+[실행 출처] 소스 e8f5b644b62782a1 · 몸 human · 자세 rule · 손목 자리 old(기본) · 동작 자작
+c5      끔: A1 / B1 · free / A 발판
+        켬: A1 / free · free / 바닥
+        끔 사건: grab 왼손 → grab 오른손 → lift 왼발(다리가 닿는 범위를 벗어남) → grab 오른손 → grab 오른손 → grab 오른손
+        켬 사건: grab 왼손 → grab 오른손 → lift 왼발(다리가 닿는 범위를 벗어남) → grab 오른손 → grab 오른손 → lift 오른발(다리가 꺾이는 한계를 넘음) → reject 오른손(닿지 않음)
+장면 39개: 끝 접촉 상태가 같음 38 · 다름 1
