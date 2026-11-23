@@ -18,9 +18,10 @@ const side = (a, m, b) => { const u = b.clone().sub(a).normalize(), p = m.clone(
 const out = { scenes: {} }, TOT = { sho: 0, tw: 0, back: 0, hyper: 0, n: 0, shoM: -99, twM: 0, backM: 0 };
 for (const [id, title, fn, assist, , st0] of all) {
   const world = makeWorld(), sim = makeSim(rig, world, clips); sim.reset({ pos: st0 || SC.START, yaw: Math.PI }); sim.opt.wallRest = false; sim.opt.footAssist = !!assist; sim.opt.posture = process.env.VARIANT || 'fb'; sim.opt.grabAssist = !process.env.NOASSIST;
-  const inputs = [], put = (inp = {}, cmd = []) => inputs.push({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd }), rep = (n, inp, cmd) => { for (let i = 0; i < n; i++) put(inp, i ? [] : cmd); }; fn(sim, put, rep);
+  // p3d-0.11.7: 걸음마다 바로 진행하며 잰다(진행 중의 상태를 보고 입력을 정하는 장면 — C의 흔들기 — 이 실제로 흔들리게. posture_audit와 같다)
+  let k = -1; const put = (inp = {}, cmd = []) => { k++; measure(k, { mx: 0, mz: 0, cxSign: 1, ...inp, cmd }); }, rep = (n, inp, cmd) => { for (let i = 0; i < n; i++) put(inp, i ? [] : cmd); };
   const S = { sho: 0, tw: 0, back: 0, hyper: 0, n: 0, shoM: -99, shoAt: '', twM: 0, twAt: '', backM: 0, backAt: '' };
-  for (let k = 0; k < inputs.length; k++) { sim.step(inputs[k]); R.apply(sim.fing, sim.pron, sim.climb, world, sim.gw); H.root.updateMatrixWorld(true); rig.root.updateMatrixWorld(true); const t = ((k + 1) / 120).toFixed(3);
+  function measure(k, inp) { sim.step(inp); R.apply(sim.fing, sim.pron, sim.climb, world, sim.gw); H.root.updateMatrixWorld(true); rig.root.updateMatrixWorld(true); const t = ((k + 1) / 120).toFixed(3);
     const qC = rig.bones.chest.getWorldQuaternion(new THREE.Quaternion());
     for (const [i, s, h] of [[0, 'L', 'l'], [1, 'R', 'r']]) { const sx = i ? -1 : 1, sh = wpC(`upperArm.${s}`), el = wpC(`foreArm.${s}`), wr = wpC(`hand.${s}`); S.n++;
       const sho = AN.shoulderExcess(qA(qC), vA(sh), vA(el), sx) * deg, twR = AN.humerusTwist ? AN.humerusTwist(qA(qC), vA(sh), vA(el), vA(wr), sx) : null, tw = twR === null ? 0 : twR * deg;
@@ -31,6 +32,7 @@ for (const [id, title, fn, assist, , st0] of all) {
       // ④ 과신전: 마네킹 위팔·아래팔 사이 각(180 = 곧음). 곧은 팔에서 반대로 꺾이면 위의 ③에 걸린다 — 여기서는 곧은 정도만 적는다
       const elbowA = he.clone().sub(hs).angleTo(hw.clone().sub(he)) * deg; if (ph.length() < 0.005 && elbowA < 1) S.hyper += 0; }
   }
+  fn(sim, put, rep);
   out.scenes[id] = { 제목: title, ...S, shoM: +S.shoM.toFixed(1), twM: +S.twM.toFixed(0), backM: +S.backM.toFixed(0) };
   for (const k of ['sho', 'tw', 'back', 'n']) TOT[k] += S[k]; TOT.shoM = Math.max(TOT.shoM, S.shoM); TOT.twM = Math.max(TOT.twM, S.twM); TOT.backM = Math.max(TOT.backM, S.backM);
   console.log(`■ ${id.padEnd(6)} 어깨 범위 10° 넘음 ${S.sho}걸음(최대 ${S.shoM.toFixed(1)}° ${S.shoAt}) · 위팔 비틀림 110° 넘음 ${S.tw}(최대 ${S.twM.toFixed(0)}° ${S.twAt}) · 마네킹 팔꿈치가 반대로 굽음 ${S.back}(최대 ${S.backM.toFixed(0)}° ${S.backAt})`);
