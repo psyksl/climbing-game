@@ -8,10 +8,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 const HERE = path.dirname(fileURLToPath(import.meta.url)), require = createRequire(import.meta.url), { chromium } = require('playwright');
-const { SCENES_FOOT, SCENES, SCENES_H, SCENES_V115 = [], SCENES_U = [], START } = await import('./scenes_foot.mjs');
+const { SCENES_FOOT, SCENES, SCENES_H, SCENES_V115 = [], SCENES_U = [], SCENES_GW = [], START } = await import('./scenes_foot.mjs');
 const [outPng, id, t0s, t1s, everyS] = process.argv.slice(2); if (!outPng || !id) { console.log('사용: node test/dense_strip.mjs <출력.png> <장면 id> <시작 초> <끝 초> [간격 걸음]'); process.exit(1); }
 const t0 = +t0s, t1 = +t1s, every = +(everyS || 2), clip = process.env.MODE === 'clip', build = process.env.BUILD ? path.resolve(process.env.BUILD) : path.join(HERE, '..', process.env.MODE === 'clip' ? 'climb3d_mocap.html' : 'climb3d.html');
-const list = [...SCENES_FOOT.map((s, i) => ['foot' + (i + 1), ...s]), ...SCENES.map((s, i) => ['reach' + (i + 1), ...s]), ...SCENES_H.map(s => [s[0].split(' ')[0], ...s]), ...SCENES_V115.map(s => [s[0].split(' ')[0], ...s]), ...SCENES_U.map(s => [s[0].split(' ')[0], ...s])], sc = list.find(s => s[0] === id); if (!sc) throw new Error('장면 없음: ' + id);
+const list = [...SCENES_FOOT.map((s, i) => ['foot' + (i + 1), ...s]), ...SCENES.map((s, i) => ['reach' + (i + 1), ...s]), ...SCENES_H.map(s => [s[0].split(' ')[0], ...s]), ...SCENES_V115.map(s => [s[0].split(' ')[0], ...s]), ...SCENES_U.map(s => [s[0].split(' ')[0], ...s]), ...SCENES_GW.map(s => [s[0].split(' ')[0], ...s])], sc = list.find(s => s[0] === id); if (!sc) throw new Error('장면 없음: ' + id);
 const [, title, fn, assist, mode, st0] = sc, inputs = [], put = (inp = {}, cmd = []) => inputs.push({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd }), rep = (n, inp, cmd) => { for (let i = 0; i < n; i++) put(inp, i ? [] : cmd); };
 fn(null, put, rep);
 const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });

@@ -29,7 +29,7 @@ export const CL = {
   //   어깨가 목표 쪽으로 움직이는 중이면(반동·점프) 그 빠르기 1m/s당 ASSIST_D만큼 더 허용한다(ASSIST_MAX까지). 끌려가는 동안 다른 손이 버티지 못하면 그 손을 놓는다. 발은 다리가 닿는 범위를 벗어나면 떨어진다(원래 규칙). 실험값
   GRIP_BAD_CAP: 0.10, // p3d-0.11.4: 당기는 방향이 턱이 버티는 범위 밖인 손이 당기는 힘의 한계(몸무게 배수, GRIP_MIN 0.15보다 작게)
   ASSIST_S: 0.08, ASSIST_D: 0.10, ASSIST_MAX: 0.28, ASSIST_V: 1.2,
-  ASSIST_BURST1: 1.3, PALM_DOWN: 0.6, CROSS_A0: 0, CROSS_KW: 4, CROSS_RATE: 2.5, REACH_POLE_W: 9, LEGX_CLR: 0.01, PALM_TW: 120 * Math.PI / 180, // 잡기 보정: 한 손만 잡고 뛸 때 그 팔의 순간 힘(몸무게 배. 기본 ARM_BURST 0.85). 두 손 점프는 그대로
+  ASSIST_BURST1: 1.3, PALM_DOWN: 0.6, CROSS_A0: 0, CROSS_KW: 4, CROSS_RATE: 2.5, SMEAR_IDLE_T: 1.2, REACH_POLE_W: 9, LEGX_CLR: 0.01, PALM_TW: 120 * Math.PI / 180, // 잡기 보정: 한 손만 잡고 뛸 때 그 팔의 순간 힘(몸무게 배. 기본 ARM_BURST 0.85). 두 손 점프는 그대로
   NEW_T: 1.0, ASSIST_GRIP_ANG: 72 * Math.PI / 180, ASSIST_SHOCK_V: 2.4, // 잡기 보정: 막 잡은 손으로 보는 시간(초)
   ASSIST_WRIST: 15, // 잡기 보정이 켜져 있으면 손목 한계(wristMax 70°)를 이만큼 더 허용한다(비스듬히 잡을 때 아래팔을 돌려 손을 옆으로 세워 잡는 몫. 그림은 70°에서 멈춘다)
   HAND_V: 3.2, HAND_ACC: 30, HAND_V_DYN: 5.5, HAND_ACC_DYN: 60, STAND_SH: 1.42, HAND_T0: 0.22, HAND_T1: 0.60, FOOT_V: 1.1, FOOT_T0: 0.28, FOOT_T1: 0.90,
@@ -1219,6 +1219,8 @@ export function stepClimb(S, inp, dt) {
     // 잡은 손이 없으면: 벽면에 댄 발은 버티지 못하고 바로 떨어진다(손이 받아 주던 미는 힘이 없다. 저절로 벽을 차지 않는다). 몸이 떨어지는 중인데 누르는 힘이 없는 발도 그 자리에 남지 않는다(윗면에 가만히 올려 둔 발은 그대로 둔다)
     f.idle = noHands && (f.kind === 'smear' || (f.load < 0.02 && b.vel.y < -0.4)) ? (f.idle || 0) + dt : 0;
     if (f.idle > CL.IDLE_T) liftFoot(S, f.i, f.kind === 'smear' ? '손 없이는 벽면의 발로 버틸 수 없음' : '누르는 힘이 없어 떨어짐');
+    // p3d-0.11.7(자세 정리 ③): 손으로 잡고 있어도, 벽면에 높이 댄 발(발목이 고관절 −25cm보다 위)이 힘을 받지 않은 채(몸무게의 5% 이하) SMEAR_IDLE_T 넘게 있으면 내린다 — 하는 일 없이 다리를 엉덩이 높이 옆으로 든 채 버티고 있었다(사용자 그림 24, u2 3초 넘게)
+    if (!noHands && DIM.boxCollide && !globalThis.OLDSMEARIDLE) { f.sIdle = f.kind === 'smear' && (f.loadS || 0) <= 0.05 && f.ank.y > K.T.hj[f.i].y - 0.25 ? (f.sIdle || 0) + dt : 0; if (f.sIdle > CL.SMEAR_IDLE_T) { f.sIdle = 0; liftFoot(S, f.i, '힘이 실리지 않아 발을 내림'); } }
   }
   // 손 없이 발로만 서 있을 때: 무게중심이 발바닥 범위에서 TOPPLE(10cm) 넘게 벗어나 그쪽으로 가고 있으면 균형을 잃은 것이다 → 발을 떼고 떨어진다(천천히 기울며 버티지 않는다)
   if (noHands) { const pl = K.feet.filter(f => f.st === 'plant' && f.kind === 'top'); if (pl.length) { let dmin = 9, away = 0; for (const f of pl) { const dx = b.pos.x - clamp(b.pos.x, f.patch.x0, f.patch.x1), dz = b.pos.z - clamp(b.pos.z, f.patch.z0, f.patch.z1), d = Math.hypot(dx, dz); if (d < dmin) { dmin = d; away = d > 1e-6 ? (b.vel.x * dx + b.vel.z * dz) / d : 0; } } if (dmin > CL.TOPPLE && away > 0.15) for (const f of pl) liftFoot(S, f.i, '균형을 잃음'); } }

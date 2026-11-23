@@ -17,7 +17,7 @@ const { buildCharacter, DIM } = await imp('rig.js'), { makeWorld } = await imp('
 const SC = await import('./scenes_foot.mjs');
 const clips = process.env.MODE === 'clip' ? JSON.parse(fs.readFileSync(path.resolve(HERE, '../assets_local/clips.json'), 'utf8')) : null;
 const pick = (arr, pre) => (arr || []).map((s, i) => [pre ? pre + (i + 1) : s[0].split(' ')[0], ...s]);
-const all = [...pick(SC.SCENES_FOOT, 'foot'), ...pick(SC.SCENES, 'reach'), ...pick(SC.SCENES_H), ...pick(SC.SCENES_V115), ...pick(SC.SCENES_U), ...pick(SC.SCENES_J)]
+const all = [...pick(SC.SCENES_FOOT, 'foot'), ...pick(SC.SCENES, 'reach'), ...pick(SC.SCENES_H), ...pick(SC.SCENES_V115), ...pick(SC.SCENES_U), ...pick(SC.SCENES_J), ...pick(SC.SCENES_GW)]
   .filter(s => !process.env.ONLY || process.env.ONLY.split(',').includes(s[0]));
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion(), qA = q => [q.x, q.y, q.z, q.w], vA = v => [v.x, v.y, v.z], deg = 180 / Math.PI, R = { th: 0.07, sh: 0.05, ft: 0.04 };
 function segSeg(p1, q1, p2, q2) { const d1 = q1.clone().sub(p1), d2 = q2.clone().sub(p2), r = p1.clone().sub(p2), a = d1.dot(d1), e = d2.dot(d2), f = d2.dot(r), c = d1.dot(r), bb = d1.dot(d2), den = a * e - bb * bb, cl = (x) => Math.max(0, Math.min(1, x));
