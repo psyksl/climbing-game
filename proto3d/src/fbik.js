@@ -92,8 +92,8 @@ function resid(x, c, out) {
     // 하중을 받는 발 위로 고관절이 간다(다리가 받치는 힘의 방향과 다리 축이 맞도록 — "엉덩이를 디딘 발 위로"). 하중만큼만
     if (Lg.st === 1) { const dl = d3[0] * g.L[0] + d3[2] * g.L[2], df = d3[0] * g.F[0] + d3[2] * g.F[2]; r[n++] = W.over * Lg.load * dl; r[n++] = W.over * 0.5 * Lg.load * df; } else { r[n++] = 0; r[n++] = 0; }
     const over = hp(d - 0.975 * c.LEG); r[n++] = W.legOver * (Lg.st === 1 ? over : 0.15 * Math.tanh(over / 0.15)) * k; r[n++] = W.legFold * hp(c.LEGMIN - d) * k; r[n++] = W.legAdd * hp(-0.30 - out) * k;
-    const pole = qrot(g.qH, nrm([sx * 0.57, 0.1, 0.82])), kn = midJoint(g.hj[i], Lg.ank, DIM.thigh, DIM.shin, pole), th = [(g.hj[i][0] + kn[0]) / 2, (g.hj[i][1] + kn[1]) / 2, (g.hj[i][2] + kn[2]) / 2];
-    r[n++] = W.knee * hp(c.kneeClr - sdBoxes(c.boxes, kn)) * k; r[n++] = W.thigh * hp(c.kneeClr * 0.8 - sdBoxes(c.boxes, th)) * k;
+    const aw = Lg.aW !== null && Lg.aW !== undefined ? Lg.aW * Math.PI / 180 : null, pole = qrot(g.qH, nrm(aw !== null ? [sx * Math.sin(aw), 0.1, Math.cos(aw)] : [sx * 0.57, 0.1, 0.82])), kn = midJoint(g.hj[i], Lg.ank, DIM.thigh, DIM.shin, pole), th = [(g.hj[i][0] + kn[0]) / 2, (g.hj[i][1] + kn[1]) / 2, (g.hj[i][2] + kn[2]) / 2];
+    r[n++] = W.knee * (Lg.kw || 1) * hp(c.kneeClr - sdBoxes(c.boxes, kn)) * k; r[n++] = W.thigh * (Lg.kw || 1) * hp(c.kneeClr * 0.8 - sdBoxes(c.boxes, th)) * k;
     // 고관절의 범위(src/anat.js): 넘으려 하면 골반이 돌거나 기울어 범위 안으로 들인다(여유 6°부터)
     r[n++] = W.hip * hp(legExcess(g.qH, g.hj[i], kn, Lg.ank, sx) + 0.10, 0.02) * k; KN[i] = Lg.pole ? midJoint(g.hj[i], Lg.ank, DIM.thigh, DIM.shin, Lg.pole) : kn; }
   // p3d-0.11.6: 두 다리가 서로 지나가지 않게(정강이 ↔ 다른 다리의 넓적다리·정강이). 엇갈려 디딘 다리가 있으면 골반이 돌거나 물러나 자리를 만든다 — 몸 위로(W)에 엉덩이가 벽으로 다가가며 디딘 오른쪽 넓적다리가 엇갈린 왼쪽 정강이를 12cm 지나갔다(leg_cross)
