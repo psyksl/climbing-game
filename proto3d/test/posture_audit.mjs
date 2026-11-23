@@ -26,7 +26,7 @@ function segSeg(p1, q1, p2, q2) { const d1 = q1.clone().sub(p1), d2 = q2.clone()
 const ptSeg = (p, a, b) => { const ab = b.clone().sub(a), t = Math.max(0, Math.min(1, p.clone().sub(a).dot(ab) / Math.max(ab.lengthSq(), 1e-9))); return p.distanceTo(a.clone().addScaledVector(ab, t)); };
 const boxDist = (world, p) => { let m = 9; for (const b of world.boxes) { if (b.kind === 'floor') continue; const dx = Math.max(b.min.x - p.x, 0, p.x - b.max.x), dy = Math.max(b.min.y - p.y, 0, p.y - b.max.y), dz = Math.max(b.min.z - p.z, 0, p.z - b.max.z); m = Math.min(m, Math.hypot(dx, dy, dz)); } return m; };
 const KEYS = ['frog', 'legx', 'touch', 'gfeet', 'wing', 'handhip'], NAME = { frog: '① 개구리', legx: '② 다리 겹침', touch: '③ 닿아만 있는 발(들림)', gfeet: '④ 땅 뻗기 발 벌어짐·엇갈림', wing: '⑥ 닭 날개', handhip: '⑦ 빈손이 엉덩이·허벅지에 듦' };
-const out = { scenes: {} }, TOT = Object.fromEntries(KEYS.map(k => [k, 0])); let TOTN = 0; const worst = Object.fromEntries(KEYS.map(k => [k, { v: 0, at: '' }]));
+let wingForced = 0, wingFree = 0, elUp = 0, elUpMax = 0; const out = { scenes: {} }, TOT = Object.fromEntries(KEYS.map(k => [k, 0])); let TOTN = 0; const worst = Object.fromEntries(KEYS.map(k => [k, { v: 0, at: '' }]));
 for (const [id, title, fn, assist, , st0] of all) {
   const rig = buildCharacter(), world = makeWorld(), sim = makeSim(rig, world, clips); sim.reset({ pos: st0 || SC.START, yaw: Math.PI }); sim.opt.wallRest = false; sim.opt.footAssist = !!assist; sim.opt.posture = process.env.VARIANT || 'fb'; sim.opt.grabAssist = !process.env.NOASSIST;
   // p3d-0.11.7: 걸음마다 바로 진행하며 잰다 — 전에는 입력을 먼저 다 만든 뒤 돌려서, 진행 중의 상태를 보고 입력을 정하는 장면(C의 흔들기 swingThen 등)은 흔들지 않은 채로 재고 있었다
@@ -46,7 +46,10 @@ for (const [id, title, fn, assist, , st0] of all) {
     if (K.hands.some(h => h.st === 'reach' || h.st === 'hold') && Math.hypot(sim.body.vel.x, sim.body.vel.z) < 0.3 && Math.max(legs[0].ank.y, legs[1].ank.y) < 0.2) { const d = legs[0].ank.clone().setY(0).distanceTo(legs[1].ank.clone().setY(0)), yaw = sim.body.yaw, left = V().set(Math.cos(yaw), 0, -Math.sin(yaw)), cross = legs[0].ank.clone().sub(legs[1].ank).dot(left) < -0.02;
       if (d > 0.55 || cross) note('gfeet', d * 100, t, `${(d * 100).toFixed(0)}cm${cross ? ' 엇갈림' : ''}`); }
     // ⑥ 닭 날개
-    if (onW) for (const [i, H] of K.hands.entries()) { if (H.st !== 'hold') continue; const s = i ? 'R' : 'L', sh = P(`upperArm.${s}`), el = P(`foreArm.${s}`), wr = P(`hand.${s}`), dsw = sh.distanceTo(wr); if (dsw < 0.30 && el.y > sh.y) note('wing', (el.y - sh.y) * 100, t, `${s} 손–어깨 ${(dsw * 100).toFixed(0)}cm 팔꿈치 +${((el.y - sh.y) * 100).toFixed(0)}cm`); }
+    if (onW) for (const [i, H] of K.hands.entries()) { if (H.st !== 'hold') continue; const s = i ? 'R' : 'L', sh = P(`upperArm.${s}`), el = P(`foreArm.${s}`), wr = P(`hand.${s}`), dsw = sh.distanceTo(wr); { const ua = sh.clone().sub(el), fa = wr.clone().sub(el), ang = Math.acos(Math.max(-1, Math.min(1, ua.dot(fa) / (ua.length() * fa.length())))) * deg, yw = sim.body.yaw, lat = (el.x - sh.x) * Math.cos(yw) - (el.z - sh.z) * Math.sin(yw), outw = lat * (i ? -1 : 1); if (ang < 100 && el.y > sh.y && outw > 0.15) { elUp++; elUpMax = Math.max(elUpMax, outw); } } if (dsw < 0.30 && el.y > sh.y) { note('wing', (el.y - sh.y) * 100, t, `${s} 손–어깨 ${(dsw * 100).toFixed(0)}cm 팔꿈치 +${((el.y - sh.y) * 100).toFixed(0)}cm`);
+      // 이 손·어깨 자리에서 팔꿈치를 가장 낮게 둘 수 있는 높이(뼈 길이로 정해지는 원의 가장 낮은 점) — 어깨보다 위면 팔꿈치 고르기로는 풀리지 않는다(몸 자리의 문제)
+      const a = DIM.upperArm, c = DIM.foreArm, d = Math.max(dsw, 1e-4), u = wr.clone().sub(sh).divideScalar(d), x = (a * a - c * c + d * d) / (2 * d), r = Math.sqrt(Math.max(0, a * a - x * x)), low = sh.y + x * u.y - r * Math.sqrt(Math.max(0, 1 - u.y * u.y));
+      if (low > sh.y) wingForced++; else wingFree++; } }
     // ⑦ 빈손이 엉덩이·허벅지에
     if (onW) for (const [i, H] of K.hands.entries()) { if (H.st !== 'free') continue; const wr = P(`hand.${i ? 'R' : 'L'}`), pel = P('hips'); let d = 9; for (const lg of legs) d = Math.min(d, ptSeg(wr, lg.hip, lg.knee) - 0.11); d = Math.min(d, wr.distanceTo(pel) - 0.17); if (d < 0) note('handhip', -d * 100, t, `${i ? 'R' : 'L'} ${(-d * 100).toFixed(1)}cm`); }
   }
@@ -57,5 +60,7 @@ for (const [id, title, fn, assist, , st0] of all) {
   if (s) console.log(`■ ${id.padEnd(7)} ${s}`);
 }
 console.log(`\n합계(장면 ${all.length}개, ${TOTN}걸음):`);
+console.log(`  (참고 ⑥b: 잡은 팔이 접히고(팔꿈치 각 100° 아래) 팔꿈치가 어깨보다 위이며 옆으로 15cm 넘게 벌어짐 — 손–어깨 거리와 무관: ${elUp}걸음, 가장 크게 벌어진 ${(elUpMax * 100).toFixed(0)}cm)`);
+console.log(`  (⑥ 가운데 기하로 강제 = 팔꿈치를 가장 낮게 둬도 어깨 위: ${wingForced}걸음, 더 낮게 둘 수 있었음: ${wingFree}걸음)`);
 for (const k of KEYS) console.log(`  ${NAME[k].padEnd(18)} ${String(TOT[k]).padStart(5)}걸음  가장 큰: ${worst[k].at}`);
 if (process.argv[2]) fs.writeFileSync(process.argv[2], JSON.stringify({ 실행_출처: __P, ...out, 합계: TOT, 가장_큰: worst }, null, 1));

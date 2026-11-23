@@ -11,7 +11,7 @@ const E = process.env;
 if (E.GRIP === 'frame') globalThis.GRIP_FRAME = 1;
 if (E.GRIP === 'old') globalThis.OLDGRIP = 1;
 for (const k of ['PO_FAST', 'OLDPOSE', 'OLDHAND', 'NOSHOMEGA', 'NOSHOM', 'SHVIA', 'WMIN', 'NOWFLOOR', 'NOLOCK', 'FLOORIN', 'OLDSELFTOL', 'OLDHEAD', 'OLDHANDPATH', 'NOBOXFACE', 'YAWFREE', 'OLDTIE', 'OLDWRIST', 'OLDHANDFIT', 'NOANAT', 'NOREACHYIELD', 'OLDJUMPHAND', 'OLDSIDEPULL', 'OLDSMEAR', 'OLDFREEKNEE', 'OLDDETOUR', 'OLDSCAP', 'OLDSTRAIGHT', 'OLDSHOM', 'NOWRIST', 'OLDWALLFALL', 'NOASSIST', 'OLDPOLE', 'CROSSOVER', 'OLDGRIPCAP', 'OLDASSISTX', 'OLDBURST', 'OLDPALM', 'OLDFINGAV', 'OLDLEGX', 'OLDJUMPPOSE', 'OLDREACHANAT', 'NOLX_KNEE', 'NOLX_FREE', 'NOLX_PATH', 'NOLX_FLAG', 'NOLX_FB', 'LX_FREE', 'OLDCROSSKNEE', 'OLDFBKNEE', 'HANDHIP', 'FREECROSS', 'OLDSMEARIDLE', 'OLDFLAGFLOOR', 'OLDHINTPERP', 'OLDPLANTV']) if (E[k]) globalThis[k] = 1;
-for (const k of ['SIDE_FACE', 'TURN_ACC', 'KNEE_R1']) if (E[k] !== undefined && E[k] !== '') globalThis[k] = +E[k];
+for (const k of ['SIDE_FACE', 'TURN_ACC', 'KNEE_R1', 'FOLD_D']) if (E[k] !== undefined && E[k] !== '') globalThis[k] = +E[k];
 if (E.YAWMODE) globalThis.YAWMODE = E.YAWMODE;
 if (E.POSTURE && !E.VARIANT) E.VARIANT = E.POSTURE;
 export const POSTURE = E.VARIANT || '';
