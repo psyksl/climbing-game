@@ -15,7 +15,7 @@ const LO = [-0.16, -0.10, -0.18, -0.8, -0.6, -0.5, -0.9, -0.6, -0.5, -0.25, -0.2
 export const FBW = {
   com: 25, axis: 1.5, regP: 2.0, regH: [1.0, 1.6, 1.6], regC: [2.2, 0.5, 0.5], spineLim: 10, spine: 0.7, clav: 2.2, clavLim: 15,
   armOver: 80, armFold: 30, armPref: 3.5, grip: 12, behind: 30, armBack: 10, armCross: 5, reach: 30, reachSat: 0.25,
-  legOver: 60, legFold: 30, legAdd: 6, knee: 12, thigh: 12, legX: 120, moveK: 0.6, over: 3.0, hip: 9, body: 25, head: 30,
+  legOver: 60, legFold: 30, legAdd: 6, knee: 12, thigh: 12, legX: 120, crossYaw: 8, crossYawA: 0.5, moveK: 0.6, over: 3.0, hip: 9, body: 25, head: 30,
   wP: 0.42, wC: 0.58, spineT: 0.55, // wP·wC = 무게중심을 셀 때 골반·윗몸의 몫, spineT = 척추 뼈가 골반과 가슴 사이에서 도는 몫
   hl: [0.10, 0.10, 0.10, 0.12, 0.12, 0.12, 0.09, 0.09, 0.09, 0.07, 0.07], // 풀이 값이 뒤따르는 반감기(초): 골반 자리 · 골반 회전 · 가슴 회전 · 빗장뼈
   step: 0.025, lambda: 0.05, // 한 걸음에 풀이가 옮기는 가장 큰 양(m·rad), 감쇠

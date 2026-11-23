@@ -29,7 +29,7 @@ export const CL = {
   //   어깨가 목표 쪽으로 움직이는 중이면(반동·점프) 그 빠르기 1m/s당 ASSIST_D만큼 더 허용한다(ASSIST_MAX까지). 끌려가는 동안 다른 손이 버티지 못하면 그 손을 놓는다. 발은 다리가 닿는 범위를 벗어나면 떨어진다(원래 규칙). 실험값
   GRIP_BAD_CAP: 0.10, // p3d-0.11.4: 당기는 방향이 턱이 버티는 범위 밖인 손이 당기는 힘의 한계(몸무게 배수, GRIP_MIN 0.15보다 작게)
   ASSIST_S: 0.08, ASSIST_D: 0.10, ASSIST_MAX: 0.28, ASSIST_V: 1.2,
-  ASSIST_BURST1: 1.3, PALM_DOWN: 0.6, CROSS_A0: 0, CROSS_KW: 4, REACH_POLE_W: 9, LEGX_CLR: 0.01, PALM_TW: 120 * Math.PI / 180, // 잡기 보정: 한 손만 잡고 뛸 때 그 팔의 순간 힘(몸무게 배. 기본 ARM_BURST 0.85). 두 손 점프는 그대로
+  ASSIST_BURST1: 1.3, PALM_DOWN: 0.6, CROSS_A0: 0, CROSS_KW: 4, CROSS_RATE: 2.5, REACH_POLE_W: 9, LEGX_CLR: 0.01, PALM_TW: 120 * Math.PI / 180, // 잡기 보정: 한 손만 잡고 뛸 때 그 팔의 순간 힘(몸무게 배. 기본 ARM_BURST 0.85). 두 손 점프는 그대로
   NEW_T: 1.0, ASSIST_GRIP_ANG: 72 * Math.PI / 180, ASSIST_SHOCK_V: 2.4, // 잡기 보정: 막 잡은 손으로 보는 시간(초)
   ASSIST_WRIST: 15, // 잡기 보정이 켜져 있으면 손목 한계(wristMax 70°)를 이만큼 더 허용한다(비스듬히 잡을 때 아래팔을 돌려 손을 옆으로 세워 잡는 몫. 그림은 70°에서 멈춘다)
   HAND_V: 3.2, HAND_ACC: 30, HAND_V_DYN: 5.5, HAND_ACC_DYN: 60, STAND_SH: 1.42, HAND_T0: 0.22, HAND_T1: 0.60, FOOT_V: 1.1, FOOT_T0: 0.28, FOOT_T1: 0.90,
@@ -405,7 +405,7 @@ function kneeEval(S, hj, ank, sx, py, a) { const pl = V(sx * Math.sin(a * deg), 
 // 디딘·가는 다리가 바라는 무릎 각(도, 골반 틀: 0 = 앞, + = 바깥) — legIK0의 고르기와 전신 자세 풀이(fbik의 무릎 여유)가 같은 값을 쓴다(p3d-0.11.7)
 // 엇갈린 정도(0~1): 발목이 고관절에서 몸 안쪽으로 10cm 넘게 가면 늘기 시작해 22cm에서 1
 const crossK = (sx, hj, ank, py) => { if (globalThis.OLDCROSSKNEE) return 0; const d = ank.clone().sub(hj), ox = sx * (d.x * Math.cos(py) - d.z * Math.sin(py)); return clamp((-ox - 0.10) / 0.12, 0, 1); };
-function kneeWant(S, sx, hj, ank, py) { const bend = clamp((1 - hj.distanceTo(ank) / DIM.leg - 0.05) / 0.35, 0, 1); let a0 = kneeA0(S, sx, ank, bend); const cr = crossK(sx, hj, ank, py); if (cr > 0) a0 = lerp(a0, CL.CROSS_A0, cr); return a0; }
+function kneeWant(S, sx, hj, ank, py) { const bend = clamp((1 - hj.distanceTo(ank) / DIM.leg - 0.05) / 0.35, 0, 1); let a0 = kneeA0(S, sx, ank, bend); const K = S.climb, cr = globalThis.OLDCROSSKNEE ? 0 : K.crS ? K.crS[sx > 0 ? 0 : 1] : crossK(sx, hj, ank, py); if (cr > 0) a0 = lerp(a0, CL.CROSS_A0, cr); return a0; }
 function kneeA0(S, sx, ank, bend) { const K = S.climb, i = sx > 0 ? 0 : 1, F = K.feet[i], O = K.feet[1 - i], oy = O.st === 'plant' ? O.ank.y : S.body.pos.y + DIM.ankleY, high = ank.y - oy > 0.10 || (F.st === 'move' && F.box && F.box.kind !== 'floor'); return high ? 30 + 10 * bend : 10; }
 // 사람 관절의 범위(p3d-0.11.1, src/anat.js)를 쓰는가: 사람형 몸에서만. 끄기 = 시험 스위치 NOANAT
 const anatOn = () => DIM.boxCollide && !globalThis.NOANAT, qArr = q => [q.x, q.y, q.z, q.w], vArr = v => [v.x, v.y, v.z];
@@ -807,9 +807,12 @@ function limbsStep(S, dt) {
         F.relV.addScaledVector(F.rel.clone().sub(rest), -w * w * dt).multiplyScalar(1 / (1 + 2 * zeta * w * dt)).addScaledVector(Kc.accS, -0.55 * dt);
         F.rel.addScaledVector(F.relV, dt); if (F.lmax > DIM.leg * 0.985) F.lmax = Math.max(DIM.leg * 0.985, F.lmax - 0.12 * dt); const L = F.rel.length(), L1 = clamp(L, 0.45, Math.max(DIM.leg * 0.985, F.lmax || 0)); if (L !== L1) { F.rel.multiplyScalar(L1 / L); const n = F.rel.clone().normalize(); F.relV.addScaledVector(n, -F.relV.dot(n)); } }
       // p3d-0.11.6: 늘어뜨린 다리가 다른 다리(디딘·가는 다리)를 지나가면 그 다리 뒤(벽 반대쪽)로 비킨다 — 엇갈려 디딘 왼발의 정강이가 늘어진 오른쪽 넓적다리를 12cm 지나갔다(leg_cross). 비키는 양(F.lx)은 계산 걸음에서 초속 1.2m까지만 바뀐다
-      if (DIM.boxCollide && !globalThis.OLDLEGX && globalThis.LX_FREE && S.climb.feet[1 - F.i].st !== 'free') { // 실험(기본 끔): 다른 벽 시험(corner_check)의 두 벽 잡기를 깨서 뺐다 const yaw = S.body.yaw, back = V(-Math.sin(yaw), 0, -Math.cos(yaw)), oL = otherLeg(S, 1 - F.i), sx = F.i ? -1 : 1, base = hj.clone().add(F.rel);
+      if (DIM.boxCollide && !globalThis.OLDLEGX && (globalThis.LX_FREE || (globalThis.FREECROSS && S.climb.crS && S.climb.crS[1 - F.i] > 0.3 && S.climb.feet[1 - F.i].box && S.climb.feet[1 - F.i].box.kind !== 'floor')) && S.climb.feet[1 - F.i].st !== 'free') {
+        // 실험(기본 끔): FREECROSS = 다른 발이 바닥이 아닌 발판에 엇갈려 디뎌졌을 때(자세 정리 ② — h1의 W 구간 겹침 11.9 → 6.8cm였지만 다른 벽 시험의 두 벽 잡기가 깨져 뺐다), LX_FREE = 언제나(같은 까닭으로 뺐다).
+        //   (0.11.6 끝에 이 줄 가운데에 주석을 붙여 아래 선언이 주석이 되어 있었다 — 꺼져 있어서 드러나지 않았다)
+        const yaw = S.body.yaw, back = V(-Math.sin(yaw), 0, -Math.cos(yaw)), oL = otherLeg(S, 1 - F.i), sx = F.i ? -1 : 1, base = hj.clone().add(F.rel);
         const gapAt = x => { const a = base.clone().addScaledVector(back, x), kn = legIK(S, hj, a, yaw, sx, false).ik.mid; return legGap(hj, kn, a, oL); };
-        let want = 0; if (gapAt(F.lx || 0) < CL.LEGX_CLR || (F.lx || 0) > 0) { want = 0.40; for (let x = 0; x <= 0.40; x += 0.04) if (gapAt(x) >= CL.LEGX_CLR + 0.01) { want = x; break; } }
+        const clearAt = x => !nearBox(S.world, base.clone().addScaledVector(back, x), 0.08); let want = 0; if (gapAt(F.lx || 0) < CL.LEGX_CLR || (F.lx || 0) > 0) { want = 0; for (let x = 0; x <= 0.40; x += 0.04) { if (!clearAt(x)) break; want = x; if (gapAt(x) >= CL.LEGX_CLR + 0.01) break; } }
         F.lx = (F.lx || 0) + clamp(want - (F.lx || 0), -1.2 * dt, 1.2 * dt); if (F.lx > 1e-4) { F.rel.addScaledVector(back, F.lx); const L = F.rel.length(); if (L > DIM.leg * 0.985) F.rel.multiplyScalar(DIM.leg * 0.985 / L); F.rel.addScaledVector(back, 0); } }
       else F.lx = 0;
       F.a.copy(hj).add(F.rel);
@@ -973,7 +976,7 @@ function fbUpdate(S, inp, dt, held, planted, left, fwd) {
   let yawT = 0; if (held.length) { const cH = V(); for (const h of held) cH.add(h.goal); cH.multiplyScalar(1 / held.length).sub(V(b.pos.x, b.pos.y, b.pos.z)); yawT = clamp(Math.atan2(cH.dot(left), Math.max(0.15, cH.dot(fwd))) * 0.6, -0.5, 0.5); }
   const c = { pos, yaw: b.yaw, boxes, ARM: CL.ARM, LEG: CL.LEG, LEGMIN: 0.30, kneeClr: DIM.kneeClr, axis: a3(ax), pitch: -0.12 * clamp(K.pz.tuck, 0, 1), twist, yawT,
     arms: K.hands.map(h => ({ st: h.st === 'hold' ? 1 : h.st === 'reach' ? 2 : 0, goal: a3(h.goal), w: 1 })),
-    legs: K.feet.map(f => ({ st: f.st === 'plant' ? 1 : f.st === 'move' ? 2 : 0, ank: a3(f.ank), w: 1, pole: S.poleS && S.poleS['kn' + f.s + 'p'] ? a3(S.poleS['kn' + f.s + 'p']) : null, aW: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE ? kneeWant(S, f.i ? -1 : 1, K.T.hj[f.i], f.ank, b.yaw + K.po.yaw) : null, kw: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE ? 1 + CL.CROSS_KW * crossK(f.i ? -1 : 1, K.T.hj[f.i], f.ank, b.yaw + K.po.yaw) : 1, load: f.st === 'plant' && f.box && f.box.kind !== 'floor' ? clamp(f.F ? f.F.y / BW : f.load || 0, 0, 1) : 0 })),
+    legs: K.feet.map(f => ({ st: f.st === 'plant' ? 1 : f.st === 'move' ? 2 : 0, ank: a3(f.ank), w: 1, pole: S.poleS && S.poleS['kn' + f.s + 'p'] ? a3(S.poleS['kn' + f.s + 'p']) : null, aW: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE ? kneeWant(S, f.i ? -1 : 1, K.T.hj[f.i], f.ank, b.yaw + K.po.yaw) : null, kw: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE && !globalThis.OLDCROSSKNEE ? 1 + CL.CROSS_KW * (K.crS ? K.crS[f.i] : 0) : 1, load: f.st === 'plant' && f.box && f.box.kind !== 'floor' ? clamp(f.F ? f.F.y / BW : f.load || 0, 0, 1) : 0 })),
     shr: K.hands.map(h => (h.st === 'reach' && h.goal.y > b.pos.y + 1.4 ? 0.40 : h.st === 'hold' && (h.load || 0) > 0.5 && !up && !rch ? 0.28 : 0)), iters: fb.cost > 3 ? 2 : 1 };
   c.boxesHead = boxes.map(x => ({ min: [x.min[0], x.min[1] - 0.15, x.min[2]], max: x.max }));
   stepFB(fb, c, dt); fb.ctx = c;
@@ -984,6 +987,8 @@ export function stepClimb(S, inp, dt) {
   b.events.length = 0; b.t += dt;
   // 자세 규칙(p3d-0.10.1, GPT의 0.10.0 검토 "㉮와 참고 자세 선택 + 접촉 IK를 대표 장면에서 비교"): 'rule' = 사람형 몸의 새 규칙(기본), 'base' = 0.10.0, 'ref' = 참고 자세 색인(캡처 빌드의 실험 설정)
   K.post = DIM.boxCollide ? (S.opt.posture || 'rule') : 'base';
+  // 엇갈린 정도(crossK)는 계산 걸음마다 한 번, 초속 CROSS_RATE까지만 바뀐다(p3d-0.11.7). 바닥이 아닌 발판이고 그 발판이 몸이 보는 벽에 붙어 있을 때만 센다(두 벽 사이에서 몸이 돌아 옆 벽의 발판에 남은 발까지 엇갈림으로 보면 다른 벽 시험의 잡기가 깨졌다). 그대로 쓰면 몸이 경계(안쪽 10cm)를 오갈 때 무릎의 바람이 뛰어 디딘 무릎이 0.1초 사이에 5cm 오갔다(motion_scan v3)
+  if (K.on && K.T && DIM.boxCollide) { K.crS = K.crS || [0, 0]; const bf = V(Math.sin(b.yaw), 0, Math.cos(b.yaw)); for (const F of K.feet) { const al = F.box && F.box.kind !== 'floor' ? clamp((-boxFacing(S.world, F.box, bf.clone().negate()).dot(bf) - 0.5) / 0.3, 0, 1) : 0, tgt = F.st === 'free' || !al ? 0 : al * crossK(F.i ? -1 : 1, K.T.hj[F.i], F.st === 'plant' ? F.ank : F.a, b.yaw + K.po.yaw); K.crS[F.i] += clamp(tgt - K.crS[F.i], -CL.CROSS_RATE * dt, CL.CROSS_RATE * dt); } } else K.crS = [0, 0];
   if (K.post === 'fb' && !K.fb) K.fb = makeFB();
   if (K.post === 'ref' && S.ref && K.tick % 4 === 0 && K.T) { const B = S.rig.bones, P2 = CL.PALM, pts = [B['hand.L'].localToWorld(V(0, -P2, 0)), B['hand.R'].localToWorld(V(0, -P2, 0)), worldPos(B['foot.L']), worldPos(B['foot.R'])];
     const r = lookup(S.ref, featOf(pts, worldPos(B.hips), b.yaw), [K.hands[0].st === 'hold', K.hands[1].st === 'hold', K.feet[0].st === 'plant', K.feet[1].st === 'plant']);
@@ -1126,7 +1131,8 @@ export function stepClimb(S, inp, dt) {
   //   손으로 잡고 있을 때 = 발판 위의 발이 몸을 받치면 벽 쪽 깊이만 그 발 위로.
   //   손이 없을 때 = 좌우·깊이 모두. 발을 옮기려는 중이면 남는 발 위로, 몸 위로(W)를 누르면 높은 발 위로, 아니면 디딘 발들의 가운데로.
   { const ctr = f => V((f.patch.x0 + f.patch.x1) / 2, 0, (f.patch.z0 + f.patch.z1) / 2), topsAll = planted.filter(f => f.kind === 'top');
-    if (held.length) { const tops = topsAll.filter(f => f.load > 0.1 && f.box.kind !== 'floor'); if (tops.length) { const c = V(); for (const f of tops) c.add(ctr(f)); c.multiplyScalar(1 / tops.length); const d = c.sub(K.ref).setY(0); K.ref.add(fwd.clone().multiplyScalar(d.dot(fwd)).clampLength(0, 0.3 * dt));
+    if (held.length) { const tops = topsAll.filter(f => f.load > 0.1 && f.box.kind !== 'floor'); if (tops.length) { const c = V(); for (const f of tops) c.add(ctr(f)); c.multiplyScalar(1 / tops.length);
+      const d = c.sub(K.ref).setY(0); K.ref.add(fwd.clone().multiplyScalar(d.dot(fwd)).clampLength(0, 0.3 * dt));
       // 몸 위로(W)를 누르고 있으면 가장 높이 디딘 발 쪽으로 엉덩이가 옆으로도 간다(높은 발 → 엉덩이를 그 위로 → 다리로 일어서기. 실제 영상 두 편에서 올라가는 일은 다리가 했다 — 품질 검토 12·13절). 임시 — 조작은 기획 결정 대기
       // p3d-0.8.4(GPT): 좌우(A/D)를 직접 누르고 있으면 자동으로 옮기지 않는다 — 직접 낸 의도가 먼저다
       if ((inp.cy || 0) > 0 && !(inp.cx || 0) && !(S.opt && S.opt.rockOver === false)) { const hi = tops.reduce((a, f) => (f.p.y > a.p.y ? f : a), tops[0]), dl = ctr(hi).sub(K.ref).setY(0).dot(left); K.ref.addScaledVector(left, clamp(dl, -0.35 * dt, 0.35 * dt)); } } }
