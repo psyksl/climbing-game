@@ -77,3 +77,16 @@ export const SCENES_U = [
   ['u12 사용자 스크린샷(0.11.4, 그림 25): 왼손 턱 A·오른손 턱 F, 두 발을 낮은 발판에 모아 섬(왼팔이 머리 위로 접힘)', (sim, put, rep) => { rep(60); rep(150, {}, [hand(0, AL)]); rep(260, {}, [foot(0, LOW)]); rep(120, { cy: 1 }); rep(120); rep(360, {}, [hand(1, F)]); rep(300, {}, [foot(1, [-0.30, 0.5, -2.93])]); rep(200); rep(120, { cy: 1 }); rep(240); }, false],
   ['u5 보통: 오른발을 낮은 발판에 → 몸 위로 → 왼발을 무릎 높이 벽면에', (sim, put, rep) => { ustart(rep); rep(200, {}, [foot(1, [-0.45, 0.5, -2.93])]); rep(120, { cy: 1 }); rep(200, {}, [foot(0, [-1.2, 0.75, -3.0])]); rep(120); }, false, 1, UST],
 ];
+
+// p3d-0.11.5 확인 영상(사용자: "지금은 플레이해 볼 수 없으니 영상을 찍어 보내 달라"). 화면 기본 설정(전신 자세 풀이·잡기 보정 켬)으로 본다. 스크립트 입력(사람 손 아님)
+//   흔들기 장면은 입력을 만드는 계산(sim)의 빠르기를 보고 뻗는 때를 정한다 — 화면도 같은 계산이라 같은 때가 된다
+const swingThen = (sim, rep, put, goal) => { let vmax = 0; for (let k = 0; k < 600; k++) { const v = sim.body.vel.x; vmax = Math.max(vmax, Math.abs(v)); if (k > 200 && v > 0.8 * vmax && v > 0.25) { put({}, [hand(1, goal)]); return; } rep(1, { cx: Math.floor(k / 45) % 2 ? 1 : -1 }); } };
+export const SCENES_V115 = [
+  ['A 한 손 + 두 발 벽면에서 벽 점프(Space 0.3초) — 0.11.4: 7cm, 0.11.5: 33cm', (sim, put, rep) => { rep(30); put({ jump: true }, [hand(0, [0.5, 2.32, -2.86]), hand(1, [0.9, 2.32, -2.86])]); rep(59, { jump: true }); rep(200); rep(240, {}, [foot(0, [0.45, 0.8, -3.0])]); rep(240, {}, [foot(1, [0.95, 0.8, -3.0])]); rep(120, {}, [rel('hand', 0)]); rep(120); rep(36, { jump: true }); rep(200); }, false, 1, [0.7, 0, -2.65]],
+  ['B 같은 자세(왼손만 턱 B)에서 벽 점프하며 오른손을 턱 D로(잡기 보정·반동)', (sim, put, rep) => { rep(30); put({ jump: true }, [hand(0, [0.5, 2.32, -2.86]), hand(1, [0.9, 2.32, -2.86])]); rep(59, { jump: true }); rep(200); rep(240, {}, [foot(0, [0.45, 0.8, -3.0])]); rep(240, {}, [foot(1, [0.95, 0.8, -3.0])]); rep(120, {}, [rel('hand', 1)]); rep(120); rep(8, { jump: true }); put({ jump: true }, [hand(1, [1.0, 2.48, -2.86])]); rep(27, { jump: true }); rep(260); }, false, 1, [0.7, 0, -2.65]],
+  ['C 한 손 매달림(턱 B)에서 흔들어 오른쪽 아래의 턱 E로(가만히는 23cm 모자람)', (sim, put, rep) => { rep(30); put({ jump: true }, [hand(0, [0.8, 2.32, -2.86])]); rep(59, { jump: true }); rep(200); for (let k = 0; k < 900 && sim.body.vel.length() > 0.08; k++) rep(1); swingThen(sim, rep, put, [1.80, 1.90, -2.86]); rep(300); }, false, 1, [0.95, 0, -2.65]],
+  ['D 땅에서 턱 A로 손 — 2cm 모자란 자리(잡기 보정으로 잡음)', (sim, put, rep) => { rep(30); rep(260, {}, [hand(1, [-0.65, 1.92, -2.84])]); rep(120); }, false, 1, [-1.10, 0, -2.58]],
+  ['E 턱 F 바로 밑에서 점프하며 왼손(0.11.4까지 "충격이 커서 놓침")', (sim, put, rep) => { rep(60); rep(6, { jump: true }); put({ jump: true }, [hand(0, [-0.3, 2.15, -2.86])]); rep(53, { jump: true }); rep(300); }, false, 1, [-0.3, 0, -2.62]],
+  ['F 그림 25 재현: 왼손 턱 A·오른손 턱 F, 두 발을 낮은 발판에 → 몸 위로(W)', (sim, put, rep) => { rep(60); rep(150, {}, [hand(0, AL)]); rep(260, {}, [foot(0, LOW)]); rep(120, { cy: 1 }); rep(120); rep(360, {}, [hand(1, F)]); rep(300, {}, [foot(1, [-0.30, 0.5, -2.93])]); rep(200); rep(120, { cy: 1 }); rep(240); }, false],
+  ['G 두 손 매달림에서 두 손을 놓고 떨어짐 → 착지(0.11.3의 "스파이더맨" 자세)', (sim, put, rep) => { rep(30); put({ jump: true }, [hand(0, [0.5, 2.32, -2.86]), hand(1, [0.9, 2.32, -2.86])]); rep(59, { jump: true }); rep(200); put({}, [rel('hand', 0), rel('hand', 1)]); rep(240); }, false, 1, [0.7, 0, -2.65]],
+];
