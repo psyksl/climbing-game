@@ -14,7 +14,7 @@ import GALLERY from 'gallery-data'; // 동작 보기용 자료(받은 동작 전
 import { poseRaw } from './clipmotion.js';
 import { buildProps, makeSwingRope, applyGrips } from './demo.js'; // 캡처 동작 자료(빌드할 때 assets_local/clips.json이 있으면 들어온다. 없으면 null)
 
-export const VERSION = 'p3d-0.11.1';
+export const VERSION = 'p3d-0.11.2';
 const params = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: params.has('test') });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = !params.has('noshadow');
@@ -35,7 +35,7 @@ const sim = makeSim(rig, world, CLIPS); let body = sim.body;
 // 자세 규칙(p3d-0.10.1, 비교용): 주소에 ?posture=rule(기본) | base(0.10.0) | ref(참고 자세 — 캡처 빌드에만 색인이 있다) | solve(p3d-0.10.2 함께 고르는 자세 실험)
 // 잡는 손의 접촉 틀(p3d-0.10.2, 비교용): ?grip=frame = 첫 마디를 턱 모서리에 두는 손목 자리(닿는 거리가 약 6cm 는다 — 기획 결정 대기). 기본 = 0.10.1의 손목 자리. climb.js가 부를 때마다 읽는다
 if (params.get('grip') === 'frame') globalThis.GRIP_FRAME = 1;
-// p3d-0.11.1: 기본 = 전신 자세 풀이(fb). 옛 규칙은 ?posture=rule 또는 화면에서 O 키(전신 자세 풀이 ↔ 옛 규칙)
+// p3d-0.11.2: 기본 = 전신 자세 풀이(fb). 옛 규칙은 ?posture=rule 또는 화면에서 O 키(전신 자세 풀이 ↔ 옛 규칙)
 let POSTURE = ['rule', 'base', 'ref', 'solve', 'fb'].includes(params.get('posture')) && (params.get('posture') !== 'ref' || (REFIDX && REFIDX.frames)) ? params.get('posture') : (BODY === 'old' ? 'rule' : 'fb');
 const applyPosture = () => { sim.opt.posture = POSTURE; sim.ref = POSTURE === 'ref' ? REFIDX : null; }; applyPosture();
 loadKeys();
