@@ -88,7 +88,7 @@ for (const [s, h] of [['L', 'l'], ['R', 'r']]) {
   MAP.push({ o: `toe.${s}`, h: `ball_${h}`, aO: FWD, sO: UP, aH: `ball_leaf_${h}`, sH: 'up' });
 }
 // HAND_TILT = 잡은 손의 기울기: 물리의 손목 자리와 같은 접촉 틀(rig.js DIM.grip)
-const FINGERS = ['index', 'middle', 'ring', 'pinky'], WRIST_MAX = (DIM.grip && DIM.grip.wristMax ? DIM.grip.wristMax : 70) * Math.PI / 180, HAND_TILT = (DIM.grip ? DIM.grip.tilt : 14) * Math.PI / 180, FINGER_R = 0.009, FINGER_RH = 0.012, SH_R = 0.075, PRON = 80 * Math.PI / 180, SCAP_UP = 28 * Math.PI / 180, SCAP_FWD = 10 * Math.PI / 180;
+const FING_T = 1.5, FINGERS = ['index', 'middle', 'ring', 'pinky'], WRIST_MAX = (DIM.grip && DIM.grip.wristMax ? DIM.grip.wristMax : 70) * Math.PI / 180, HAND_TILT = (DIM.grip ? DIM.grip.tilt : 14) * Math.PI / 180, FINGER_R = 0.009, FINGER_RH = 0.012, SH_R = 0.075, PRON = 80 * Math.PI / 180, SCAP_UP = 28 * Math.PI / 180, SCAP_FWD = 10 * Math.PI / 180;
 
 // 연결기를 만든다. ctrl = rig.js의 제어 뼈대(쉬는 자세에서 만들어야 한다 — 모든 뼈의 쉬는 회전이 단위 회전)
 export function makeRetarget(ctrl, H) {
@@ -184,6 +184,8 @@ export function makeRetarget(ctrl, H) {
           const pts = () => [`${f}_02_${h}`, `${f}_03_${h}`, `${f}_04_leaf_${h}`].map(nm => wp(H.bones[nm])).concat(DIM.grip && f === 'thumb' ? [wp(H.bones[`${f}_01_${h}`]).lerp(wp(H.bones[`${f}_02_${h}`]), 0.5)] : []); // p3d-0.10.2: 엄지는 뿌리 마디(01) 가운데도 본다 — 잡은 손의 엄지 뿌리가 턱 앞면에 11mm 들었다(grip_check)
           const penAt = () => Math.max(0, ...pts().flatMap(p => nb.map(bx => inBox(p, bx, FINGER_R))));
           if (penAt() <= 1e-4) continue; const base = ang(0); let bst = null;
+          // p3d-0.11.7(자세 정리 ⑪): 잡지 않은 손(뻗는 손·놓인 손·땅의 손)은 편 손가락이 든 깊이에 비례해 굽힌다(2cm에 90°까지 — 3cm·45°는 잡기 직전 손이 턱에 11~25mm 들었다) — "들지 않는 가장 가까운 굽힘"은 손이 움직이면 답이 10° ↔ 120° 사이를 걸음마다 오가 손가락이 떨었다(reach1 5.48~5.53초, 0.1초에 오간 길 493°; 땅에서 늘어뜨린 손 u9 9.08초 453°). 깊이는 손 자리에 따라 이어서 바뀌므로 튀지 않는다. OLDFINGSM = 전처럼
+          if (!globalThis.OLDFINGSM && !(Hd && Hd.st === 'hold')) { const p0 = penAt(), rP = base + Math.min(1, p0 / (globalThis.FING_PG ?? 0.02)) * (globalThis.FING_PMAX ?? 90) * Math.PI / 180; setF(f, rP, rP * 0.35, rP * 0.2); continue; }
           if (!globalThis.OLDFINGAV) { // p3d-0.11.6: 정한 굽힘에서 가장 조금 바꾼 들지 않는 굽힘(2°마다, 굽히는 쪽을 먼저. 턱으로 뻗는 손은 굽히는 쪽만 — 펴는 쪽과 번갈아 고르면 걸음마다 앞뒤로 떤다). 0.11.5까지는 10° 격자에서 "덜 듦 + 바꾼 양"의 값으로 골라 들기 직전의 두 끝(−20°와 110°)이 걸음마다 바뀌었다 — 뻗는 손의 손가락이 14,580°/s로 떨었다(test/hand_flip.mjs)
             const lo = -20 * Math.PI / 180, hi = 110 * Math.PI / 180, stp = 2 * Math.PI / 180;
             for (let dd = stp; dd <= hi - lo + 1e-6 && !bst; dd += stp) for (const r of (Hd && Hd.st === 'reach' && Hd.edge ? [base + dd] : [base + dd, base - dd])) { if (r < lo || r > hi) continue; setF(f, r, r * 0.35, r * 0.2); const pn = penAt(); if (pn <= 0.001) { bst = { r }; break; } if (!bst || pn < (bst.pn ?? 9)) bst = { r, pn, miss: true }; }
@@ -193,6 +195,7 @@ export function makeRetarget(ctrl, H) {
         // 잡은 손가락(p3d-0.10.1): 첫 마디를 0~110°(가운데·끝 마디는 0.35·0.2배)로 놓아 보고, 마디 자리가 턱 상자(손가락 굵기만큼 부풀림)에 들지 않는 가장 큰 굽힘을 고른다 — 손가락이 턱 윗면을 덮는다.
         //   모두 들면 가장 덜 드는 것. 0.10.0은 정해진 각(70°·25°·12°)으로 굽혀 손가락이 턱에 들었다
         let best = null; const hw = wp(H.bones[`hand_${h}`]), near = world ? world.boxes.filter(bx => bx.kind !== 'floor' && inBox(hw, bx, 0.30) > 0) : [box]; // 손목 30cm 안의 상자 모두(잡은 턱 뒤의 벽도)
+        let cand = null;
         if (DIM.grip) { // p3d-0.10.2(사람형 몸, 접촉 틀): 첫 마디 굽힘(0~110°)과 가운데·끝 마디의 비(0~0.6)를 함께 찾아, 마디가 턱에 들지 않으면서 끝 마디 가운데(패드)가 잡은 턱의 겉에 가장 가까운 것을 고른다.
           //   0.10.1은 비를 0.35·0.2로 묶어 "들지 않는 가장 큰 굽힘"을 골랐다 — 첫 마디가 윗면 가까이 오면 끝 마디가 먼저 윗면에 닿아 손가락이 서 있는 채로 멈췄다(틈 6~24mm)
           //   마디 자리뿐 아니라 마디 사이의 가운데도 본다(마디 사이 메시가 윗면에 9mm 들었다). 마네킹 손가락의 굵기에 맞춰 반지름 FINGER_RH
@@ -200,8 +203,11 @@ export function makeRetarget(ctrl, H) {
             const J = [`${f}_01_${h}`, `${f}_02_${h}`, `${f}_03_${h}`, `${f}_04_leaf_${h}`].map(nm => wp(H.bones[nm])), pts = [J[1], J[2], J[3], J[0].clone().lerp(J[1], 0.5), J[1].clone().lerp(J[2], 0.5), J[2].clone().lerp(J[3], 0.5)];
             for (const p of pts) for (const bx of near) pen = Math.max(pen, inBox(p, bx, FINGER_RH));
             const pad = wp(H.bones[`${f}_03_${h}`]).lerp(wp(H.bones[`${f}_04_leaf_${h}`]), 0.5), gap = Math.sqrt(Math.max(box.min.x - pad.x, 0, pad.x - box.max.x) ** 2 + Math.max(box.min.y - pad.y, 0, pad.y - box.max.y) ** 2 + Math.max(box.min.z - pad.z, 0, pad.z - box.max.z) ** 2) - FINGER_RH;
-            const sc = pen * 4000 + Math.abs(gap - 0.003) * 1000 + Math.abs(rr - 0.3) * 2; if (!best || sc < best.sc) best = { a, rr, sc }; }
-          const r = best.a * Math.PI / 180; setF(f, r, r * best.rr, r * best.rr * 0.6); continue; }
+            const sc = pen * 4000 + Math.abs(gap - 0.003) * 1000 + Math.abs(rr - 0.3) * 2; if (!best || sc < best.sc) best = { a, rr, sc }; (cand || (cand = [])).push([a, rr, sc]); }
+          // p3d-0.11.7(⑪): 격자의 가장 좋은 칸 하나가 아니라 가장 좋은 칸 둘레(값 차이 FING_T 안)의 무게 평균 — 손이 조금씩 움직일 때 가장 좋은 칸이 이웃 칸과 번갈아 바뀌어 손가락이 떨었다(h3 5.4초, 0.1초에 오간 길 83°). OLDFINGSM = 전처럼
+          if (!globalThis.OLDFINGSM && cand) { let wS = 0, aS = 0, rS = 0; for (const [a, rr, sc] of cand) { const w = Math.exp(-(sc - best.sc) / FING_T); wS += w; aS += w * a; rS += w * rr; } best = { a: aS / wS, rr: rS / wS, sc: best.sc }; }
+          // p3d-0.11.7(⑪): 잡는 순간 고른 굽힘으로 한 걸음에 가지 않고, 계산 걸음의 굽힘 값(S.fing — 잡은 뒤 0.07초쯤에 오름)을 따라 편 굽힘에서 옮겨 간다(잡는 걸음에 첫 마디가 110° 튀었다, u7 0.608초). OLDFINGSM = 전처럼
+          const r = best.a * Math.PI / 180, wG = globalThis.OLDFINGSM ? 1 : THREE.MathUtils.clamp((c - 0.3) / 0.7, 0, 1), r0 = ang(0); setF(f, r0 + (r - r0) * wG, r0 * 0.35 + (r * best.rr - r0 * 0.35) * wG, r0 * 0.2 + (r * best.rr * 0.6 - r0 * 0.2) * wG); continue; }
         for (let a = 0; a <= 110; a += 10) { const r = a * Math.PI / 180; setF(f, r, r * 0.35, r * 0.2); let pen = 0;
           for (const nm of [`${f}_02_${h}`, `${f}_03_${h}`, `${f}_04_leaf_${h}`]) { const p = wp(H.bones[nm]); for (const bx of near) pen = Math.max(pen, inBox(p, bx, FINGER_R)); }
           if (!best || (pen <= 1e-4 && a >= best.a) || (best.pen > 1e-4 && pen < best.pen)) best = { a, pen }; }
