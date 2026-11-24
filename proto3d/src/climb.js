@@ -1000,7 +1000,7 @@ function fbUpdate(S, inp, dt, held, planted, left, fwd) {
   const c = { pos, yaw: b.yaw, boxes, ARM: CL.ARM, LEG: CL.LEG, LEGMIN: 0.30, kneeClr: DIM.kneeClr, axis: a3(ax), pitch: -0.12 * clamp(K.pz.tuck, 0, 1), twist, yawT,
     arms: K.hands.map(h => ({ st: h.st === 'hold' ? 1 : h.st === 'reach' ? 2 : 0, goal: a3(h.goal), w: 1 })),
     legs: K.feet.map(f => ({ st: f.st === 'plant' ? 1 : f.st === 'move' ? 2 : 0, ank: a3(f.ank), w: 1, pole: S.poleS && S.poleS['kn' + f.s + 'p'] ? a3(S.poleS['kn' + f.s + 'p']) : null, aW: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE ? kneeWant(S, f.i ? -1 : 1, K.T.hj[f.i], f.ank, b.yaw + K.po.yaw) : null, kw: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE && !globalThis.OLDCROSSKNEE ? 1 + CL.CROSS_KW * (K.crS ? K.crS[f.i] : 0) : 1, load: f.st === 'plant' && f.box && f.box.kind !== 'floor' ? clamp(f.F ? f.F.y / BW : f.load || 0, 0, 1) : 0 })),
-    shr: K.hands.map(h => (h.st === 'reach' && h.goal.y > b.pos.y + 1.4 ? 0.40 : h.st === 'hold' && (h.load || 0) > 0.5 && !up && !rch ? 0.28 : 0)), iters: fb.cost > 3 ? 2 : 1 };
+    shr: K.hands.map(h => (h.st === 'reach' && h.goal.y > b.pos.y + 1.4 ? 0.40 : h.st === 'hold' && (h.load || 0) > 0.5 && !up && !rch ? 0.28 : 0)), iters: fb.cost > 3 ? 2 : 1, stand: !globalThis.OLDGRIPLAT && planted.some(f => f.kind === 'top' && (f.load || 0) > 0.4) ? 1 : 0 };
   // p3d-0.11.9: 손으로 잡고 있는 턱은 아래로 늘리지 않는다(실제 턱 + 머리 여유만). 매달린 사람의 머리는 잡은 손 밑에 온다 — 늘린 상자(15cm) + 여유(4cm)로는 잡은 턱 밑 약 30cm 안에 머리가 들어갈 수 없어,
   //   W로 올라서면 풀이가 가슴을 31° 비틀고 29° 기울여 머리를 옆으로 뺐다(h1. 그 비틀린 가슴 때문에 뻗는 팔이 접혀 올라갔다 — 사용자 지적). 잡지 않은 턱은 그대로 늘린다(밑으로 들어가지 않고 비켜 올라간다). OLDHEADHELD = 모두 늘림
   const heldBox = new Set(globalThis.OLDHEADHELD ? [] : K.hands.filter(h => h.st === 'hold' && h.edge).map(h => h.edge.box));
@@ -1141,7 +1141,8 @@ export function stepClimb(S, inp, dt) {
     // 새 규칙(p3d-0.10.1)은 골반이 두 배 천천히 따라간다 — 골반 돌림·엉덩이 빼기가 0.15초로 따라가면 어깨가 함께 움직여 잡은 팔이 초속 300°를 넘는 걸음이 늘었다(718 → 1,052)
     K.poT = { x: tx, z: tz, yaw: ty }; if (fbOn(K)) { K.knA = null; fbUpdate(S, inp, dt, held, planted, left, fwd); } else if (K.post === 'solve' && poseOn(K)) solvePose(S, K, { x: tx, z: tz, yaw: clamp(ty, -0.7, 0.7) }, held, dt); else { K.knA = null; springS(P, 'x', tx, 0.13 * slow, dt); springS(P, 'z', tz, 0.15 * slow, dt); springS(P, 'yaw', clamp(ty, -0.7, 0.7), 0.15 * slow, dt); } }
   if (hanging) { K.ref.x = b.pos.x; K.ref.z = b.pos.z; } else K.ref.addScaledVector(left, side * CL.SHIFT_V * dt);
-  if (!K.push) K.ref.y += (inp.cy || 0) * CL.SHIFT_V * dt;
+  const upV = globalThis.RISE_V ?? CL.SHIFT_V; // RISE_V = 시험용: 위아래 빠르기만 바꿔 본다(빠르기 탓인 결과와 구조 탓인 결과를 가르려고)
+  if (!K.push) K.ref.y += (inp.cy || 0) * upV * dt;
   // 전신 자세 풀이(p3d-0.11.0, 임시 — 조작에 닿는 것이라 기획 확인 대상): 발이 받치지 않는 매달림에서 위·아래 입력이 없으면 팔이 거의 펴질 때까지(96%) 몸이 천천히 가라앉는다(쉬는 매달림은 팔을 편다).
   //   0.10.x까지는 뛰어 잡은 높이에 팔을 굽힌 채 끝없이 머물렀다(피로가 없어서). 당겨 올라간 채 다른 손을 보내려면 W를 누르고 있어야 한다. 끄기: S.opt.hangSink = false
   if (fbOn(K) && hanging && !K.push && !(inp.cy || 0) && !(S.opt && S.opt.hangSink === false) && K.T) { let slack = 9; for (const h of held) slack = Math.min(slack, 0.96 * CL.ARM - K.T.sh[h.i].distanceTo(h.goal)); if (slack > 0.004 && slack < 9) K.ref.y -= Math.min(0.30, slack * 4) * dt; }
@@ -1180,7 +1181,7 @@ export function stepClimb(S, inp, dt) {
   let upK = 1; { const sup = planted.filter(f => f.kind === 'top' && K.T && f.ank); if (sup.length && (inp.cy || 0) > 0) { const d = Math.min(...sup.map(f => K.T.hj[f.i].distanceTo(f.ank) / CL.LEG)); upK = clamp((0.97 - d) / 0.06, 0, 1); }
     // 잡은 팔이 다 접힐수록(어깨–손이 FOLD에 다가갈수록) 줄인다 — 맨틀(누르기)이 없어서, 접힌 팔로 빨리 오르면 "몸이 손을 지나 올라가 놓음"(초속 0.3m 넘게)이 걸려 손을 놓쳤다(다른 벽 시험 A→B→A)
     if ((inp.cy || 0) > 0 && K.T) for (const h of held) upK = Math.min(upK, clamp((K.T.sh[h.i].distanceTo(h.goal) - CL.FOLD - 0.03) / 0.10, 0, 1)); }
-  const vCmd = !K.push && !globalThis.OLDRISE ? V(0, (inp.cy || 0) * CL.SHIFT_V * upK, 0).addScaledVector(left, hanging || !globalThis.RISE_SIDE ? 0 : side * CL.SHIFT_V) : V(); // 옆(A·D)은 옛 방식 그대로(RISE_SIDE = 시험용: 옆에도 건다 — 다른 벽 시험이 9개 깨졌다)
+  const vCmd = !K.push && !globalThis.OLDRISE ? V(0, (inp.cy || 0) * upV * upK, 0).addScaledVector(left, hanging || !globalThis.RISE_SIDE ? 0 : side * CL.SHIFT_V) : V(); // 옆(A·D)은 옛 방식 그대로(RISE_SIDE = 시험용: 옆에도 건다 — 다른 벽 시험이 9개 깨졌다)
   const aDes = K.push ? K.push.dir.clone().multiplyScalar(CL.PUSH_A) : K.ref.clone().sub(b.pos).multiplyScalar(CL.KP).addScaledVector(b.vel.clone().sub(vCmd), -CL.KD).clampLength(0, CL.ACC_MAX);
   if (hanging && !K.push) { aDes.x = 0; aDes.z = 0; }
   const T = torso(b, K), Fd = aDes.add(V(0, PHY.G, 0)).multiplyScalar(m), C = [], who = [], com = V(b.pos.x, b.pos.y + CL.COM_H, b.pos.z);

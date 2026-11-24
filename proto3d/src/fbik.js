@@ -79,7 +79,8 @@ function resid(x, c, out) {
     const d3 = sub(A.goal, g.sh[i]), d = len(d3) || 1e-6, u = qrot(qCi, mul(d3, 1 / d)), out = u[0] * sx;
     if (A.st === 1) { r[n++] = W.armOver * hp(d - 0.985 * c.ARM); r[n++] = W.armFold * hp((globalThis.FOLD_D ?? 0.36) - d); r[n++] = W.armPref * (d - 0.85 * c.ARM) * A.w; r[n++] = W.armBack * hp(-0.10 - u[2]); r[n++] = W.armCross * hp(-0.45 - out);
       // 잡은 손이 미끄러지지 않는 쪽에 어깨를 둔다(당기는 방향이 아래에서 40° 안 — 물리의 한계는 50°. 어깨가 턱보다 높아지지 않게)
-      const down = d3[1], hor = Math.hypot(d3[0], d3[2]); r[n++] = W.grip * hp(hor - 0.84 * down - 0.02);
+      const down = d3[1], hor = Math.hypot(d3[0], d3[2]); r[n++] = W.grip * hp(hor - 0.84 * down - 0.02) + (c.stand ? W.grip * hp(Math.abs(d3[0] * g.F[2] - d3[2] * g.F[0]) / d - 0.25) : 0);
+      // p3d-0.11.9: 발판을 디디고 서 있으면(몸무게 40% 넘게) 잡은 팔이 옆으로 비스듬히 당기지 않게 어깨를 손 아래 쪽에 둔다(옆 몫 25% 안) — 두 어깨가 손보다 옆에 있으면 팔이 몸을 손 아래로 끌어 디딘 발에서 벗어나 천천히 가라앉았다(W를 오래 누르면 옛 판에도). OLDGRIPLAT = 옛 방식
       // 잡은 손이 몸의 등 뒤로 가지 않게(물리의 판정: 어깨 → 손이 몸이 보는 쪽에서 −0.2보다 뒤면 놓친다. 여유 0.1)
       r[n++] = W.behind * hp(-0.10 - (d3[0] * g.F[0] + d3[2] * g.F[2]) / d); }
     else { const e = hp(d - 0.92 * c.ARM), sat = W.reachSat * Math.tanh(e / W.reachSat); r[n++] = W.reach * sat * A.w; r[n++] = 0; r[n++] = 0; r[n++] = 0.5 * W.armBack * hp(-0.10 - u[2]) * A.w; r[n++] = 0.5 * W.armCross * hp(-0.45 - out) * A.w; r[n++] = 0; r[n++] = 0.3 * W.behind * hp(-0.10 - (d3[0] * g.F[0] + d3[2] * g.F[2]) / d) * A.w; } }
