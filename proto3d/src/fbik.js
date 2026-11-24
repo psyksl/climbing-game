@@ -77,7 +77,7 @@ function resid(x, c, out) {
   for (let i = 0; i < 2; i++) { const A = c.arms[i], sx = i ? -1 : 1;
     if (A.st === 0) { r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; continue; }
     const d3 = sub(A.goal, g.sh[i]), d = len(d3) || 1e-6, u = qrot(qCi, mul(d3, 1 / d)), out = u[0] * sx;
-    if (A.st === 1) { r[n++] = W.armOver * hp(d - 0.985 * c.ARM); r[n++] = W.armFold * hp((globalThis.FOLD_D ?? 0.27) - d); r[n++] = W.armPref * (d - 0.85 * c.ARM) * A.w; r[n++] = W.armBack * hp(-0.10 - u[2]); r[n++] = W.armCross * hp(-0.45 - out);
+    if (A.st === 1) { r[n++] = W.armOver * hp(d - 0.985 * c.ARM); r[n++] = W.armFold * hp((globalThis.FOLD_D ?? 0.36) - d); r[n++] = W.armPref * (d - 0.85 * c.ARM) * A.w; r[n++] = W.armBack * hp(-0.10 - u[2]); r[n++] = W.armCross * hp(-0.45 - out);
       // 잡은 손이 미끄러지지 않는 쪽에 어깨를 둔다(당기는 방향이 아래에서 40° 안 — 물리의 한계는 50°. 어깨가 턱보다 높아지지 않게)
       const down = d3[1], hor = Math.hypot(d3[0], d3[2]); r[n++] = W.grip * hp(hor - 0.84 * down - 0.02);
       // 잡은 손이 몸의 등 뒤로 가지 않게(물리의 판정: 어깨 → 손이 몸이 보는 쪽에서 −0.2보다 뒤면 놓친다. 여유 0.1)
