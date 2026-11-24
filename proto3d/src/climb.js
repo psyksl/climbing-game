@@ -997,10 +997,14 @@ function fbUpdate(S, inp, dt, held, planted, left, fwd) {
   const twist = isX ? (((rch ? rch.i : (K.lastReach ?? 1)) ? 1 : -1) * 0.45 * (globalThis.XTW ?? (globalThis.CROSSOVER ? -1 : 1))) : 0, up = (inp.cy || 0) > 0;
   // 가슴이 향하려는 쪽: 잡은 손들의 가운데(몸이 보는 쪽에서 옆으로 치우친 만큼, 끝 ±0.5rad). 두 손을 나란히 잡으면 0 — 가슴이 까닭 없이 한쪽으로 틀어지지 않게
   let yawT = 0; if (held.length) { const cH = V(); for (const h of held) cH.add(h.goal); cH.multiplyScalar(1 / held.length).sub(V(b.pos.x, b.pos.y, b.pos.z)); yawT = clamp(Math.atan2(cH.dot(left), Math.max(0.15, cH.dot(fwd))) * 0.6, -0.5, 0.5); }
+  // p3d-0.11.9: 다리를 거의 다 편(93%) 채 발판에 서서 손을 잡고 있는데 몸이 처지기 시작하면(0.2초 넘게 아래로) 그때부터 잡은 팔이 옆으로 비스듬히 당기지 않게 어깨를 손 아래 쪽에 둔다(fbik의 stand).
+  //   처지기 전에 늘 걸면 다 편 다리로 서서 손을 엇갈려 보내는 교차가 턱에 걸렸다(교차 네 가지 중 둘). 손을 뻗거나 발을 옮기거나 W·A·D를 누르거나 다리를 굽히면 풀린다. OLDGRIPLAT = 옛 방식
+  { const tall = planted.some(f => f.kind === 'top' && (f.load || 0) > 0.4 && K.T && f.ank && K.T.hj[f.i].distanceTo(f.ank) > 0.93 * CL.LEG), busy = up || (inp.cx || 0) || K.hands.some(h => h.st === 'reach') || K.feet.some(f => f.st === 'move');
+    K.sagT = tall && !busy && b.vel.y < -0.01 ? (K.sagT || 0) + dt : 0; if (globalThis.OLDGRIPLAT || busy || !tall) K.standFix = false; else if (K.sagT > 0.2) K.standFix = true; }
   const c = { pos, yaw: b.yaw, boxes, ARM: CL.ARM, LEG: CL.LEG, LEGMIN: 0.30, kneeClr: DIM.kneeClr, axis: a3(ax), pitch: -0.12 * clamp(K.pz.tuck, 0, 1), twist, yawT,
     arms: K.hands.map(h => ({ st: h.st === 'hold' ? 1 : h.st === 'reach' ? 2 : 0, goal: a3(h.goal), w: 1 })),
     legs: K.feet.map(f => ({ st: f.st === 'plant' ? 1 : f.st === 'move' ? 2 : 0, ank: a3(f.ank), w: 1, pole: S.poleS && S.poleS['kn' + f.s + 'p'] ? a3(S.poleS['kn' + f.s + 'p']) : null, aW: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE ? kneeWant(S, f.i ? -1 : 1, K.T.hj[f.i], f.ank, b.yaw + K.po.yaw) : null, kw: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE && !globalThis.OLDCROSSKNEE ? 1 + CL.CROSS_KW * (K.crS ? K.crS[f.i] : 0) : 1, load: f.st === 'plant' && f.box && f.box.kind !== 'floor' ? clamp(f.F ? f.F.y / BW : f.load || 0, 0, 1) : 0 })),
-    shr: K.hands.map(h => (h.st === 'reach' && h.goal.y > b.pos.y + 1.4 ? 0.40 : h.st === 'hold' && (h.load || 0) > 0.5 && !up && !rch ? 0.28 : 0)), iters: fb.cost > 3 ? 2 : 1, stand: !globalThis.OLDGRIPLAT && !up && !K.hands.some(h => h.st === 'reach') && !K.feet.some(f => f.st === 'move') && planted.some(f => f.kind === 'top' && (f.load || 0) > 0.4) ? 1 : 0 }; // 손을 뻗거나 발을 옮기거나 W를 누르는 동안은 걸지 않는다(교차·발 보조 시험이 깨졌다)
+    shr: K.hands.map(h => (h.st === 'reach' && h.goal.y > b.pos.y + 1.4 ? 0.40 : h.st === 'hold' && (h.load || 0) > 0.5 && !up && !rch ? 0.28 : 0)), iters: fb.cost > 3 ? 2 : 1, stand: K.standFix ? 1 : 0 };
   // p3d-0.11.9: 손으로 잡고 있는 턱은 아래로 늘리지 않는다(실제 턱 + 머리 여유만). 매달린 사람의 머리는 잡은 손 밑에 온다 — 늘린 상자(15cm) + 여유(4cm)로는 잡은 턱 밑 약 30cm 안에 머리가 들어갈 수 없어,
   //   W로 올라서면 풀이가 가슴을 31° 비틀고 29° 기울여 머리를 옆으로 뺐다(h1. 그 비틀린 가슴 때문에 뻗는 팔이 접혀 올라갔다 — 사용자 지적). 잡지 않은 턱은 그대로 늘린다(밑으로 들어가지 않고 비켜 올라간다). OLDHEADHELD = 모두 늘림
   const heldBox = new Set(globalThis.OLDHEADHELD ? [] : K.hands.filter(h => h.st === 'hold' && h.edge).map(h => h.edge.box));
