@@ -57,7 +57,7 @@ const midAt = (a, e, l1, l2, pole) => { const dv = [e[0] - a[0], e[1] - a[1], e[
   return { mid: [a[0] + u[0] * x + q[0] * h, a[1] + u[1] * x + q[1] * h, a[2] + u[2] * x + q[2] * h], u, q, h }; };
 // 굽는 쪽(pole)을 관절의 범위 안으로: 주어진 쪽이 범위 안이면 그대로, 아니면 다리(팔) 선 둘레로 가장 적게 돌려 범위에 드는 쪽. 어느 쪽으로도 들지 않으면 가장 덜 넘는 쪽.
 //   cost(가운데 관절 자리) = 넘은 각(rad, 안이면 ≤ 0). 돌려주는 값 = { pole, over(남은 넘침), moved(돌린 각) }
-function fitPole(a, e, l1, l2, pole, cost) {
+export function fitPole(a, e, l1, l2, pole, cost) {
   const m0 = midAt(a, e, l1, l2, pole); if (m0.h < 0.03) return { pole, over: 0, moved: 0 };
   const c0 = cost(m0.mid); if (c0 <= 0) return { pole, over: c0, moved: 0 };
   const at = th => { const pl = axisRot(m0.q, m0.u, th); return [pl, cost(midAt(a, e, l1, l2, pl).mid)]; }; let best = [0, pole, c0];

@@ -166,7 +166,9 @@ export function makeRetarget(ctrl, H) {
             const gw = gwv ? gwv[h === 'l' ? 0 : 1] : THREE.MathUtils.clamp((fing[h === 'l' ? 0 : 1] - 0.3) / 0.7, 0, 1); setWorld(H.bones[end], wq(H.bones[end]).slerp(alignQ(by[end].aHL, by[end].sHL, fd, n.clone().negate()), gw * gw * (3 - 2 * gw))); }
           const B = H.bones[lo], ax = V().copy(mL.aHL).applyQuaternion(wq(B)).normalize(), handQ = wq(H.bones[end]);
           const rel = wq(B).invert().multiply(handQ).multiply(H.bindQ[lo].clone().invert().multiply(H.bindQ[end]).invert()), tw = twistAbout(rel, mL.aHL); if (globalThis.__HTW) globalThis.__HTW.push([h, tw * 180 / Math.PI]);
-          setWorld(B, Q().setFromAxisAngle(ax, tw * 0.5).multiply(wq(B))); setWorld(H.bones[end], handQ);
+          // p3d-0.11.8: 비틀림이 ±180°를 넘나들면 반으로 나눈 아래팔 몫이 한 걸음에 180° 건너뛰었다(아래팔 21,500°/s, human_check fb·캡처 reach4·h5). 150°를 넘으면 아래팔 몫을 0으로 줄여 간다(손은 세계에서 그대로). OLDTWSPLIT = 전처럼
+          const twK = globalThis.OLDTWSPLIT ? 0.5 : 0.5 * THREE.MathUtils.clamp((Math.PI - Math.abs(tw)) / (Math.PI / 6), 0, 1);
+          setWorld(B, Q().setFromAxisAngle(ax, tw * twK).multiply(wq(B))); setWorld(H.bones[end], handQ);
           // 놓인 손: 손바닥이 몸 쪽을 보게 아래팔째 돌린다(PRON). 손목 = 아래팔과 같은 만큼 → 비틀림이 손목에 몰리지 않는다
           const pr = pron[h === 'l' ? 0 : 1] * PRON * (h === 'l' ? 1 : -1);
           if (pr) { const tq = Q().setFromAxisAngle(ax, pr * 0.6); setWorld(B, tq.clone().multiply(wq(B))); setWorld(H.bones[end], Q().setFromAxisAngle(ax, pr).multiply(handQ)); }
