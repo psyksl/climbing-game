@@ -1177,8 +1177,10 @@ export function stepClimb(S, inp, dt) {
   //   힘의 한계(팔·다리)와 막힘은 그대로다(힘 나누기가 정한다). OLDRISE = 옛 방식
   //   위로 따라가는 몫은 디딘 다리가 다 펴질수록 줄인다(가장 여유 있는 디딘 발 기준, 다리 길이의 91~97%) — 줄이지 않으면 빨리 오른 몸이 다리를 다 펴고 지나가 디딘 발이 떨어졌다(① 낮은 발판: 발이 떨어져 바닥까지 떨어짐).
   //   위에서 받치는 발이 없으면(매달림) 줄이지 않는다(팔로 당겨 오른다)
-  let upK = 1; { const sup = planted.filter(f => f.kind === 'top' && K.T && f.ank); if (sup.length && (inp.cy || 0) > 0) { const d = Math.min(...sup.map(f => K.T.hj[f.i].distanceTo(f.ank) / CL.LEG)); upK = clamp((0.97 - d) / 0.06, 0, 1); } }
-  const vCmd = !K.push && !globalThis.OLDRISE ? V(0, (inp.cy || 0) * CL.SHIFT_V * upK, 0).addScaledVector(left, hanging ? 0 : side * CL.SHIFT_V) : V();
+  let upK = 1; { const sup = planted.filter(f => f.kind === 'top' && K.T && f.ank); if (sup.length && (inp.cy || 0) > 0) { const d = Math.min(...sup.map(f => K.T.hj[f.i].distanceTo(f.ank) / CL.LEG)); upK = clamp((0.97 - d) / 0.06, 0, 1); }
+    // 잡은 팔이 다 접힐수록(어깨–손이 FOLD에 다가갈수록) 줄인다 — 맨틀(누르기)이 없어서, 접힌 팔로 빨리 오르면 "몸이 손을 지나 올라가 놓음"(초속 0.3m 넘게)이 걸려 손을 놓쳤다(다른 벽 시험 A→B→A)
+    if ((inp.cy || 0) > 0 && K.T) for (const h of held) upK = Math.min(upK, clamp((K.T.sh[h.i].distanceTo(h.goal) - CL.FOLD - 0.03) / 0.10, 0, 1)); }
+  const vCmd = !K.push && !globalThis.OLDRISE ? V(0, (inp.cy || 0) * CL.SHIFT_V * upK, 0).addScaledVector(left, hanging || !globalThis.RISE_SIDE ? 0 : side * CL.SHIFT_V) : V(); // 옆(A·D)은 옛 방식 그대로(RISE_SIDE = 시험용: 옆에도 건다 — 다른 벽 시험이 9개 깨졌다)
   const aDes = K.push ? K.push.dir.clone().multiplyScalar(CL.PUSH_A) : K.ref.clone().sub(b.pos).multiplyScalar(CL.KP).addScaledVector(b.vel.clone().sub(vCmd), -CL.KD).clampLength(0, CL.ACC_MAX);
   if (hanging && !K.push) { aDes.x = 0; aDes.z = 0; }
   const T = torso(b, K), Fd = aDes.add(V(0, PHY.G, 0)).multiplyScalar(m), C = [], who = [], com = V(b.pos.x, b.pos.y + CL.COM_H, b.pos.z);
