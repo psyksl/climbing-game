@@ -141,5 +141,5 @@ export function stepFB(fb, c, dt) {
   for (let i = 0; i < NF; i++) follow(fb, i, fb.xs[i], FBW.hl[i], dt);
 }
 // 시험·진단용: 풀이 값 xs에서의 잔차와 몸의 자리
-export const fbDebug = (xs, c) => { const r = new Float64Array(96), n = resid(xs, c, r); return { r: Array.from(r.slice(0, n)), g: fk(xs, c.pos, c.yaw) }; };
+export const fbDebug = (xs, c) => { const r = new Float64Array(96), n = resid(xs, c, r), g = fk(xs, c.pos, c.yaw), hd = add(g.chest, qrot(g.qC, [DIM.oNeck[0] + DIM.oHead[0] + DIM.headCT[0], DIM.oNeck[1] + DIM.oHead[1] + DIM.headCT[1], DIM.oNeck[2] + DIM.oHead[2] + DIM.headCT[2]])); return { r: Array.from(r.slice(0, n)), g, hd, sdHead: sdBoxes(c.boxesHead, hd), headR: DIM.headR }; };
 export const FBI = { PX, PY, PZ, YH, PH, RH, YC, PC, RC, SL, SR };

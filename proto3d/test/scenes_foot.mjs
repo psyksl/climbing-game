@@ -133,10 +133,12 @@ export const SCENES_V118 = [
 ];
 // p3d-0.11.9 확인 영상(개발 쪽 후보 1~6). 형식은 SCENES_V118과 같다. 스크립트 입력(사람 손 아님)
 const B119 = '[수정 전 · 비교 스위치] ', A119 = '[지금 p3d-0.11.9] ', OLD1 = { OLDFBSH: 1, OLDPHYSH: 1, OLDHANDWALL: 1, OLDWRISTG: 1 };
+const OLD1b = { OLDCOMF: 1, OLDFITHI: 1, OLDHEADHELD: 1, OLDSELFPREF: 1, OLDELGATE: 1, OLDREACHPOLE: 1, OLDGRABRATE: 1 };
 export const SCENES_V119_1 = [
-  [B119 + '후보 1 · 발판에 올라 W 1초 → 오른손을 턱 F로(늘어뜨린 손이 벽 속에서 출발해 "팔이 턱에 걸려" 거부)', ...pickS(SCENES_H, 'h1'), OLD1],
-  [A119 + '후보 1 · 같은 입력(어깨가 벽에 들지 않고, 쉬는 손·뻗는 손목이 벽 밖)', ...pickS(SCENES_H, 'h1'), {}],
-  [B119 + '후보 1 · 턱 F를 잡았다 놓고 1초 뒤 다시 잡기', ...pickS(SCENES_H, 'h5'), OLD1],
-  [A119 + '후보 1 · 같은 입력', ...pickS(SCENES_H, 'h5'), {}],
-  [A119 + '후보 1 · 남은 문제: 중간 취소 후 다시(손이 가슴 옆에서 "몸에 막혀" 멈춤)', ...pickS(SCENES_H, 'h2'), {}],
+  [B119 + '후보 1 · 발판에 올라 W 1초 → 오른손을 턱 F로(뻗는 팔이 접힌 채 손이 가슴에 붙어 올라감 — 사용자 지적 6.16~6.68초)', ...pickS(SCENES_H, 'h1'), OLD1b],
+  [A119 + '후보 1 · 같은 입력(팔꿈치를 뒤·아래로 둔 채 손이 올라가고, 손이 어깨를 넘으면 팔꿈치가 바깥으로 따라감)', ...pickS(SCENES_H, 'h1'), {}],
+  [B119 + '후보 1 · 무릎 높이 발판에 오른발 → W → 오른손을 턱 F로', ...pickS(SCENES_FOOT.map((x, i) => ['foot' + (i + 1), ...x.slice(1)]), 'foot2'), OLD1b],
+  [A119 + '후보 1 · 같은 입력', ...pickS(SCENES_FOOT.map((x, i) => ['foot' + (i + 1), ...x.slice(1)]), 'foot2'), {}],
+  [B119 + '후보 1 · 중간 취소 후 다시(첫 수정 뒤에는 "몸에 막혀" 거부)', ...pickS(SCENES_H, 'h2'), OLD1b],
+  [A119 + '후보 1 · 같은 입력', ...pickS(SCENES_H, 'h2'), {}],
 ];

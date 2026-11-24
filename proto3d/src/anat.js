@@ -57,6 +57,19 @@ const midAt = (a, e, l1, l2, pole) => { const dv = [e[0] - a[0], e[1] - a[1], e[
   return { mid: [a[0] + u[0] * x + q[0] * h, a[1] + u[1] * x + q[1] * h, a[2] + u[2] * x + q[2] * h], u, q, h }; };
 // 굽는 쪽(pole)을 관절의 범위 안으로: 주어진 쪽이 범위 안이면 그대로, 아니면 다리(팔) 선 둘레로 가장 적게 돌려 범위에 드는 쪽. 어느 쪽으로도 들지 않으면 가장 덜 넘는 쪽.
 //   cost(가운데 관절 자리) = 넘은 각(rad, 안이면 ≤ 0). 돌려주는 값 = { pole, over(남은 넘침), moved(돌린 각) }
+// p3d-0.11.9: 양쪽으로 돌려 범위 안에 드는 첫 자리를 하나씩 찾고, 팔꿈치(가운데 점)가 더 낮은 쪽을 고른다(돌린 각이 다른 쪽보다 BIAS 넘게 크지 않으면). 뻗는 팔은 팔꿈치가 손보다 아래·뒤에 있는 것이 사람 팔이다 —
+//   한쪽(먼저 찾은 쪽)만 쓰면 손이 어깨 높이로 올라올 때 팔꿈치가 어깨보다 25cm 위로 들렸다(h1, 사용자 지적). 돌려주는 값은 fitPole과 같다
+export function fitPoleLow(a, e, l1, l2, pole, cost, BIAS = 0.6, prefer = null) {
+  const m0 = midAt(a, e, l1, l2, pole); if (m0.h < 0.03) return { pole, over: 0, moved: 0 };
+  const c0 = cost(m0.mid); if (c0 <= 0) return { pole, over: c0, moved: 0 };
+  const at = th => { const pl = axisRot(m0.q, m0.u, th); return [pl, cost(midAt(a, e, l1, l2, pl).mid)]; }; let best = [0, pole, c0]; const found = {};
+  for (const sg of [1, -1]) for (let k = 1; k <= 30; k++) { const th = sg * k * 6 * D, [pl, c] = at(th); if (c < best[2]) best = [th, pl, c];
+    if (c <= 0) { let lo = sg * (k - 1) * 6 * D, hi = th, ph = pl; for (let it = 0; it < 4; it++) { const md = (lo + hi) / 2, [pm, cm] = at(md); if (cm <= 0) { hi = md; ph = pm; } else lo = md; } found[sg] = { pole: ph, over: 0, moved: hi, y: midAt(a, e, l1, l2, ph).mid[1] }; break; } }
+  const A = found[1], B = found[-1]; if (!A && !B) return { pole: best[1], over: best[2], moved: best[0] };
+  if (!A || !B) return A || B;
+  // prefer(바라는 팔꿈치 방향)가 있으면 그쪽에 더 가까운 답, 없으면 팔꿈치가 더 낮은 답
+  const score = X => (prefer ? -(X.pole[0] * prefer[0] + X.pole[1] * prefer[1] + X.pole[2] * prefer[2]) : X.y), lowA = score(A) <= score(B), lo = lowA ? A : B, hi = lowA ? B : A; return Math.abs(lo.moved) <= Math.abs(hi.moved) + BIAS ? lo : hi;
+}
 export function fitPole(a, e, l1, l2, pole, cost) {
   const m0 = midAt(a, e, l1, l2, pole); if (m0.h < 0.03) return { pole, over: 0, moved: 0 };
   const c0 = cost(m0.mid); if (c0 <= 0) return { pole, over: c0, moved: 0 };
