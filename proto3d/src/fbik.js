@@ -103,7 +103,9 @@ function resid(x, c, out) {
   // ⑥ 몸통·머리가 지형에 들지 않게(가슴 세 곳, 골반 두 곳, 머리)
   { const R = 0.105, m = 0.025; for (const o of [[0, 0.03, 0.03], [0.10, 0.03, 0.02], [-0.10, 0.03, 0.02]]) r[n++] = W.body * hp(R + m - sdBoxes(c.boxes, add(g.chest, qrot(g.qC, o))));
     for (const o of [[0.07, 0.07, 0.04], [-0.07, 0.07, 0.04]]) r[n++] = W.body * hp(0.10 + m - sdBoxes(c.boxes, add(g.hip, qrot(g.qH, o))));
-    const hd = add(g.chest, qrot(g.qC, [DIM.oNeck[0] + DIM.oHead[0] + DIM.headCT[0], DIM.oNeck[1] + DIM.oHead[1] + DIM.headCT[1], DIM.oNeck[2] + DIM.oHead[2] + DIM.headCT[2]])); r[n++] = W.head * hp(DIM.headR + 0.04 - sdBoxes(c.boxesHead, hd)); }
+    const hd = add(g.chest, qrot(g.qC, [DIM.oNeck[0] + DIM.oHead[0] + DIM.headCT[0], DIM.oNeck[1] + DIM.oHead[1] + DIM.headCT[1], DIM.oNeck[2] + DIM.oHead[2] + DIM.headCT[2]])); r[n++] = W.head * hp(DIM.headR + 0.04 - sdBoxes(c.boxesHead, hd));
+    // p3d-0.11.9: 잡지 않은 팔(늘어뜨린 팔·뻗는 팔)의 어깨도 지형에 들지 않게(위팔 뿌리 굵기 + 여유 3cm). 잡은 팔의 어깨까지 보면 다른 벽 c1에서 골반이 돌아 넓적다리가 98° 비틀렸다(anat_check, FBSH_HELD=1). 없을 때는 가슴이 돌며 한쪽 어깨가 벽면 4cm 앞까지 나가, 늘어뜨린 손이 벽 속에서 출발해 턱 F가 "팔이 턱에 걸려"로 거부됐다(h1 fb). OLDFBSH = 이 항목 없음
+    for (let i = 0; i < 2; i++) r[n++] = globalThis.OLDFBSH || (c.arms[i].st === 1 && !globalThis.FBSH_HELD) ? 0 : (globalThis.FBSH_W ?? W.body) * hp(DIM.armR.upper[0] + (globalThis.FBSH_M ?? 0.03) - sdBoxes(c.boxes, g.sh[i])); }
   // (머리는 아래로 15cm 늘인 상자와 견준다 — 머리 위 가까이에 턱이 있으면 그 밑으로 들어가지 않고 앞으로 비켜 올라간다. 0.10.x의 "머리 위 25cm 안에 턱이 있으면 윗몸을 젖힌다" 규칙을 대신한다)
   return n;
 }
@@ -134,8 +136,10 @@ function follow(o, i, goal, hl, dt) { const y = 1.3862943611 / (hl + 1e-5), e = 
 export const makeFB = () => ({ xs: new Float64Array(NF), x: new Float64Array(NF), v: new Float64Array(NF), hang: 0, sup: 0, cost: 0, axis: [0, 1, 0] });
 // 계산 걸음마다 한 번: 풀이 값(xs)을 한 걸음 고치고, 쓰는 값(x)이 그것을 뒤따른다
 export function stepFB(fb, c, dt) {
-  c.com0 = comOf(fk(NEUTRAL, c.pos, c.yaw));
+  c.com0 = comOf(fk(NEUTRAL, c.pos, c.yaw)); fb.lastC = c;
   fb.cost = solveStep(fb.xs, c, c.iters || 1);
   for (let i = 0; i < NF; i++) follow(fb, i, fb.xs[i], FBW.hl[i], dt);
 }
+// 시험·진단용: 풀이 값 xs에서의 잔차와 몸의 자리
+export const fbDebug = (xs, c) => { const r = new Float64Array(96), n = resid(xs, c, r); return { r: Array.from(r.slice(0, n)), g: fk(xs, c.pos, c.yaw) }; };
 export const FBI = { PX, PY, PZ, YH, PH, RH, YC, PC, RC, SL, SR };

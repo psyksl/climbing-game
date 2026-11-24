@@ -294,7 +294,7 @@ function pickPole(S, sh, target, yaw, sx, qC, tb, B) {
 // 당겨 올라간 자세에서는 몸에서 밀려난 팔뚝이 벽에 1.7cm 들어갔다. 팔꿈치 방향만으로는 풀리지 않는다 — 손이 가는 길 자체가 몸을 비켜 가야 한다(다음 판). 겹침은 test/arm_mesh.mjs가 잰다
 function armHit(world, sh, ik, tb = null, extra = 0, extraAll = 0) {
   let worst = null;
-  const test = (p, r0, t) => { for (const x of world.boxes) { if (x.kind === 'floor') continue; const h = sphereBox(p, r0 + extraAll + (x === tb ? ARM_PAD_GRIP : ARM_PAD), x); if (h && (!worst || h.d > worst.d)) worst = { d: h.d, n: h.n, t }; } };
+  const test = (p, r0, t) => { for (const x of world.boxes) { if (x.kind === 'floor') continue; const h = sphereBox(p, r0 + extraAll + (x === tb ? ARM_PAD_GRIP : ARM_PAD), x); if (h && (!worst || h.d > worst.d)) worst = { d: h.d, n: h.n, t, box: x.name }; } };
   for (const [t, r] of ARM_PTS) test(ik.mid.clone().lerp(ik.end, t), r, t);
   const fore = worst;
   let up = null; { const keep = worst; worst = null; for (const [t, r] of ARM_UP) test(sh.clone().lerp(ik.mid, t), r + extra, -1); up = worst; worst = up && (!keep || up.d > keep.d) ? up : keep; }
@@ -723,7 +723,10 @@ function limbsStep(S, dt) {
           if (better && bD(B0) <= bD(A) + 1e-5 && aD(B0) <= aD(A) + 1e-5) { if (aD(A) > 0.004 && !globalThis.NOARMSTOP) H.stopA = true; if (bD(A) > BT) H.stopB = true; H.w.copy(w0); A = B0; }
           if (bD(A) > BT) { H.w.addScaledVector(A.self.body.n, Math.min(bD(A), 0.012 + shMv)); H.stopB = true; }
           if (aD(A) > 0.004 && !globalThis.NOARMSTOP) { H.w.addScaledVector(A.self.arm.n, Math.min(aD(A), 0.012 + shMv)); H.stopA = true; } } }
-      H.up = A.hit && A.hit.u ? { d: A.hit.u.d, n: A.hit.u.n.clone() } : null; }
+      // p3d-0.11.9: 위의 팔뚝·제 몸 처리가 손목을 지형 속으로 옮기지 않는다(앞 걸음 자리로 되돌리거나 여섯 방향으로 옮겨 볼 때 손목의 지형 겹침은 보지 않았다 — 앞 걸음 자리가 이미 벽 속이면 걸음마다 1cm씩 더 들어가 손목이 벽 속 14cm까지 갔다. h1 fb). 손목은 다시 겉으로 빼낸다. OLDWRISTG = 빼지 않음
+      if (!globalThis.OLDWRISTG && DIM.boxCollide) { let moved = false; for (const x of S.world.boxes) { const h = sphereBox(H.w, ARM_R.fore[1] + (H.edge && H.edge.box === x ? ARM_PAD_GRIP : ARM_PAD), x); if (h) { H.w.addScaledVector(h.n, h.d); moved = true; } } if (moved) { wristHit = true; A = tryAt(H.w, H.poleWant); } }
+      H.up = A.hit && A.hit.u ? { d: A.hit.u.d, n: A.hit.u.n.clone() } : null;
+      if (globalThis.__RDBG) globalThis.__RDBG.push({ s: H.s, f: A.hit && A.hit.f ? { d: A.hit.f.d, t: A.hit.f.t, box: A.hit.f.box } : null, u: A.hit && A.hit.u ? { d: A.hit.u.d, box: A.hit.u.box } : null, w: H.w.toArray(), sh: sh.toArray(), goal: H.goal.toArray(), mid: A.ik.mid.toArray(), lock: !!H.lock, sb: A.self && A.self.body ? [A.self.body.d, ...A.self.body.n.toArray()] : null, stB: H.selfBlock || 0 }); }
     if (H.armBlock) { const d2 = H.w.clone().sub(sh); if (d2.length() > CL.ARM) H.w.copy(sh).addScaledVector(d2.normalize(), CL.ARM); }
     // 막힌 채 이어진 시간(손목이 지형에 닿아 멈췄거나 팔뚝이 걸려 기다리는 중). 화면의 "팔 경로 막힘"과 거부 까닭은 0.12초 넘게 이어졌을 때만 쓴다(스치는 한두 걸음에 깜박이지 않게)
     H.blockT = H.armBlock || wristHit ? (H.blockT || 0) + dt : 0;
@@ -885,7 +888,9 @@ function collide(S, T) {
   //   옛 몸의 원기둥(몸 원점 둘레 반지름 12cm)으로는 새 몸의 골반·가슴 앞면(몸 원점에서 17cm 앞)이 벽에 5cm 넘게 들어갔다(test/human_check.mjs)
   const torsoParts = DIM.boxCollide ? [['골반', T.hip, T.tq.hips, DIM.boxHip], ['가슴', T.chest, T.qC, DIM.boxChest]].map(([n, o, q, bx]) => { const c = o.clone().add(V(...bx.c).applyQuaternion(q)); return { n: '몸통', part: n, x: c.x, z: c.z, y0: c.y - bx.h[1], y1: c.y + bx.h[1], r: bx.h[2] }; })
     : [{ n: '몸통', x: b.pos.x, z: b.pos.z, y0: b.pos.y + 0.85, y1: b.pos.y + 1.50, r: CL.R_TORSO }];
-  const parts = [...torsoParts, { n: '머리', x: T.head.x, z: T.head.z, y0: T.head.y - CL.R_HEAD, y1: T.head.y + CL.R_HEAD, r: DIM.boxCollide ? DIM.headR : CL.R_HEAD }];
+  // p3d-0.11.9: 사람형 몸은 어깨 두 곳도 맞댄다(위팔 뿌리 굵기 — 전신 풀이의 어깨 항목과 같은 부피). 골반·가슴만 보면 전신 풀이가 골반을 뒤로 뺀 만큼 몸이 벽에 6cm 더 붙었고(h1: 옛 규칙 −2.845 → fb −2.91), 머리를 턱 밑에서 빼려고 가슴이 돌며 한쪽 어깨가 벽면 4cm 앞까지 나가 턱 F가 "팔이 턱에 걸려"로 거부됐다. OLDPHYSH = 맞대지 않음
+  const shParts = DIM.boxCollide && !globalThis.OLDPHYSH && T.sh ? T.sh.map(p => ({ n: '어깨', x: p.x, z: p.z, y0: p.y - DIM.armR.upper[0], y1: p.y + DIM.armR.upper[0], r: DIM.armR.upper[0] })) : [];
+  const parts = [...torsoParts, ...shParts, { n: '머리', x: T.head.x, z: T.head.z, y0: T.head.y - CL.R_HEAD, y1: T.head.y + CL.R_HEAD, r: DIM.boxCollide ? DIM.headR : CL.R_HEAD }];
   const shift = (dx, dy, dz) => { for (const Q2 of parts) { Q2.x += dx; Q2.z += dz; Q2.y0 += dy; Q2.y1 += dy; } };
   let bump = '';
   for (const P of parts) for (const x of S.world.boxes) {
@@ -1252,6 +1257,10 @@ export function stepClimb(S, inp, dt) {
         for (const o of [0, 1]) { const lg = otherLeg(S, o), a = lg.hip, k2 = lg.knee, c = closestOnSeg(a, k2, p), dd = p.distanceTo(c) - 0.15; if (dd < worst) { worst = dd; const h = p.clone().sub(c); dir = h.lengthSq() > 1e-6 ? h.normalize().lerp(fwd.clone().negate(), 0.5).normalize() : fwd.clone().negate(); } }
         { const c = K.T.hip, dd = p.distanceTo(c) - 0.19; if (dd < worst) { worst = dd; const h = p.clone().sub(c); h.y = 0; dir = h.lengthSq() > 1e-6 ? h.normalize().lerp(out, 0.5).normalize() : out.clone(); } }
         if (!dir) break; goal.addScaledVector(dir, -worst); }
+      if (goal.length() > CL.ARM * 0.98) goal.setLength(CL.ARM * 0.98); }
+    // p3d-0.11.9: 쉬는 손 자리가 지형(벽·턱·발판) 속이면 겹친 만큼 바깥으로 뺀다(손 둘레 5cm + 여유 1cm). 쉬는 자리는 어깨에서 벽 쪽으로 10cm라, 어깨가 벽면 가까이 있으면 늘어뜨린 손이 벽 속에 있었고 그 자리에서 뻗기 시작한 손이 턱 F에 "팔이 턱에 걸려" 거부됐다(h1 fb). OLDHANDWALL = 빼지 않음
+    if (K.T && DIM.boxCollide && !globalThis.OLDHANDWALL) { const sh = K.T.sh[H.i];
+      for (let it = 0; it < 3; it++) { const p = sh.clone().add(goal); let worst = null; for (const x of S.world.boxes) { if (x.kind === 'floor') continue; const h = sphereBox(p, 0.06, x); if (h && (!worst || h.d > worst.d)) worst = h; } if (!worst) break; goal.addScaledVector(worst.n, worst.d); }
       if (goal.length() > CL.ARM * 0.98) goal.setLength(CL.ARM * 0.98); }
     if (H.ret && !globalThis.OLDHAND) { const R = H.ret, D = R.from.distanceTo(goal), Tt = clamp(CL.RET_T0 + CL.RET_K * D, CL.RET_T0, CL.RET_T1), k = mj(clamp((R.t += dt) / Tt, 0, 1));
       const u0 = R.from.clone().normalize(), u1 = goal.clone().normalize(), L0 = R.from.length(), L1 = goal.length(), ang = u0.angleTo(u1), side = left.clone().multiplyScalar((H.i ? -1 : 1) * 0.8).addScaledVector(fwd, 0.3).add(V(0, -0.3, 0)).normalize();
