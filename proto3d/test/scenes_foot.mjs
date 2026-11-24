@@ -109,3 +109,25 @@ export const SCENES_GW = [
   ['gj1 제자리 점프(Space 0.25초) → 착지(자세 정리 ⑩: 팔을 옆으로 크게 벌림)', (sim, put, rep) => { rep(40); rep(30, { jump: true }); rep(150); }, false, 1, [-0.62, 0, -1.6]],
   ['gj2 걸으며 점프(1초 걷다 Space 0.25초) → 착지', (sim, put, rep) => { rep(20); rep(120, { mz: 1 }); rep(30, { mz: 1, jump: true }); rep(60, { mz: 1 }); rep(90); }, false, 1, [-0.62, 0, -2.2]],
 ];
+
+// p3d-0.11.8 확인 영상(0.11.7 자세 정리 + 0.11.8 결정): 장면마다 [제목, 입력 함수, 발 보조, 손 조작, 출발 자리, 몸 방향, 수정 전 스위치]. "수정 전"은 옛 빌드가 아니라 지금 코드에서 그 규칙만 옛 것으로 되돌린 것(비교 스위치). 스크립트 입력(사람 손 아님)
+const pickS = (arr, id) => { const x = arr.find(y => y[0].split(' ')[0] === id); return [1, 2, 3, 4, 5].map(i => x[i]); }; // 항목 수가 장면마다 달라 다섯 칸으로 맞춘다(스위치가 늘 7번째 칸에 오게)
+const BEF = '[수정 전 · 비교 스위치] ', AFT = '[지금 p3d-0.11.8] ';
+export const SCENES_V118 = [
+  [BEF + '④ + 결정 3 · 땅에서 비스듬히 멈추며 왼손을 턱 A로(발이 들리고 옆으로 뻗음)', ...pickS(SCENES_GW, 'g4'), { OLDFLAGFLOOR: 1, OLDTIPTOE: 1 }],
+  [AFT + '④ + 결정 3 · 같은 입력(두 발은 바닥, 다리가 모자라면 발끝으로 섬)', ...pickS(SCENES_GW, 'g4'), {}],
+  [BEF + '⑤ · 한 손 매달림에서 흔들어 오른쪽 아래 턱 E로 → 착지(흔들리는 중 닿은 발을 바로 디딤)', ...pickS(SCENES_V115, 'C'), { OLDPLANTV: 1 }],
+  [AFT + '⑤ · 같은 입력(옆으로 빨리 가는 동안은 닿기만 하고 디디지 않음)', ...pickS(SCENES_V115, 'C'), {}],
+  [AFT + '③ · 두 발을 양옆 엉덩이 높이의 벽면에(힘이 실리지 않는 발은 1.2초 뒤 내림)', ...pickS(SCENES_U, 'u2'), {}],
+  [BEF + '⑪ + 손목 비틀림 기준 · 발판에 올라 오른손을 턱 F로(손가락 떨림)', ...pickS(SCENES_FOOT.map((x, i) => ['foot' + (i + 1), ...x.slice(1)]), 'foot2'), { OLDFINGSM: 1, OLDHINTPERP: 1 }],
+  [AFT + '⑪ + 손목 비틀림 기준 · 같은 입력', ...pickS(SCENES_FOOT.map((x, i) => ['foot' + (i + 1), ...x.slice(1)]), 'foot2'), {}],
+  [BEF + '결정 1 · 뻗는 팔·잡은 팔 팔꿈치(0.11.7 규칙) · 발판에 올라 오른손을 턱 F로', ...pickS(SCENES_FOOT.map((x, i) => ['foot' + (i + 1), ...x.slice(1)]), 'foot2'), { OLDELBOW: 1 }],
+  [AFT + '결정 1 · 같은 입력(팔꿈치 상태 하나)', ...pickS(SCENES_FOOT.map((x, i) => ['foot' + (i + 1), ...x.slice(1)]), 'foot2'), {}],
+  [BEF + '⑦ + 결정 2 · 한 손 매달림 + 두 발 모음 → W(빈손이 엉덩이에 듦, 접힌 팔 0.27m)', ...pickS(SCENES_U, 'u9'), { OLDHANDHIP: 1, FOLD_D: 0.27 }],
+  [AFT + '⑦ + 결정 2 · 같은 입력(쉬는 손 비킴, 몸을 벽에서 뗌 0.36m)', ...pickS(SCENES_U, 'u9'), {}],
+  [BEF + '⑩ + 결정 5 · 제자리 점프(팔을 옆으로 크게 벌림)', ...pickS(SCENES_GW, 'gj1'), { OLDJUMPARMS: 1 }],
+  [AFT + '⑩ + 결정 5 · 같은 입력(공중 팔이 앞으로)', ...pickS(SCENES_GW, 'gj1'), {}],
+  [BEF + '⑩ + 결정 5 · 점프하고 0.25초 뒤 왼손을 턱 B로', ...pickS(SCENES_U, 'u8'), { OLDJUMPARMS: 1 }],
+  [AFT + '⑩ + 결정 5 · 같은 입력', ...pickS(SCENES_U, 'u8'), {}],
+  [AFT + '⑩ · 걸으며 점프(이 동작의 팔은 바뀌지 않음 — 받은 동작에 팔이 앞으로 온 장면이 없다)', ...pickS(SCENES_GW, 'gj2'), {}],
+];
