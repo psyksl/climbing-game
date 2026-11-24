@@ -1162,7 +1162,10 @@ export function stepClimb(S, inp, dt) {
       const d = c.sub(K.ref).setY(0); K.ref.add(fwd.clone().multiplyScalar(d.dot(fwd)).clampLength(0, 0.3 * dt));
       // 몸 위로(W)를 누르고 있으면 가장 높이 디딘 발 쪽으로 엉덩이가 옆으로도 간다(높은 발 → 엉덩이를 그 위로 → 다리로 일어서기. 실제 영상 두 편에서 올라가는 일은 다리가 했다 — 품질 검토 12·13절). 임시 — 조작은 기획 결정 대기
       // p3d-0.8.4(GPT): 좌우(A/D)를 직접 누르고 있으면 자동으로 옮기지 않는다 — 직접 낸 의도가 먼저다
-      if ((inp.cy || 0) > 0 && !(inp.cx || 0) && !(S.opt && S.opt.rockOver === false)) { const hi = tops.reduce((a, f) => (f.p.y > a.p.y ? f : a), tops[0]), dl = ctr(hi).sub(K.ref).setY(0).dot(left); K.ref.addScaledVector(left, clamp(dl, -0.35 * dt, 0.35 * dt)); } } }
+      if ((inp.cy || 0) > 0 && !(inp.cx || 0) && !(S.opt && S.opt.rockOver === false)) { const hi = tops.reduce((a, f) => (f.p.y > a.p.y ? f : a), tops[0]), dl = ctr(hi).sub(K.ref).setY(0).dot(left); K.ref.addScaledVector(left, clamp(dl, -0.35 * dt, 0.35 * dt)); }
+      // p3d-0.11.9: W·A·D를 누르지 않고 손을 잡은 채 발판을 디디고 있으면, 몸무게를 받는 발(들)의 가운데에서 옆으로 3cm 넘게 벗어날 때 천천히(초속 0.15m) 그 위로 돌아간다.
+      //   없으면 다 편 다리로 선 몸이 잡은 손 아래 쪽으로 미끄러져 6초에 20cm 가라앉았다(옛 판에도 있었다 — W를 1.2초 넘게 누르면. 빠르기를 고치자 W 0.83초에도 드러남). OLDBAL = 옛 방식
+      else if (!(inp.cx || 0) && !(inp.cy || 0) && !globalThis.OLDBAL) { let w = 0; const c = V(); for (const f of tops) { c.addScaledVector(ctr(f), f.load); w += f.load; } c.multiplyScalar(1 / w); const dl = c.sub(b.pos).setY(0).dot(left); if (Math.abs(dl) > 0.03) K.ref.addScaledVector(left, clamp(dl - Math.sign(dl) * 0.03, -0.15 * dt, 0.15 * dt)); } } }
     else if (topsAll.length) {
       const P = K.pendFoot, hi = topsAll.reduce((a, f) => (f.p.y > a.p.y ? f : a), topsAll[0]);
       const tgt = P && K.feet[P.stay].st === 'plant' ? ctr(K.feet[P.stay]) : (inp.cy || 0) > 0 && topsAll.length > 1 && hi.p.y > Math.min(...topsAll.map(f => f.p.y)) + 0.05 ? ctr(hi) : topsAll.reduce((a, f) => a.add(ctr(f)), V()).multiplyScalar(1 / topsAll.length);
