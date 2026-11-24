@@ -1237,8 +1237,8 @@ export function stepClimb(S, inp, dt) {
   for (const H of K.hands) if (H.st === 'free') { H.relV = H.relV || V(); const goal = V((H.i ? -1 : 1) * 0.08, -0.5, 0.1).applyAxisAngle(UP, b.yaw);
     // p3d-0.11.7(자세 정리 ⑦): 늘어뜨린 손의 쉬는 자리가 넓적다리·골반과 겹치면 비킨다(넓적다리에서 수직인 쪽 + 뒤, 골반에서는 바깥 + 조금 뒤) — 옆으로 든 넓적다리가 늘어뜨린 손을 지나갔다(posture_audit ⑦, foot4: 무릎이 엉덩이 높이로 옆에 올라오는 동안).
     //   손목 둘레 반지름 5cm + 넓적다리 7cm + 여유 3cm. 바뀐 쉬는 자리로는 지금의 스프링이 따라간다(한 걸음에 옮기지 않는다)
-    //   실험(기본 끔, HANDHIP=1): 늘어뜨린 손의 자리가 바뀌면 다음에 그 손을 뻗는 길이 바뀌어, 잡는 걸음의 팔꿈치(뻗는 팔의 규칙)와 잡은 팔이 고르는 팔꿈치가 어긋나 한 걸음에 튀었다 — human_check에서 2,000°/s 넘는 한 걸음 튐 4 → 32번(foot2·foot3·foot8·reach2 …, 아래팔 최대 20,957°/s). ⑦ 차례에 다시 한다
-    if (K.T && DIM.boxCollide && globalThis.HANDHIP) { const sh = K.T.sh[H.i], out = left.clone().multiplyScalar(H.i ? -1 : 1).addScaledVector(fwd, -0.35).normalize();
+    //   0.11.7에서는 잡는 걸음의 팔꿈치 튐(4 → 32번)을 만들어 실험으로 뒀다. 0.11.8에서 팔꿈치 상태를 하나로 합친 뒤에는 튐이 늘지 않아(4 → 4) 기본으로 켠다. OLDHANDHIP = 끔
+    if (K.T && DIM.boxCollide && !globalThis.OLDHANDHIP) { const sh = K.T.sh[H.i], out = left.clone().multiplyScalar(H.i ? -1 : 1).addScaledVector(fwd, -0.35).normalize();
       for (let it = 0; it < 4; it++) { const p = sh.clone().add(goal); let worst = 0, dir = null;
         for (const o of [0, 1]) { const lg = otherLeg(S, o), a = lg.hip, k2 = lg.knee, c = closestOnSeg(a, k2, p), dd = p.distanceTo(c) - 0.15; if (dd < worst) { worst = dd; const h = p.clone().sub(c); dir = h.lengthSq() > 1e-6 ? h.normalize().lerp(fwd.clone().negate(), 0.5).normalize() : fwd.clone().negate(); } }
         { const c = K.T.hip, dd = p.distanceTo(c) - 0.19; if (dd < worst) { worst = dd; const h = p.clone().sub(c); h.y = 0; dir = h.lengthSq() > 1e-6 ? h.normalize().lerp(out, 0.5).normalize() : out.clone(); } }
