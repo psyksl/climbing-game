@@ -66,6 +66,8 @@ export function convert(asf, amc, t0, t1, fps = 30, opt = {}) {
   const i0 = Math.max(0, Math.round(t0 * 120)), i1 = Math.min(all.length - 1, Math.round(t1 * 120)), h0 = F[i0].pos.root;
   const out = { src: `${path.basename(amc)} ${t0}~${t1}초`, fps, n: 0, dur: 0, loop: false, k: r4(k * 100), hip: [], q: [], fit: {}, cat: 'CMU', kind: 'ground', holds: [] };
   const fit = {}, con = [[], []], eff = [[], [], [], []]; let armReach = 0; const pinCut = [0, 0, 0, 0];
+  // 원본에서 그 손발이 있던 자리를 같은 옮김(수평 (p-h0)·k, 높이 발목 바닥 기준 ·k — 엉덩이를 놓는 것과 같다)으로 줄인 자리: 손 = 손목, 발 = 발볼(원본 발 뼈의 끝). 고정 목표로 쓴다
+  const map = p => V((p.x - h0.x) * k, DIM.ankleY + (p.y - floorAnk) * k, (p.z - h0.z) * k), orig = [[], [], [], []], origHand = [[], []];
   for (let i = i0; i <= i1; i += step) {
     const { pos, rot } = F[i], qOf = n => new THREE.Quaternion().setFromRotationMatrix(rot[SRC[n]]).multiply(TB[n]);
     B.hips.position.set((pos.root.x - h0.x) * k, DIM.hipY, (pos.root.z - h0.z) * k); rig.root.updateMatrixWorld(true);
@@ -85,6 +87,8 @@ export function convert(asf, amc, t0, t1, fps = 30, opt = {}) {
     const spd = (nm) => { const a = F[Math.max(0, i - 6)].pos[nm], b = F[Math.min(all.length - 1, i + 6)].pos[nm]; return a.distanceTo(b) / (12 / 120); };
     ['ltoes', 'rtoes'].forEach((nm, j) => con[j].push(spd(nm) < 0.15 ? '1' : '0'));
     ['lhand', 'rhand', 'ltoes', 'rtoes'].forEach((nm, j) => eff[j].push(spd(nm) < 0.15 ? '1' : '0'));
+    ['lwrist', 'rwrist', 'lfoot', 'rfoot'].forEach((nm, j) => orig[j].push(map(pos[nm])));
+    ['lhand', 'rhand'].forEach((nm, j) => origHand[j].push(map(pos[nm])));
     out.hip.push(r4(B.hips.position.x), r4(B.hips.position.y), r4(B.hips.position.z)); for (const n of BONES) { const q = B[n].quaternion; out.q.push(r4(q.x), r4(q.y), r4(q.z), r4(q.w)); }
     out.n++;
   }
@@ -97,6 +101,8 @@ export function convert(asf, amc, t0, t1, fps = 30, opt = {}) {
     const LIMB = [['upperArm.L', 'foreArm.L', 'hand.L', DIM.upperArm, DIM.foreArm, 1, 'arm'], ['upperArm.R', 'foreArm.R', 'hand.R', DIM.upperArm, DIM.foreArm, -1, 'arm'], ['upLeg.L', 'leg.L', 'foot.L', DIM.thigh, DIM.shin, 1, 'leg'], ['upLeg.R', 'leg.R', 'foot.R', DIM.thigh, DIM.shin, -1, 'leg']];
     const BALLL = V(0, -(DIM.ankleY - 0.02), DIM.ballZ), tip = (L, e) => e < 2 ? B[L[2]].getWorldPosition(V()) : B[L[2]].localToWorld(BALLL.clone()); // 발은 발볼을 고정한다(원본의 멈춤도 발가락으로 판정. 발목을 고정하면 뒤꿈치를 들 때 발볼이 움직였다 — 13_34 왼발 8.4cm)
     const endP = [[], [], [], []]; for (let f = 0; f < out.n; f++) { pose(f); LIMB.forEach((L, e) => endP[e].push(tip(L, e))); }
+    // 고정 목표(기본 = 원본 지형 자리): 원본에서 멈춘 구간 동안 그 손발이 있던 자리의 평균을 줄인 자리. 옮긴 자세의 자리(구간이 시작할 때)에 고정하면 우리 팔이 원본보다 14% 길어(0.48 → 0.55m) 손이 사다리·막대 자리에서 10~25cm 너머에 놓였다(tools/cmu/contactcheck.mjs). PINSELF=1이면 옛 방식
+    const pinOrig = opt.pinTo !== 'self', avg = (arr, a, b) => { const m = V(); for (let i = a; i <= b; i++) m.add(arr[i]); return m.multiplyScalar(1 / (b - a + 1)); };
     const ivs = [0, 1, 2, 3].map(e => { const r = [], str = eff[e]; let i = 0; while (i < out.n) { if (str[i] === '1') { let j = i; while (j < out.n && str[j] === '1') j++; if (j - i >= Math.ceil(0.15 * fps)) r.push([i, j - 1]); i = j; } else i++; } return r; });
     const vA = v => [v.x, v.y, v.z], qA = q => [q.x, q.y, q.z, q.w];
     const excess = L => { const a = vA(B[L[0]].getWorldPosition(V())), m = vA(B[L[1]].getWorldPosition(V())), e = vA(B[L[2]].getWorldPosition(V()));
@@ -108,7 +114,7 @@ export function convert(asf, amc, t0, t1, fps = 30, opt = {}) {
       [L[0], L[1]].forEach((bn, m) => { const base = B[bn].getWorldQuaternion(new THREE.Quaternion()), cur = B[m ? L[2] : L[1]].getWorldPosition(V()).sub(B[bn].getWorldPosition(V())).normalize(); setWorldQuat(B[bn], new THREE.Quaternion().setFromUnitVectors(cur, dirs[m]).multiply(base)); rig.root.updateMatrixWorld(true); });
       setWorldQuat(B[L[2]], eq); rig.root.updateMatrixWorld(true); return ik.ratio || 0; };
     for (let f = 0; f < out.n; f++) { pose(f); let touched = false;
-      LIMB.forEach((L, e) => { let w = 0, tgt = null; for (const [a, b] of ivs[e]) { const ww = Math.min(1, (f - (a - blend)) / blend, ((b + blend) - f) / blend); if (ww > w) { w = ww; tgt = endP[e][a]; } } if (w <= 0) return;
+      LIMB.forEach((L, e) => { let w = 0, tgt = null; for (const [a, b] of ivs[e]) { const ww = Math.min(1, (f - (a - blend)) / blend, ((b + blend) - f) / blend); if (ww > w) { w = ww; tgt = pinOrig ? avg(orig[e], a, b) : endP[e][a]; } } if (w <= 0) return;
         const s0 = save(L), ex0 = excess(L), lim = Math.max(0, ex0) + D; let ratio = aim(L, endP[e][f].clone().lerp(tgt, w), e);
         if (excess(L) > lim) { let lo = 0, hi = w; for (let it = 0; it < 8; it++) { const mid = (lo + hi) / 2; load(L, s0); aim(L, endP[e][f].clone().lerp(tgt, mid), e); if (excess(L) > lim) hi = mid; else lo = mid; } load(L, s0); ratio = aim(L, endP[e][f].clone().lerp(tgt, lo), e); pinCut[e]++; }
         if (L[6] === 'arm') armReach = Math.max(armReach, ratio); touched = true; });
@@ -116,11 +122,48 @@ export function convert(asf, amc, t0, t1, fps = 30, opt = {}) {
     }
   }
   out.dur = r4(out.n / fps); out.fit = Object.fromEntries(Object.entries(fit).map(([a, b]) => [a, r4(b)])); out.con = con.map(c => c.join('')); out.eff = eff.map(c => c.join('')); out.duty = con.map(c => r4(c.filter(x => x === '1').length / c.length)); out.flight = 0; out.yfix = 0; out.legRatio = 0; out.armReach = r4(armReach); out.pinCut = pinCut;
+  if (opt.props) out.props = cmuProps(opt.props, orig, origHand, eff, out.n, fps);
   return out;
+}
+
+// 동작 보기에 놓을 지형(원본에서 손발이 멈춘 자리를 같은 옮김으로 줄인 자리에서 만든다 — 옮긴 자세에서 만들지 않는다. 옮긴 손발이 거기 닿는지를 보기 위해서다)
+//   'stepladder' = 기울어진 사다리(CMU 13·14의 A자 사다리): 디딤판 = 바닥 위에 멈춘 발볼의 높이 무리(윗면 = 발볼 − 2cm), 같은 간격·기울기로 손 높이까지 이어 놓는다. 옆 기둥 = 디딤판 양 끝
+//   'bar' = 매달리는 가로 막대(CMU 01의 놀이터 구름사다리): 엉덩이보다 높이 멈춘 손들의 손 끝(원본 hand 뼈의 끝 = 쥔 손 가운데쯤) 높이, x 방향으로 놓는다
+//   손발이 멈춘 구간 = 초속 0.15m 아래로 0.15초 넘게(고정과 같은 구간). 모양(디딤판 깊이 10cm, 막대 반지름 2cm, 기둥 반지름 2cm)은 영상의 사다리를 보고 정한 어림값이다
+function cmuProps(kind, orig, origHand, eff, n, fps) {
+  const ivs = eff.map(str => { const r = []; let i = 0; while (i < n) { if (str[i] === '1') { let j = i; while (j < n && str[j] === '1') j++; if (j - i >= Math.ceil(0.15 * fps)) r.push([i, j - 1]); i = j; } else i++; } return r; });
+  const mean = (arr, a, b) => { const m = V(); for (let i = a; i <= b; i++) m.add(arr[i]); return m.multiplyScalar(1 / (b - a + 1)); }, med = a => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
+  const pts = []; ivs.forEach((r, e) => r.forEach(([a, b]) => pts.push({ e, p: mean(orig[e], a, b), h: e < 2 ? mean(origHand[e], a, b) : null })));
+  const props = [], A = v => [r4(v.x), r4(v.y), r4(v.z)];
+  if (kind === 'stepladder') {
+    const feet = pts.filter(q => q.e >= 2 && q.p.y > 0.15).sort((a, b) => a.p.y - b.p.y), cl = [];
+    for (const f of feet) { const L = cl[cl.length - 1]; if (L && f.p.y - L[L.length - 1].p.y < 0.12) L.push(f); else cl.push([f]); }
+    const lv = cl.map(L => ({ y: med(L.map(f => f.p.y)) - 0.02, z: med(L.map(f => f.p.z)) }));
+    const pitch = lv.length > 1 ? (lv[lv.length - 1].y - lv[0].y) / (lv.length - 1) : 0.28, slope = lv.length > 1 ? (lv[lv.length - 1].z - lv[0].z) / (lv[lv.length - 1].y - lv[0].y) : 0; // 높이 1m에 앞뒤로 가는 만큼
+    // 가로 폭: 두 손 끝이 30cm 넘게 벌어져 있으면 손이 옆 기둥을 잡은 것(13_34) → 기둥 = 왼손·오른손 끝의 자리. 아니면 손은 디딤판을 잡은 것(14_34) → 폭 = 발들의 가운데 ± 22cm
+    const up = pts.filter(q => q.p.y > 0.15), hs = pts.filter(q => q.e < 2 && q.p.y > 0.6), side = e => hs.filter(q => q.e === e).map(q => q.h), top = Math.max(...up.map(q => q.p.y)) + 0.15;
+    const hL = side(0), hR = side(1), rails = hL.length && hR.length && Math.abs(med(hL.map(h => h.x)) - med(hR.map(h => h.x))) > 0.3;
+    const cx = rails ? (med(hL.map(h => h.x)) + med(hR.map(h => h.x))) / 2 : med(up.filter(q => q.e >= 2).map(q => q.p.x)), hw = rails ? Math.abs(med(hL.map(h => h.x)) - med(hR.map(h => h.x))) / 2 : 0.22;
+    const zAt = y => lv[0].z + (y - lv[0].y) * slope;
+    let y = lv[0].y; while (y - pitch > 0.12) y -= pitch;
+    for (; y < top; y += pitch) { const z = zAt(y); props.push({ t: 'box', a: A(V(cx - hw, y - 0.03, z - 0.05)), b: A(V(cx + hw, y, z + 0.05)) }); }
+    // 옆 기둥: 디딤판 양 끝(디딤판과 같은 기울기). 손이 기둥을 잡은 동작이면 가로 자리를 손에 맞춘다(디딤판도 그 폭) — 손 끝을 지나는 직선으로 그으면 아래쪽에서 기둥이 다리를 지나갔다(손이 디딤판 줄보다 15cm 앞을 잡음: 무엇을 잡았는지 원본만으로는 모른다)
+    for (const sx of [-1, 1]) props.push({ t: 'cyl', a: A(V(cx + sx * hw, 0, zAt(0))), b: A(V(cx + sx * hw, top, zAt(top))), r: 0.02 });
+    return { kind, rails: !!rails, pitch: r4(pitch), slope: r4(slope), halfW: r4(hw), steps: lv.map(l => r4(l.y)), list: props };
+  }
+  if (kind === 'bar') {
+    const hands = pts.filter(q => q.e < 2 && q.p.y > 1.5); if (!hands.length) return { kind, list: [] };
+    // 구름사다리: 손이 앞뒤(z)로 옮겨 가며 잡으면 막대가 여러 개다 → 손 끝의 앞뒤 자리로 묶어(8cm 안) 막대 하나씩
+    const cls = []; for (const q of [...hands].sort((a, b) => a.h.z - b.h.z)) { const L = cls[cls.length - 1]; if (L && q.h.z - L[L.length - 1].h.z < 0.08) L.push(q); else cls.push([q]); }
+    const x0 = Math.min(...hands.map(q => q.h.x)) - 0.4, x1 = Math.max(...hands.map(q => q.h.x)) + 0.4, bars = cls.map(L => ({ y: med(L.map(q => q.h.y)), z: med(L.map(q => q.h.z)) }));
+    for (const b of bars) props.push({ t: 'cyl', a: A(V(x0, b.y, b.z)), b: A(V(x1, b.y, b.z)), r: 0.02 });
+    return { kind, bars: bars.map(b => [r4(b.y), r4(b.z)]), list: props };
+  }
+  return { kind, list: [] };
 }
 
 if (process.argv[1] && process.argv[1].endsWith('cmu_convert.mjs')) {
   const [outFile, ...rest] = process.argv.slice(2), clips = {};
-  for (let i = 0; i + 4 < rest.length + 1 && rest[i]; i += 5) { const [asf, amc, name, t0, t1] = rest.slice(i, i + 5); const c = convert(asf, amc, +t0, +t1, 30, { handFit: process.env.NOHANDFIT ? false : true }); clips[name] = c; console.log(name.padEnd(28), `${c.n}장 ${c.dur}초 · k ${c.k} · 팔 닿음 비(1 넘으면 못 닿음) ${c.armReach} · 범위 때문에 고정을 줄인 장면(왼손·오른손·왼발·오른발) ${c.pinCut} · 맞춤(가장 큰 차이 m) ${JSON.stringify(c.fit)}`); }
+  for (let i = 0; i + 4 < rest.length + 1 && rest[i]; i += 5) { const [asf, amc, name, t0, t1] = rest.slice(i, i + 5); const c = convert(asf, amc, +t0, +t1, 30, { handFit: process.env.NOHANDFIT ? false : true, pinTo: process.env.PINSELF ? 'self' : 'orig', props: /사다리/.test(name) ? 'stepladder' : /매달리기/.test(name) ? 'bar' : null }); clips[name] = c; console.log(name.padEnd(28), `${c.n}장 ${c.dur}초 · k ${c.k} · 팔 닿음 비(1 넘으면 못 닿음) ${c.armReach} · 범위 때문에 고정을 줄인 장면(왼손·오른손·왼발·오른발) ${c.pinCut} · 맞춤(가장 큰 차이 m) ${JSON.stringify(c.fit)}`); }
   fs.writeFileSync(outFile, JSON.stringify({ note: 'CMU 동작을 이 뼈대로 옮긴 값(저장소에 넣지 않음)', bones: BONES, clips }));
 }

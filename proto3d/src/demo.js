@@ -16,6 +16,12 @@ function levels(hs, tol = 0.16) { const out = []; for (const h of [...hs].sort((
 
 // 지형 조각과 손이 붙을 자리(grip)를 만든다. 좌표는 동작의 뿌리 기준(앞 = +z, 왼쪽 = +x, 땅 = 0)
 export function buildProps(clip) {
+  // 지형이 따로 주어진 동작(CMU: 원본에서 손발이 멈춘 자리로 만든 사다리·막대)은 그대로 놓고 손을 붙이지 않는다 — 옮긴 손발이 지형에 실제로 닿는지 그대로 보이게
+  if (clip.props && clip.props.list) {
+    const g = new THREE.Group();
+    for (const q of clip.props.list) { if (q.t === 'box') box(g, MAT.metal, q.a[0], q.b[0], q.a[1], q.b[1], q.a[2], q.b[2]); else if (q.t === 'cyl') cyl(g, MAT.metal, V(...q.a), V(...q.b), q.r); }
+    return { group: g, holds: [], info: { kind: clip.props.kind, pieces: g.children.length, dynamic: null, removed: 0 } };
+  }
   // 손: 엉덩이보다 15cm 넘게 위에서 서 있을 때만 잡은 것으로 본다(내려뜨린 손·서 있는 자세의 손은 뺀다. 손으로 눌러 올라서는 순간도 빠진다)
   const g = new THREE.Group(), H = (clip.holds || []).filter(h => h.e >= 2 || (h.r ?? 1) >= 0.15).map(h => ({ ...h, grip: null })), hands = H.filter(h => h.e < 2), feet = H.filter(h => h.e >= 2), kind = clip.kind, info = { kind, pieces: 0, dynamic: null };
   const bracket = h => { box(g, MAT.hold, h.p[0] - 0.09, h.p[0] + 0.09, h.p[1] - 0.07, h.p[1] - 0.02, h.p[2] - 0.04, h.p[2] + 0.08); h.grip = V(h.p[0], h.p[1], h.p[2]); }; // 벽 없이 떠 있는 작은 홀드(임시)
