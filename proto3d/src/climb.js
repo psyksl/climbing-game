@@ -29,7 +29,7 @@ export const CL = {
   //   어깨가 목표 쪽으로 움직이는 중이면(반동·점프) 그 빠르기 1m/s당 ASSIST_D만큼 더 허용한다(ASSIST_MAX까지). 끌려가는 동안 다른 손이 버티지 못하면 그 손을 놓는다. 발은 다리가 닿는 범위를 벗어나면 떨어진다(원래 규칙). 실험값
   GRIP_BAD_CAP: 0.10, // p3d-0.11.4: 당기는 방향이 턱이 버티는 범위 밖인 손이 당기는 힘의 한계(몸무게 배수, GRIP_MIN 0.15보다 작게)
   ASSIST_S: 0.08, ASSIST_D: 0.10, ASSIST_MAX: 0.28, ASSIST_V: 1.2,
-  ASSIST_BURST1: 1.3, PALM_DOWN: 0.6, CROSS_A0: 0, CROSS_KW: 4, CROSS_RATE: 2.5, SMEAR_IDLE_T: 1.2, HELD_SLOW: 1.2, PLANT_HV: 1.0, PLANT_HV_T: 0.3, REACH_POLE_W: 9, LEGX_CLR: 0.01, PALM_TW: 120 * Math.PI / 180, // 잡기 보정: 한 손만 잡고 뛸 때 그 팔의 순간 힘(몸무게 배. 기본 ARM_BURST 0.85). 두 손 점프는 그대로
+  ASSIST_BURST1: 1.3, PALM_DOWN: 0.6, CROSS_A0: 0, CROSS_KW: 4, CROSS_RATE: 2.5, SMEAR_IDLE_T: 1.2, HELD_SLOW: 1.2, HELD_SLOW_BEND: 0.08, PLANT_HV: 1.0, PLANT_HV_T: 0.3, REACH_POLE_W: 9, LEGX_CLR: 0.01, PALM_TW: 120 * Math.PI / 180, // 잡기 보정: 한 손만 잡고 뛸 때 그 팔의 순간 힘(몸무게 배. 기본 ARM_BURST 0.85). 두 손 점프는 그대로
   NEW_T: 1.0, ASSIST_GRIP_ANG: 72 * Math.PI / 180, ASSIST_SHOCK_V: 2.4, // 잡기 보정: 막 잡은 손으로 보는 시간(초)
   ASSIST_WRIST: 15, // 잡기 보정이 켜져 있으면 손목 한계(wristMax 70°)를 이만큼 더 허용한다(비스듬히 잡을 때 아래팔을 돌려 손을 옆으로 세워 잡는 몫. 그림은 70°에서 멈춘다)
   HAND_V: 3.2, HAND_ACC: 30, HAND_V_DYN: 5.5, HAND_ACC_DYN: 60, STAND_SH: 1.42, HAND_T0: 0.22, HAND_T1: 0.60, FOOT_V: 1.1, FOOT_T0: 0.28, FOOT_T1: 0.90,
@@ -1060,11 +1060,12 @@ export function stepClimb(S, inp, dt) {
   const hanging = held.length && !planted.some(f => f.load > 0.1), side = -(inp.cx || 0) * (inp.cxSign || 1);
   // 몸의 층 갱신(스프링으로 뒤따른다. 그리기에서는 읽기만 한다)
   { const Z = K.pz, reach = K.hands.find(h => h.st === 'reach'), one = held.length === 1 && !reach ? held[0] : null;
+    // (해 보고 뺀 것, 실험 OPENCAND=1: 잡은 손을 armCheck처럼 heldPole이 고른 팔꿈치로 보기 — 교차는 그대로 깨지고 다른 벽 시험이 하나 더 깨졌다)
     // p3d-0.8.4(몸 연결): 위팔이 턱·벽에 겹치면 그 어깨가 벽에서 멀어지게 가슴을 연다(K.open). 전에는 뻗는 쪽 어깨를 언제나 벽 쪽으로 0.30 돌려, 턱 바로 아래에서 뻗으면 어깨가 턱 앞면 2cm 앞까지 가서 위팔(반지름 5.5cm)이 턱에 겹쳤다.
     //   겹친 깊이만큼 열고, 여유(1.5cm)를 두고도 겹치지 않을 때만 천천히 되돌린다(그 사이에서는 그대로 둔다 — 열었다 닫았다 떨지 않게). 손은 이 때문에 멈추지 않는다(손을 멈추는 것은 팔뚝의 겹침뿐)
     { const fw = V(Math.sin(b.yaw), 0, Math.cos(b.yaw)), Tn = K.T || torso(b, K); K.open = K.open || [0, 0]; K.upHit = K.upHit || [0, 0];
       for (const h of K.hands) { let d = 0, loose = true;
-        if (h.st !== 'free' && S.poleS && S.poleS['el' + h.s]) { const tgt = h.st === 'hold' ? h.goal : h.w, ik = twoBone(Tn.sh[h.i], tgt, DIM.upperArm, DIM.foreArm, S.poleS['el' + h.s]), tb = h.edge ? h.edge.box : null, u = (armHit(W, Tn.sh[h.i], ik, tb) || {}).u, u2 = (armHit(W, Tn.sh[h.i], ik, tb, 0.015) || {}).u;
+        if (h.st !== 'free' && S.poleS && S.poleS['el' + h.s]) { const tgt = h.st === 'hold' ? h.goal : h.w, ik = h.st === 'hold' && DIM.boxCollide && !globalThis.OLDELBOW && globalThis.OPENCAND ? heldPole(S, h.s, Tn.sh[h.i], tgt, b.yaw, h.i ? -1 : 1, Tn.qC).ik : twoBone(Tn.sh[h.i], tgt, DIM.upperArm, DIM.foreArm, S.poleS['el' + h.s]), tb = h.edge ? h.edge.box : null, u = (armHit(W, Tn.sh[h.i], ik, tb) || {}).u, u2 = (armHit(W, Tn.sh[h.i], ik, tb, 0.015) || {}).u;
           if (u && u.n.dot(fw) < -0.3) d = u.d; loose = !(u2 && u2.n.dot(fw) < -0.3); }
         K.upHit[h.i] = d; K.open[h.i] = clamp(K.open[h.i] + (d > 0 ? Math.min(d / 0.01, 2) * 5 * dt : loose ? -0.8 * dt : 0), 0, 1); } }
     // 팔을 엇갈려 잡고 있는 동안(p3d-0.8.5): 나중에 건너간 팔의 어깨를 벽 쪽으로 둔 채로 있는다(가슴을 그대로 비틀어 둔다). 두 어깨와 두 손이 한 평면에 놓이면 두 팔이 X자로 서로를 지나가므로, 어깨의 앞뒤를 달리해 한 팔이 다른 팔 앞을 지나가게 한다
@@ -1362,8 +1363,8 @@ function turnCont(S, bone, qT, rate = 10) { const pw = S.pw && S.pw[bone.name]; 
 // 캡슐이 겹치지 않는 후보를 고르고(armIK full), 그쪽으로 정해진 빠르기(7rad/s)로 돌되 지금 굽는 쪽이 지형에 겹치면 더 빨리(23rad/s) 돌린다
 // p3d-0.11.8(결정 1): 팔꿈치가 사람 어깨의 범위를 넘으면 범위 안의 가장 가까운 쪽으로 돌리고 **그 결과를 팔꿈치 상태(el)에 적는다** — 물리 판정(armHit·가슴 열기 K.open)·그림·다음 걸음이 같은 팔꿈치를 쓴다.
 //   0.11.6~0.11.7은 그림에서만 고치고(범위 보정 + 빠르기 한계 elA) 상태에는 적지 않아, 잡는 걸음에 잡은 팔의 규칙이 보정 전 방향에서 이어 가 팔꿈치가 한 걸음에 튀었다(⑦·⑨의 뿌리). 돌린 팔꿈치가 지형에 2cm 안으로 들거나 제 몸·다른 팔에 더 들면 돌리지 않는다(전과 같은 조건)
-// p3d-0.11.8(결정 1): 잡은 팔의 팔꿈치는 지금 쪽이 쓸 만하면(어깨 범위 안, 팔꿈치·위팔이 지형에 들지 않음 — 잡은 손의 팔뚝은 턱에 닿는 것이 정상이라 보지 않는다, 제 몸·다른 팔에 들지 않음) 고른 쪽으로 천천히(HELD_SLOW rad/s) 옮겨 간다 — 뻗는 동안 범위 보정으로 정해진 팔꿈치와 잡은 팔이 고르는 팔꿈치가 다르면, 거의 편 팔에서는 팔꿈치 자리는 그대로인 채 위팔만 초속 460°로 비틀렸다(reach6 6.33초). 쓸 수 없거나 다른 손이 뻗는 중이면(잡은 팔이 자리를 내 줘야 한다 — 0.8.6 규칙. 천천히 두면 다른 벽 시험에서 왼손이 벽 B에 오지 못했다) 전처럼 7rad/s
-function heldRate(S, s, sh, target, sx, qC, yaw) { if (!DIM.boxCollide || globalThis.OLDELBOW || globalThis.NOHELDSLOW) return 7; if (S.climb.hands[s === 'L' ? 1 : 0].st === 'reach') return 7; const pv = S.pw && S.poleS && S.poleS['el' + s]; if (!pv) return 7; const ik = twoBone(sh, target, DIM.upperArm, DIM.foreArm, pv); if (armOver(sh, ik, sx, qC, yaw) > 0.05 || elbowIn(S.world, ik.mid) || nearBox(S.world, sh.clone().lerp(ik.mid, 0.5), 0.02)) return 7; const sf = armSelf(selfShapes(S, s === 'L' ? 0 : 1), ik, sh); return sd(sf, 'body') > 0.002 || sd(sf, 'arm') > 0.01 ? 7 : CL.HELD_SLOW; }
+// p3d-0.11.8(결정 1): 잡은 팔의 팔꿈치는 지금 쪽이 쓸 만하면(어깨 범위 안, 팔꿈치·위팔이 지형에 들지 않음 — 잡은 손의 팔뚝은 턱에 닿는 것이 정상이라 보지 않는다, 제 몸·다른 팔에 들지 않음) 고른 쪽으로 천천히(HELD_SLOW rad/s) 옮겨 간다 — 뻗는 동안 범위 보정으로 정해진 팔꿈치와 잡은 팔이 고르는 팔꿈치가 다르면, 거의 편 팔에서는 팔꿈치 자리는 그대로인 채 위팔만 초속 460°로 비틀렸다(reach6 6.33초). 쓸 수 없거나 다른 손이 뻗는 중이면(잡은 팔이 자리를 내 줘야 한다 — 0.8.6 규칙. 천천히 두면 다른 벽 시험에서 왼손이 벽 B에 오지 못했다) 전처럼 7rad/s. 굽은 팔(팔꿈치가 어깨–손목 선에서 HELD_SLOW_BEND 넘게)도 7 — 천천히 옮기는 것은 팔꿈치 자리가 거의 그대로인 편 팔(비틀림만 보이는 경우)에만. 굽은 팔까지 천천히 두면 다음 뻗기가 다른 팔꿈치에서 시작해 교차의 길이 바뀌었다. 두 손을 엇갈려 잡은 동안도 7(엇갈린 팔이 서로를 비켜야 한다 — 천천히 두면 "턱을 잡고 있던 손에서 시작하는 교차"가 깨졌다)
+function heldRate(S, s, sh, target, sx, qC, yaw) { if (!DIM.boxCollide || globalThis.OLDELBOW || globalThis.NOHELDSLOW) return 7; if (S.climb.hands[s === 'L' ? 1 : 0].st === 'reach') return 7; const pv = S.pw && S.poleS && S.poleS['el' + s]; if (!pv) return 7; const ik = twoBone(sh, target, DIM.upperArm, DIM.foreArm, pv); { const u = target.clone().sub(sh).normalize(), m = ik.mid.clone().sub(sh); if (m.addScaledVector(u, -m.dot(u)).length() > CL.HELD_SLOW_BEND) return 7; } if (armOver(sh, ik, sx, qC, yaw) > 0.05 || elbowIn(S.world, ik.mid) || nearBox(S.world, sh.clone().lerp(ik.mid, 0.5), 0.02)) return 7; const sf = armSelf(selfShapes(S, s === 'L' ? 0 : 1), ik, sh); if (sd(sf, 'body') > 0.0005 || sd(sf, 'arm') > 0.003) return 7; const o = S.climb.hands[s === 'L' ? 1 : 0], left = V(Math.cos(S.body.yaw), 0, -Math.sin(S.body.yaw)); if (o.st === 'hold' && o.goal && target.clone().sub(o.goal).dot(left) * (s === 'L' ? 1 : -1) < 0) return 7; return CL.HELD_SLOW; }
 function elbowFix(S, s, sh, target, pole, sx, qC, yaw, tb = null) {
   if (!DIM.boxCollide || globalThis.NOANAT || globalThis.OLDELBOW) return null; const ik = twoBone(sh, target, DIM.upperArm, DIM.foreArm, pole); if (armOver(sh, ik, sx, qC, yaw) <= 0.05) return null;
   //   보정 전 팔이 이미 지형에 들면 고치지 않는다(전처럼 "팔이 벽·턱을 지나감"으로 빨리 거부되게) — 고친 팔꿈치로 벽을 비켜 손이 1초 더 붙어 있다가 "턱에 걸려"로 거부되는 동안 가슴이 돌아 다른 손이 놓쳤다(다른 벽 시험 A → B → A). 보정은 갈 수 있는 뻗기의 모양을 사람 범위로 맞추는 데만 쓴다
@@ -1388,8 +1389,11 @@ function reachArm(S, s, sh, target, yaw, sx, qC, want = null, tb = null) {
         if (dS > 0.004 && arc(-1, 2 * Math.PI - ang) < dS) { go = q.clone().applyAxisAngle(ax, -1.2); far = true; } } } }
   // p3d-0.11.1: 지금 굽은 쪽이 사람 어깨의 범위를 7° 넘게 벗어나 있으면(손목이 빨리 올라가 어깨→손목 축이 돌았는데 팔꿈치는 늘어뜨렸을 때의 쪽에 남아 등 뒤로 간 경우) 조금 빨리 돌린다(10rad/s. 23으로 두면 팔뚝이 초속 1,600°까지 돌았다 — 0.10.4에서 899로 줄인 것)
   const ovPrev = prev ? armOver(sh, twoBone(sh, target, DIM.upperArm, DIM.foreArm, prev), sx, qC, yaw) : 0;
+  const pv0 = UNI && S.pw && S.poleS && S.poleS['el' + s] ? S.poleS['el' + s].clone() : null;
   let pole = bendDir(S, 'el' + s, sh, target, go, hit0 || want || far ? 23 : ovPrev > 0.12 ? 10 : 7, false, true), ik = twoBone(sh, target, DIM.upperArm, DIM.foreArm, pole);
-  if (UNI && !globalThis.NOELFIXR) { const f = elbowFix(S, s, sh, target, pole, sx, qC, yaw, tb); if (f) { pole = f.pole; ik = f.ik; } }
+  if (UNI && !globalThis.NOELFIXR) { const f = elbowFix(S, s, sh, target, pole, sx, qC, yaw, tb); if (f) { pole = f.pole; ik = f.ik;
+    // 고친 팔꿈치도 앞 걸음의 상태에서 초속 REACH_POLE_W까지만 바뀐다(한 걸음에 보정이 들어서면 위팔이 43.7° 튀었다 — wall_check). 0.11.6의 그림 쪽 빠르기 한계(elA)를 상태로 옮긴 것
+    if (pv0 && !globalThis.NOELFIXRATE) { const u = target.clone().sub(sh).normalize(), q0 = pv0.addScaledVector(u, -pv0.dot(u)); if (q0.lengthSq() > 1e-8) { q0.normalize(); const a = q0.angleTo(pole), mx = CL.REACH_POLE_W * PHY.DT; if (a > mx) { const ax2 = q0.clone().cross(pole); if (ax2.lengthSq() < 1e-10) ax2.copy(u); pole = q0.clone().applyAxisAngle(ax2.normalize(), mx); ik = twoBone(sh, target, DIM.upperArm, DIM.foreArm, pole); S.poleS['el' + s] = pole.clone(); S.poleS['el' + s + 'p'] = pole.clone(); } } } } }
   if (globalThis.__AT) globalThis.__AT.push({ s, wp: wp.toArray(), go: go.toArray(), far, hit0: hit0 ? +hit0.d.toFixed(4) : 0, want: !!want, rate: hit0 || want || far ? 23 : 7 });
   return { pole, ik, hit: armHit(S.world, sh, ik, tb), self: armSelf(B, ik, sh), want: wp };
 }
