@@ -12,6 +12,7 @@ import path from 'path';
 import { buildCharacter, DIM } from '../src/rig.js';
 import { setWorldQuat, twoBone } from '../src/ik.js';
 import { BONES } from './mixamo_convert.mjs';
+import { armExcess, legExcess, kneeExcess } from '../src/anat.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z), D = Math.PI / 180;
 const r4 = x => Math.round(x * 1e4) / 1e4;
@@ -64,7 +65,7 @@ export function convert(asf, amc, t0, t1, fps = 30, opt = {}) {
     TB[n].setFromUnitVectors(ours, S.bones[SRC[n]].dir.clone().normalize()); }
   const i0 = Math.max(0, Math.round(t0 * 120)), i1 = Math.min(all.length - 1, Math.round(t1 * 120)), h0 = F[i0].pos.root;
   const out = { src: `${path.basename(amc)} ${t0}~${t1}초`, fps, n: 0, dur: 0, loop: false, k: r4(k * 100), hip: [], q: [], fit: {}, cat: 'CMU', kind: 'ground', holds: [] };
-  const fit = {}, con = [[], []], eff = [[], [], [], []]; let armReach = 0;
+  const fit = {}, con = [[], []], eff = [[], [], [], []]; let armReach = 0; const pinCut = [0, 0, 0, 0];
   for (let i = i0; i <= i1; i += step) {
     const { pos, rot } = F[i], qOf = n => new THREE.Quaternion().setFromRotationMatrix(rot[SRC[n]]).multiply(TB[n]);
     B.hips.position.set((pos.root.x - h0.x) * k, DIM.hipY, (pos.root.z - h0.z) * k); rig.root.updateMatrixWorld(true);
@@ -87,27 +88,39 @@ export function convert(asf, amc, t0, t1, fps = 30, opt = {}) {
     out.hip.push(r4(B.hips.position.x), r4(B.hips.position.y), r4(B.hips.position.z)); for (const n of BONES) { const q = B[n].quaternion; out.q.push(r4(q.x), r4(q.y), r4(q.z), r4(q.w)); }
     out.n++;
   }
-  // 손 고정(handFit, 기본 켬): 원본에서 손이 멈춘 구간(0.15초 넘게)에는 우리 손목을 그 구간이 시작할 때의 자리에 둔다(두 마디 IK, 방향만 가장 적게 돌림, 손 회전은 그대로). 앞뒤 0.1초는 섞는다.
-  //   회전만 옮기면 팔·몸통의 길이 비가 달라 몸이 움직일 때 멈춘 손이 미끄러졌다(13_34에서 16cm). 손목을 원본 세계 자리(다리 길이 비로 줄임)에 맞추는 첫 시도는 팔이 짧아 닿지 않고(닿음 비 1.35) 팔뚝 방향이 원본과 65° 달라져 버렸다
+  // 손발 고정(handFit, 기본 켬): 원본에서 손·발이 멈춘 구간(0.15초 넘게)에는 우리 손목·발목을 그 구간이 시작할 때의 자리에 둔다(두 마디 IK, 방향만 가장 적게 돌림, 손·발 회전은 그대로). 앞뒤 0.1초는 섞는다.
+  //   회전만 옮기면 팔·몸통의 길이 비가 달라 몸이 움직일 때 멈춘 손이 미끄러졌다(13_34에서 16cm). 손목을 원본 세계 자리(다리 길이 비로 줄임)에 맞추는 첫 시도는 팔이 짧아 닿지 않고(닿음 비 1.35) 팔뚝 방향이 원본과 65° 달라져 버렸다.
+  //   사람 관절 범위(anat.js)가 먼저다: 고정하면 범위를 넘는 장면(원본 방향보다 1° 넘게 더 넘음)은 고정의 무게를 범위 안이 되는 가장 큰 값까지 줄인다(그만큼 미끄러짐이 남는다) —
+  //   팔을 깊이 굽혀 매달린 장면(01_08 1.9~2.6초)에서 손목을 5~12cm 옮기자 팔꿈치가 굽는 면이 돌아 위팔 비틀림이 142°가 됐다
   if (opt.handFit !== false) {
     const blend = Math.round(0.1 * fps), pose = f => { B.hips.position.set(out.hip[3*f], out.hip[3*f+1], out.hip[3*f+2]); BONES.forEach((nm, j) => B[nm].quaternion.set(...out.q.slice(4*(f*21+j), 4*(f*21+j)+4))); rig.root.updateMatrixWorld(true); };
-    const wr = [[], []]; for (let f = 0; f < out.n; f++) { pose(f); ['L', 'R'].forEach((s, j) => wr[j].push(B[`hand.${s}`].getWorldPosition(V()))); }
-    const ivs = [0, 1].map(e => { const r = [], str = eff[e]; let i = 0; while (i < out.n) { if (str[i] === '1') { let j = i; while (j < out.n && str[j] === '1') j++; if (j - i >= Math.ceil(0.15 * fps)) r.push([i, j - 1]); i = j; } else i++; } return r; });
+    const LIMB = [['upperArm.L', 'foreArm.L', 'hand.L', DIM.upperArm, DIM.foreArm, 1, 'arm'], ['upperArm.R', 'foreArm.R', 'hand.R', DIM.upperArm, DIM.foreArm, -1, 'arm'], ['upLeg.L', 'leg.L', 'foot.L', DIM.thigh, DIM.shin, 1, 'leg'], ['upLeg.R', 'leg.R', 'foot.R', DIM.thigh, DIM.shin, -1, 'leg']];
+    const BALLL = V(0, -(DIM.ankleY - 0.02), DIM.ballZ), tip = (L, e) => e < 2 ? B[L[2]].getWorldPosition(V()) : B[L[2]].localToWorld(BALLL.clone()); // 발은 발볼을 고정한다(원본의 멈춤도 발가락으로 판정. 발목을 고정하면 뒤꿈치를 들 때 발볼이 움직였다 — 13_34 왼발 8.4cm)
+    const endP = [[], [], [], []]; for (let f = 0; f < out.n; f++) { pose(f); LIMB.forEach((L, e) => endP[e].push(tip(L, e))); }
+    const ivs = [0, 1, 2, 3].map(e => { const r = [], str = eff[e]; let i = 0; while (i < out.n) { if (str[i] === '1') { let j = i; while (j < out.n && str[j] === '1') j++; if (j - i >= Math.ceil(0.15 * fps)) r.push([i, j - 1]); i = j; } else i++; } return r; });
+    const vA = v => [v.x, v.y, v.z], qA = q => [q.x, q.y, q.z, q.w];
+    const excess = L => { const a = vA(B[L[0]].getWorldPosition(V())), m = vA(B[L[1]].getWorldPosition(V())), e = vA(B[L[2]].getWorldPosition(V()));
+      if (L[6] === 'arm') return armExcess(qA(B.chest.getWorldQuaternion(new THREE.Quaternion())), a, m, e, L[5]);
+      const qH = qA(B.hips.getWorldQuaternion(new THREE.Quaternion())); return Math.max(legExcess(qH, a, m, e, L[5]), kneeExcess(qH, a, m, e, L[5])); };
+    const save = L => [L[0], L[1], L[2]].map(n => B[n].quaternion.clone()), load = (L, s) => { [L[0], L[1], L[2]].forEach((n, i) => B[n].quaternion.copy(s[i])); rig.root.updateMatrixWorld(true); };
+    const aim = (L, t0, e) => { const a = B[L[0]].getWorldPosition(V()), pole = B[L[1]].getWorldPosition(V()).sub(a).normalize(), eq = B[L[2]].getWorldQuaternion(new THREE.Quaternion()), t = e >= 2 ? t0.clone().sub(BALLL.clone().applyQuaternion(eq)) : t0;
+      const ik = twoBone(a, t, L[3], L[4], pole), dirs = [ik.mid.clone().sub(a).normalize(), ik.end.clone().sub(ik.mid).normalize()];
+      [L[0], L[1]].forEach((bn, m) => { const base = B[bn].getWorldQuaternion(new THREE.Quaternion()), cur = B[m ? L[2] : L[1]].getWorldPosition(V()).sub(B[bn].getWorldPosition(V())).normalize(); setWorldQuat(B[bn], new THREE.Quaternion().setFromUnitVectors(cur, dirs[m]).multiply(base)); rig.root.updateMatrixWorld(true); });
+      setWorldQuat(B[L[2]], eq); rig.root.updateMatrixWorld(true); return ik.ratio || 0; };
     for (let f = 0; f < out.n; f++) { pose(f); let touched = false;
-      ['L', 'R'].forEach((s, j) => { let w = 0, tgt = null; for (const [a, b] of ivs[j]) { const ww = Math.min(1, (f - (a - blend)) / blend, ((b + blend) - f) / blend); if (ww > w) { w = ww; tgt = wr[j][a]; } } if (w <= 0) return;
-        const sP = B[`upperArm.${s}`].getWorldPosition(V()), t = wr[j][f].clone().lerp(tgt, w), pole = B[`foreArm.${s}`].getWorldPosition(V()).sub(sP).normalize(), hq = B[`hand.${s}`].getWorldQuaternion(new THREE.Quaternion());
-        const ik = twoBone(sP, t, DIM.upperArm, DIM.foreArm, pole), dirs = [ik.mid.clone().sub(sP).normalize(), ik.end.clone().sub(ik.mid).normalize()]; armReach = Math.max(armReach, ik.ratio || 0);
-        [`upperArm.${s}`, `foreArm.${s}`].forEach((bn, m) => { const base = B[bn].getWorldQuaternion(new THREE.Quaternion()), cur = B[CHILD[bn]].getWorldPosition(V()).sub(B[bn].getWorldPosition(V())).normalize(); setWorldQuat(B[bn], new THREE.Quaternion().setFromUnitVectors(cur, dirs[m]).multiply(base)); rig.root.updateMatrixWorld(true); });
-        setWorldQuat(B[`hand.${s}`], hq); rig.root.updateMatrixWorld(true); touched = true; });
+      LIMB.forEach((L, e) => { let w = 0, tgt = null; for (const [a, b] of ivs[e]) { const ww = Math.min(1, (f - (a - blend)) / blend, ((b + blend) - f) / blend); if (ww > w) { w = ww; tgt = endP[e][a]; } } if (w <= 0) return;
+        const s0 = save(L), ex0 = excess(L), lim = Math.max(0, ex0) + D; let ratio = aim(L, endP[e][f].clone().lerp(tgt, w), e);
+        if (excess(L) > lim) { let lo = 0, hi = w; for (let it = 0; it < 8; it++) { const mid = (lo + hi) / 2; load(L, s0); aim(L, endP[e][f].clone().lerp(tgt, mid), e); if (excess(L) > lim) hi = mid; else lo = mid; } load(L, s0); ratio = aim(L, endP[e][f].clone().lerp(tgt, lo), e); pinCut[e]++; }
+        if (L[6] === 'arm') armReach = Math.max(armReach, ratio); touched = true; });
       if (touched) BONES.forEach((nm, j) => { const q = B[nm].quaternion; out.q.splice(4*(f*21+j), 4, r4(q.x), r4(q.y), r4(q.z), r4(q.w)); });
     }
   }
-  out.dur = r4(out.n / fps); out.fit = Object.fromEntries(Object.entries(fit).map(([a, b]) => [a, r4(b)])); out.con = con.map(c => c.join('')); out.eff = eff.map(c => c.join('')); out.duty = con.map(c => r4(c.filter(x => x === '1').length / c.length)); out.flight = 0; out.yfix = 0; out.legRatio = 0; out.armReach = r4(armReach);
+  out.dur = r4(out.n / fps); out.fit = Object.fromEntries(Object.entries(fit).map(([a, b]) => [a, r4(b)])); out.con = con.map(c => c.join('')); out.eff = eff.map(c => c.join('')); out.duty = con.map(c => r4(c.filter(x => x === '1').length / c.length)); out.flight = 0; out.yfix = 0; out.legRatio = 0; out.armReach = r4(armReach); out.pinCut = pinCut;
   return out;
 }
 
 if (process.argv[1] && process.argv[1].endsWith('cmu_convert.mjs')) {
   const [outFile, ...rest] = process.argv.slice(2), clips = {};
-  for (let i = 0; i + 4 < rest.length + 1 && rest[i]; i += 5) { const [asf, amc, name, t0, t1] = rest.slice(i, i + 5); const c = convert(asf, amc, +t0, +t1, 30, { handFit: process.env.NOHANDFIT ? false : true }); clips[name] = c; console.log(name.padEnd(28), `${c.n}장 ${c.dur}초 · k ${c.k} · 팔 닿음 비(1 넘으면 못 닿음) ${c.armReach} · 맞춤(가장 큰 차이 m) ${JSON.stringify(c.fit)}`); }
+  for (let i = 0; i + 4 < rest.length + 1 && rest[i]; i += 5) { const [asf, amc, name, t0, t1] = rest.slice(i, i + 5); const c = convert(asf, amc, +t0, +t1, 30, { handFit: process.env.NOHANDFIT ? false : true }); clips[name] = c; console.log(name.padEnd(28), `${c.n}장 ${c.dur}초 · k ${c.k} · 팔 닿음 비(1 넘으면 못 닿음) ${c.armReach} · 범위 때문에 고정을 줄인 장면(왼손·오른손·왼발·오른발) ${c.pinCut} · 맞춤(가장 큰 차이 m) ${JSON.stringify(c.fit)}`); }
   fs.writeFileSync(outFile, JSON.stringify({ note: 'CMU 동작을 이 뼈대로 옮긴 값(저장소에 넣지 않음)', bones: BONES, clips }));
 }
