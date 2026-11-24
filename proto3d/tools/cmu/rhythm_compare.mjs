@@ -28,7 +28,7 @@ function metrics(F, dt) {
   const hs = segs.slice(0, 2).flat(), fs_ = segs.slice(2).flat(), sm = (a, k) => (a.length ? +(a.reduce((s, x) => s + x[k], 0) / a.length).toFixed(2) : null);
   return { 길이_초: +(n * dt).toFixed(2), 골반_옆기울기: rng(pr), 어깨_옆기울기: rng(sr), 골반_돌림: rng(py), 가슴_골반_비틀림: rng(tw), 윗몸_옆기울기: rng(latL), 윗몸_앞뒤기울기: rng(fwdL),
     손_옮김: { 횟수: hs.length, 평균_시간: sm(hs, 'dur'), 평균_거리: sm(hs, 'dist'), 평균_최고빠르기: sm(hs, 'peak') }, 발_옮김: { 횟수: fs_.length, 평균_시간: sm(fs_, 'dur'), 평균_거리: sm(fs_, 'dist'), 평균_최고빠르기: sm(fs_, 'peak') },
-    움직이는_시간_중_둘_이상: any ? +(two / any).toFixed(2) : null, 움직이는_시간_중_손발_함께: any ? +(hf / any).toFixed(2) : null, 엉덩이_오르는_빠르기_p95: +pct(vy, 0.95).toFixed(2), 엉덩이_높이_변화: +(Math.max(...hipY) - Math.min(...hipY)).toFixed(2), segs };
+    움직이는_시간_중_둘_이상: any ? +(two / any).toFixed(2) : null, 움직이는_시간_중_손발_함께: any ? +(hf / any).toFixed(2) : null, 엉덩이_오르는_빠르기_p95: +pct(vy, 0.95).toFixed(2), 엉덩이_오르는_빠르기_최고: (() => { const M = Math.max(1, Math.round(0.2 / dt)); let best = 0; for (let i = M; i < n; i++) best = Math.max(best, (hipY[i] - hipY[i - M]) / (M * dt)); return +best.toFixed(2); })(), 엉덩이_높이_변화: +(Math.max(...hipY) - Math.min(...hipY)).toFixed(2), segs };
 }
 const out = { 원본: {}, 게임: {} };
 // 원본: 120장/초 → 60장/초로 솎아 잰다
@@ -47,7 +47,7 @@ for (const [title, fn, assist, , st0] of [SCENES_FOOT[0], SCENES_FOOT[1], SCENES
     F.push({ hL: wp('upLeg.L'), hR: wp('upLeg.R'), sL: wp('upperArm.L'), sR: wp('upperArm.R'), hand: [wp('hand.L'), wp('hand.R')], ball: [B['foot.L'].localToWorld(BALL.clone()), B['foot.R'].localToWorld(BALL.clone())] }); }
   out.게임[title.split(':')[0].slice(0, 40)] = metrics(F, 2 / 120);
 }
-const show = (g, nm, m) => console.log(`\n■ ${g} ${nm} (${m.길이_초}초)\n  골반 옆기울기 ${m.골반_옆기울기.p5}~${m.골반_옆기울기.p95}° · 어깨 옆기울기 ${m.어깨_옆기울기.p5}~${m.어깨_옆기울기.p95}° · 골반 돌림 ${m.골반_돌림.p5}~${m.골반_돌림.p95}° · 가슴−골반 비틀림 ${m.가슴_골반_비틀림.p5}~${m.가슴_골반_비틀림.p95}°\n  윗몸 옆기울기 ${m.윗몸_옆기울기.p5}~${m.윗몸_옆기울기.p95}° · 윗몸 앞뒤(+ = 손 쪽으로) ${m.윗몸_앞뒤기울기.p5}~${m.윗몸_앞뒤기울기.p95}° (가운데 ${m.윗몸_앞뒤기울기.p50}°)\n  손 옮김 ${m.손_옮김.횟수}번 평균 ${m.손_옮김.평균_시간}초·${m.손_옮김.평균_거리}m·최고 초속 ${m.손_옮김.평균_최고빠르기}m · 발 옮김 ${m.발_옮김.횟수}번 평균 ${m.발_옮김.평균_시간}초·${m.발_옮김.평균_거리}m·최고 초속 ${m.발_옮김.평균_최고빠르기}m\n  움직이는 동안 둘 이상이 함께 ${m.움직이는_시간_중_둘_이상} · 손과 발이 함께 ${m.움직이는_시간_중_손발_함께} · 엉덩이 오르는 빠르기(95%) 초속 ${m.엉덩이_오르는_빠르기_p95}m · 엉덩이 높이 변화 ${m.엉덩이_높이_변화}m`);
+const show = (g, nm, m) => console.log(`\n■ ${g} ${nm} (${m.길이_초}초)\n  골반 옆기울기 ${m.골반_옆기울기.p5}~${m.골반_옆기울기.p95}° · 어깨 옆기울기 ${m.어깨_옆기울기.p5}~${m.어깨_옆기울기.p95}° · 골반 돌림 ${m.골반_돌림.p5}~${m.골반_돌림.p95}° · 가슴−골반 비틀림 ${m.가슴_골반_비틀림.p5}~${m.가슴_골반_비틀림.p95}°\n  윗몸 옆기울기 ${m.윗몸_옆기울기.p5}~${m.윗몸_옆기울기.p95}° · 윗몸 앞뒤(+ = 손 쪽으로) ${m.윗몸_앞뒤기울기.p5}~${m.윗몸_앞뒤기울기.p95}° (가운데 ${m.윗몸_앞뒤기울기.p50}°)\n  손 옮김 ${m.손_옮김.횟수}번 평균 ${m.손_옮김.평균_시간}초·${m.손_옮김.평균_거리}m·최고 초속 ${m.손_옮김.평균_최고빠르기}m · 발 옮김 ${m.발_옮김.횟수}번 평균 ${m.발_옮김.평균_시간}초·${m.발_옮김.평균_거리}m·최고 초속 ${m.발_옮김.평균_최고빠르기}m\n  움직이는 동안 둘 이상이 함께 ${m.움직이는_시간_중_둘_이상} · 손과 발이 함께 ${m.움직이는_시간_중_손발_함께} · 엉덩이 오르는 빠르기(95%) 초속 ${m.엉덩이_오르는_빠르기_p95}m · 0.2초 평균 최고 초속 ${m.엉덩이_오르는_빠르기_최고}m · 엉덩이 높이 변화 ${m.엉덩이_높이_변화}m`);
 for (const [nm, m] of Object.entries(out.원본)) show('원본(사람)', nm, m);
 for (const [nm, m] of Object.entries(out.게임)) show('게임(스크립트)', nm, m);
 if (jsonOut) fs.writeFileSync(jsonOut, JSON.stringify({ prov: __P, ...out }, null, 1));

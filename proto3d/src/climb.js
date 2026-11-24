@@ -1172,7 +1172,14 @@ export function stepClimb(S, inp, dt) {
     if (held.length && K.pendFoot) { const P = K.pendFoot; K.pendFoot = null; command(S, P.cmd); } }
   // 접촉 기하와 힘 나누기
   // 원하는 힘: 보통은 기준 자리로 가는 힘(PD). 매달려 흔들릴 때는 위아래만(좌우·앞뒤는 흔들림에 맡긴다). 뛰는 동안에는 미는 쪽으로 PUSH_A
-  const aDes = K.push ? K.push.dir.clone().multiplyScalar(CL.PUSH_A) : K.ref.clone().sub(b.pos).multiplyScalar(CL.KP).addScaledVector(b.vel, -CL.KD).clampLength(0, CL.ACC_MAX);
+  // p3d-0.11.9: 몸 위로·옆으로(W·A·D)를 누르는 동안은 누른 빠르기(SHIFT_V)를 따라가게 한다 — 늦춤(KD)을 실제 빠르기가 아니라 "누른 빠르기와의 차"에 건다.
+  //   전에는 늦춤이 빠르기 자체에 걸려 기준 자리와의 차(REF_LAG 8cm로 묶임)가 낼 수 있는 빠르기가 KP·8cm/KD = 초속 0.34m(옆으로도 가면 0.25m)에서 멈췄다 — 엉덩이가 오르는 빠르기가 사람(CMU 사다리 0.40~0.46m/s)의 절반이었다.
+  //   힘의 한계(팔·다리)와 막힘은 그대로다(힘 나누기가 정한다). OLDRISE = 옛 방식
+  //   위로 따라가는 몫은 디딘 다리가 다 펴질수록 줄인다(가장 여유 있는 디딘 발 기준, 다리 길이의 91~97%) — 줄이지 않으면 빨리 오른 몸이 다리를 다 펴고 지나가 디딘 발이 떨어졌다(① 낮은 발판: 발이 떨어져 바닥까지 떨어짐).
+  //   위에서 받치는 발이 없으면(매달림) 줄이지 않는다(팔로 당겨 오른다)
+  let upK = 1; { const sup = planted.filter(f => f.kind === 'top' && K.T && f.ank); if (sup.length && (inp.cy || 0) > 0) { const d = Math.min(...sup.map(f => K.T.hj[f.i].distanceTo(f.ank) / CL.LEG)); upK = clamp((0.97 - d) / 0.06, 0, 1); } }
+  const vCmd = !K.push && !globalThis.OLDRISE ? V(0, (inp.cy || 0) * CL.SHIFT_V * upK, 0).addScaledVector(left, hanging ? 0 : side * CL.SHIFT_V) : V();
+  const aDes = K.push ? K.push.dir.clone().multiplyScalar(CL.PUSH_A) : K.ref.clone().sub(b.pos).multiplyScalar(CL.KP).addScaledVector(b.vel.clone().sub(vCmd), -CL.KD).clampLength(0, CL.ACC_MAX);
   if (hanging && !K.push) { aDes.x = 0; aDes.z = 0; }
   const T = torso(b, K), Fd = aDes.add(V(0, PHY.G, 0)).multiplyScalar(m), C = [], who = [], com = V(b.pos.x, b.pos.y + CL.COM_H, b.pos.z);
   // p3d-0.11.2(사용자 영상: 두 손으로 매달린 채 두 발을 매끈한 벽면의 엉덩이 높이 양옆에 댄 개구리 자세가 모든 영상에 나옴): 벽면을 디딘 발(smear)은 다리 축 방향으로만 거의 민다(옆으로 미는 힘 LEG_PERP_SMEAR 몸무게의 0.08배).
