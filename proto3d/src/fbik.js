@@ -66,7 +66,7 @@ function resid(x, c, out) {
   // ② 몸통의 축(골반 → 가슴)은 받치는 쪽을 향한다: 손에 매달리면 손 쪽, 발로 서면 위(발판 위에서는 조금 뒤로)
   { const ax = nrm(sub(g.chest, g.hip)); r[n++] = W.axis * (ax[0] - c.axis[0]); r[n++] = W.axis * (ax[1] - c.axis[1]); r[n++] = W.axis * (ax[2] - c.axis[2]); }
   // ③ 덜 움직이는 쪽(기본 자세로 돌아가려는 약한 힘)과 한계
-  r[n++] = W.regP * x[PX]; r[n++] = W.regP * x[PY]; r[n++] = W.regP * x[PZ];
+  r[n++] = W.regP * x[PX]; r[n++] = W.regP * x[PY]; r[n++] = W.regP * (c.pzT ? 4 : 1) * (x[PZ] - (c.pzT || 0)); // pzT = 자세 보조가 청한 골반의 앞뒤 자리(p3d-0.12.0, 엉덩이 빼기. 무게중심 항이 윗몸을 반대로 보낸다)
   r[n++] = W.regH[0] * x[YH]; r[n++] = W.regH[1] * x[PH]; r[n++] = W.regH[2] * x[RH];
   r[n++] = W.regC[0] * (x[YC] - (c.twist || c.yawT)) * (c.twist ? 1.5 : 1); r[n++] = W.regC[1] * (x[PC] - c.pitch); r[n++] = W.regC[2] * x[RC];
   { const dy = x[YC] - x[YH], dp = x[PC] - x[PH], dr = x[RC] - x[RH]; // 척추가 꺾이는 정도(가슴 − 골반): 비틀기 35°, 숙임·젖힘 30°, 옆 25°를 넘으면 크게
