@@ -51,7 +51,7 @@ export const CL = {
   // p3d-0.12.0 자세 보조(사용자 2026-11-25: "불가능하다고 거부되는 동작이 엉덩이를 빼면 되는 경우면 보조해 달라. 진짜 안 되면 어쩔 수 없다"):
   //   OUT_MAX = 몸을 벽에서 더 뺄 수 있는 가장 큰 거리, OUT_V = 빼고 돌아오는 빠르기, OUT_STEP = 시험해 보는 간격, OUT_WAIT = 보조를 기다리는 가장 긴 시간(넘으면 원래 까닭으로 거부),
   //   OUT_GRIP = 뺀 뒤에도 잡은 손이 당기는 방향이 아래에서 이 각 안이어야 한다(물리의 놓침은 GRIP_ANG 50°), OUT_PELVIS = 그 가운데 골반이 무게중심보다 더 빠지는 몫(전신 자세 풀이의 골반 앞뒤 값). 실험값
-  OUT_MAX: 0.24, OUT_V: 0.6, OUT_STEP: 0.04, OUT_WAIT: 1.0, OUT_GRIP: 40 * deg, OUT_PELVIS: 0.6, OUT_HAND: 0.14, ROCK_SPAN: 0.10, FOLD_GAP: 0.16, SH_Y0: 1.44, LOOK_UP: 0.35, LOOK_EL: 32 * deg, CLEAR_LAT: 0.06,
+  OUT_MAX: 0.24, OUT_V: 0.6, OUT_STEP: 0.04, OUT_WAIT: 1.0, OUT_GRIP: 40 * deg, OUT_PELVIS: 0.6, OUT_HAND: 0.14, ROCK_SPAN: 0.10, FOLD_GAP: 0.16, SH_Y0: 1.44, LOOK_UP: 0.35, LOOK_EL: 32 * deg, CLEAR_LAT: 0.06, AIM_YAW: 0.12,
   // p3d-0.7.0 반동·벽에서 뛰기(임시값):
   //   SWING_A = 손으로만 매달렸을 때 A/D로 엉덩이를 흔드는 힘(가속, 벽과 나란한 쪽). 흔들리는 쪽과 같은 때에 넣으면 커지고 반대로 넣으면 줄어든다. HANG_DAMP = 매달려 흔들릴 때의 감쇠(초당)
   //   PUSH_A·PUSH_T = 벽에서 뛰기의 미는 가속과 시간(손발이 낼 수 있는 힘 안에서만 난다 — 디딘 발이 없으면 팔로 당기는 만큼만). 오르는 중에 떼면 밀기가 그때 끝난다
@@ -1056,6 +1056,7 @@ function fbUpdate(S, inp, dt, held, planted, left, fwd) {
   //   처지기 전에 늘 걸면 다 편 다리로 서서 손을 엇갈려 보내는 교차가 턱에 걸렸다(교차 네 가지 중 둘). 손을 뻗거나 발을 옮기거나 W·A·D를 누르거나 다리를 굽히면 풀린다. OLDGRIPLAT = 옛 방식
   { const tall = planted.some(f => f.kind === 'top' && (f.load || 0) > 0.4 && K.T && f.ank && K.T.hj[f.i].distanceTo(f.ank) > 0.93 * CL.LEG), busy = up || (inp.cx || 0) || K.hands.some(h => h.st === 'reach') || K.feet.some(f => f.st === 'move');
     K.sagT = tall && !busy && b.vel.y < -0.01 ? (K.sagT || 0) + dt : 0; if (globalThis.OLDGRIPLAT || busy || !tall) K.standFix = false; else if (K.sagT > 0.2) K.standFix = true; }
+  yawT += K.aim ? K.aim.y : 0;
   const c = { pos, yaw: b.yaw, boxes, ARM: CL.ARM, LEG: CL.LEG, LEGMIN: 0.30, kneeClr: DIM.kneeClr, axis: a3(ax), pitch: -0.12 * clamp(K.pz.tuck, 0, 1), twist, yawT,
     arms: K.hands.map(h => ({ st: h.st === 'hold' ? 1 : h.st === 'reach' ? 2 : 0, goal: a3(h.goal), w: 1 })),
     legs: K.feet.map(f => ({ st: f.st === 'plant' || (f.st === 'move' && f.outT > 0 && poseAssistOn(S)) ? 1 : f.st === 'move' ? 2 : 0, ank: a3(f.ank), w: 1, pole: S.poleS && S.poleS['kn' + f.s + 'p'] ? a3(S.poleS['kn' + f.s + 'p']) : null, aW: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE ? kneeWant(S, f.i ? -1 : 1, K.T.hj[f.i], f.ank, b.yaw + K.po.yaw) : null, kw: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE && !globalThis.OLDCROSSKNEE ? 1 + CL.CROSS_KW * (K.crS ? K.crS[f.i] : 0) : 1, load: f.st === 'plant' && f.box && f.box.kind !== 'floor' ? clamp(f.F ? f.F.y / BW : f.load || 0, 0, 1) : 0 })),
@@ -1123,7 +1124,10 @@ export function stepClimb(S, inp, dt) {
       if (sf) { hit = true; const k = Math.min(sf.d / 0.01, 2) * 5 * dt / 0.65 * 0.3; g.x += -sf.n.dot(fwd) * k * 6.5; g.z += sf.n.dot(left) * k * 6.5; } }
     // p3d-0.12.0 자세 보조: 뻗는 손이 머리에 닿으면 고개가 빨리 비킨다(0.1 → 0.5)
     if (DIM.boxCollide) for (const h of K.hands) if (h.st === 'reach' && h.headTouch) { hit = true; const k = Math.min(h.headTouch.d / 0.01, 2) * 5 * dt / 0.65 * (h.over ? 0.4 : poseAssistOn(S) ? 0.5 : 0.1); g.x += -h.headTouch.n.dot(fwd) * k * 6.5; g.z += h.headTouch.n.dot(left) * k * 6.5; }
-    if (!hit && loose) { const k = Math.exp(-1.2 * dt); g.x *= k; g.z *= k; } g.x = clamp(g.x, -0.35, 0.35); g.z = clamp(g.z, -0.35, 0.35); }
+    if (!hit && loose) { const k = Math.exp(-1.2 * dt); g.x *= k; g.z *= k; } g.x = clamp(g.x, -0.35, 0.35); g.z = clamp(g.z, -0.35, 0.35);
+    // p3d-0.12.4 자세 보조: 볼 곳을 보느라 돌린 고개가 잡은 팔에 닿으면 고개 돌리기를 줄인다(K.lookK 1 → 0, 닿는 동안 초당 6, 여유 1.5cm를 두고도 닿지 않으면 초당 1.5로 되돌린다). 볼 곳을 따라 도는 것은 모양인데, 머리의 충돌 공이 고개를 따라 움직여
+    //   겨눈 곳(실제 플레이에서는 마우스가 늘 넘긴다)을 보는 것만으로 "팔이 머리를 지나감 → 놓침 → 떨어짐"이 났다(왼손 턱 A·왼발 발판·W 0.5~0.9초에 턱 F를 겨눔. 겨눈 곳 없이 도는 시험에서는 나지 않아 몰랐다). OLDLOOKYIELD = 옛 방식
+    K.lookK = poseAssistOn(S) && !globalThis.OLDLOOKYIELD ? clamp((K.lookK ?? 1) + (hit ? -6 * dt : loose ? 1.5 * dt : 0), 0, 1) : 1; }
   // 고개 젖히기(p3d-0.10.1, 사람형 몸만): 머리 공 위 15cm 안에 턱·벽의 아랫면이 있고 머리가 그 아래로 반지름 + 2cm 안에 들면 그만큼 젖힌다(지렛대 18cm로 각을 정함, 끝 0.5rad).
   //   반지름 + 4cm 밖으로 벗어나면 천천히 되돌린다(젖힌 뒤의 머리 자리로 재므로 사이에 2cm의 이력을 둔다 — 걸음마다 젖혔다 폈다 하지 않게)
   if (DIM.boxCollide) { const hd = (K.T || torso(b, K)).head, r = DIM.headR; let need = 0, near = false;
@@ -1170,6 +1174,11 @@ export function stepClimb(S, inp, dt) {
     // 가만히 있는 동안(1.5초 넘게 입력·손발 이동 없음): 머리가 천천히 둘러보고 골반이 아주 조금 오간다(실제 영상에서는 머무는 동안에도 몸이 계속 움직인다 — 품질 검토 13.2). 모양만이다
     K.idleT = inp.cx || inp.cy || inp.jump || reach || mv || b.vel.length() > 0.12 ? 0 : (K.idleT || 0) + dt;
     { const wI = clamp((K.idleT - 1.5) / 1.0, 0, 1); if (wI > 0 && !tgt) { ly += 0.38 * wI * Math.sin(Z.breath * 1.18); lp += 0.10 * wI * Math.sin(Z.breath * 0.83 + 1); } Z.idleW = wI; }
+    // p3d-0.12.4 자세 보조(사용자: "머리가 마우스를 따라가면 그에 맞게 상체 조정도 있는가" → "그렇게 진행해"): 겨눈 곳(inp.look)이 있고 손을 뻗거나 발을 옮기는 중이 아니면 가슴도 그쪽으로 조금 따라간다(K.aim → fbUpdate의 가슴 목표).
+    //   좌우로만, AIM_YAW까지, 머리보다 느리게(0.22초). 앞뒤(젖힘·숙임)는 넣었다가 뺐다 — 가슴 숙임의 바람을 6배로, 몸통 축의 바람을 4배로 주어도 듣지 않았다(잡은 손의 버티는 각이 가슴의 앞뒤를 정한다). 가만히 있을 때만(손·발을 보내는 중, W·A·D·점프, 몸이 초속 0.15m 넘게 움직이는 중에는 0.08초로 0으로 돌아간다 — 겨눈 곳을 넘긴 채 W로 오르게 두었더니 같은 입력의 몸 높이가 0.26 → 0.13m로 달라졌다: 조준만으로 오르는 결과가 바뀌면 안 된다). 손을 뻗는 동안에는 0으로 돌아간다 — 뻗을 때는 뻗는 어깨가 벽 쪽으로 나가야 해서 보는 쪽으로 가슴을 돌리면 덜 닿는다. 방향은 몸의 기준 자리에서 잰다(가슴에서 재면 제 값을 되먹는다). OLDAIMBODY = 끔
+    { let ay = 0; const calm = !mv && !reach && !(inp.cx || 0) && !(inp.cy || 0) && !K.push && !inp.jump && b.vel.length() < 0.15; if (calm && inp.look && held.length && poseAssistOn(S) && !globalThis.OLDAIMBODY) { const d = V(...inp.look).sub(V(b.pos.x, b.pos.y + 1.68, b.pos.z)), f = d.dot(fwd), l = d.dot(left); if (f > -0.1) ay = clamp(Math.atan2(l, Math.max(0.15, f)), -1, 1) * (globalThis.AIM_YAW ?? CL.AIM_YAW); }
+      K.aim = K.aim || { y: 0 }; springS(K.aim, 'y', ay, calm ? 0.22 : 0.08, dt); }
+    { const lk = K.lookK ?? 1; ly *= lk; lp *= lk; }
     springS(Z, 'lookY', ly, 0.09, dt); springS(Z, 'lookP', lp, 0.09, dt); springS(Z, 'tuck', K.push ? 1 : 0, 0.07, dt); Z.breath += dt;
     K.sideIn = hanging ? side : 0; }
   // p3d-0.9.0 몸통 자세의 층(K.po)의 목표 — 붙은 손발과 가는 발에서 한꺼번에 정한다(GPT의 0.8.8 검토: 발 올리기 → 디딤 → 몸 올리기 → 손 뻗기를 한 흐름으로). 손으로 잡고 있을 때만 쓴다(발로만 서 있을 때의 균형은 그대로 둔다).
