@@ -1,6 +1,6 @@
 // 손을 따라가는 가까운 영상(p3d-0.11.8 확인 영상): 계산 걸음 2개(1/60초)마다 찍어 1배속 영상으로 묶는다. 수정 전(비교 스위치)과 지금을 나란히.
 // 스크립트 입력(사람 손 아님). 장면 입력이 진행 중의 상태를 보지 않는 장면만(foot·reach·h 등).
-// 몸 전체(엉덩이를 따라가는 3.2m 시점): CAM=body
+// 몸 전체(엉덩이를 따라가는 3.2m 시점): CAM=body. 스위치에 값을 줄 때는 이름=값(예: RISE_V=0.5)
 // 사용: node test/hand_video.mjs <출력 폴더> <장면 id> <L|R> <시작 초> <끝 초> <수정 전 스위치(쉼표, 없으면 -)>   캡처 동작: MODE=clip   시점: OFF=뒤(기본)|옆
 // 수정 전을 옛 빌드로: BEFORE_BUILD=<옛 proto3d 폴더> BEFORE_LABEL=<이름표>   자세: POSTURE=fb|rule(없으면 화면 기본)   잡기 보정: ASSIST=0|1(없으면 화면 기본)
 import fs from 'fs'; import path from 'path'; import { fileURLToPath } from 'url'; import { createRequire } from 'module'; import { execFileSync } from 'child_process';
@@ -18,7 +18,7 @@ const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftsha
 async function shoot(tag, g, label, file) {
   const dir = path.join(out, tag); fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir);
   const pg = await b.newPage({ viewport: { width: 480, height: 480 } }), errs = []; pg.on('pageerror', e => errs.push(e.message));
-  if (g.length) await pg.addInitScript(gg => { for (const k of gg) globalThis[k] = 1; }, g);
+  if (g.length) await pg.addInitScript(gg => { for (const k of gg) { const [n, v] = k.split('='); globalThis[n] = v === undefined ? 1 : +v; } }, g);
   await pg.goto('file://' + file + '?test&noshadow' + (process.env.POSTURE ? '&posture=' + process.env.POSTURE : '')); await pg.waitForTimeout(1800);
   const ver = await pg.evaluate(([m, label]) => { __p3.pause(true); if (m) __p3.setMode(m); for (const i of ['help', 'hud']) document.getElementById(i).style.display = 'none'; const d = document.createElement('div'); d.id = 'lbl'; d.style.cssText = 'position:fixed;left:6px;top:6px;right:6px;background:rgba(28,35,29,.85);color:#f3ecd6;padding:4px 7px;border-radius:5px;font:13px/1.4 sans-serif'; d.textContent = label; document.body.appendChild(d); return __p3.VERSION; }, [clip ? 'clip' : '', label]);
   await pg.evaluate(([st, assist, mode, ga]) => { __p3.opt({ handMode: mode || 1, footAssist: !!assist, wallRest: false, diag: false, ...(ga === '' ? {} : { grabAssist: ga === '1' }) }); __p3.reset({ pos: st, yaw: Math.PI }); }, [st0 || SC.START, assist, mode, process.env.ASSIST ?? '']);
