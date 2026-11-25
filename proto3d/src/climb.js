@@ -51,7 +51,7 @@ export const CL = {
   // p3d-0.12.0 자세 보조(사용자 2026-11-25: "불가능하다고 거부되는 동작이 엉덩이를 빼면 되는 경우면 보조해 달라. 진짜 안 되면 어쩔 수 없다"):
   //   OUT_MAX = 몸을 벽에서 더 뺄 수 있는 가장 큰 거리, OUT_V = 빼고 돌아오는 빠르기, OUT_STEP = 시험해 보는 간격, OUT_WAIT = 보조를 기다리는 가장 긴 시간(넘으면 원래 까닭으로 거부),
   //   OUT_GRIP = 뺀 뒤에도 잡은 손이 당기는 방향이 아래에서 이 각 안이어야 한다(물리의 놓침은 GRIP_ANG 50°), OUT_PELVIS = 그 가운데 골반이 무게중심보다 더 빠지는 몫(전신 자세 풀이의 골반 앞뒤 값). 실험값
-  OUT_MAX: 0.24, OUT_V: 0.6, OUT_STEP: 0.04, OUT_WAIT: 1.0, OUT_GRIP: 40 * deg, OUT_PELVIS: 0.6, OUT_HAND: 0.14, ROCK_SPAN: 0.10, FOLD_GAP: 0.16, SH_Y0: 1.44, LOOK_UP: 0.35, LOOK_EL: 32 * deg,
+  OUT_MAX: 0.24, OUT_V: 0.6, OUT_STEP: 0.04, OUT_WAIT: 1.0, OUT_GRIP: 40 * deg, OUT_PELVIS: 0.6, OUT_HAND: 0.14, ROCK_SPAN: 0.10, FOLD_GAP: 0.16, SH_Y0: 1.44, LOOK_UP: 0.35, LOOK_EL: 32 * deg, CLEAR_LAT: 0.06,
   // p3d-0.7.0 반동·벽에서 뛰기(임시값):
   //   SWING_A = 손으로만 매달렸을 때 A/D로 엉덩이를 흔드는 힘(가속, 벽과 나란한 쪽). 흔들리는 쪽과 같은 때에 넣으면 커지고 반대로 넣으면 줄어든다. HANG_DAMP = 매달려 흔들릴 때의 감쇠(초당)
   //   PUSH_A·PUSH_T = 벽에서 뛰기의 미는 가속과 시간(손발이 낼 수 있는 힘 안에서만 난다 — 디딘 발이 없으면 팔로 당기는 만큼만). 오르는 중에 떼면 밀기가 그때 끝난다
@@ -954,9 +954,10 @@ function collide(S, T) {
   if (poseAssistOn(S)) { const o = outDir(S), lf = V(-o.z, 0, o.x); let need = -9;
     // 곧게 선 몸(몸의 기준 자리에 세운 골반·가슴·머리)으로도 잰다: 지금 자세로만 재면 풀이가 이미 윗몸을 젖히고 비틀어 턱을 피한 뒤라(가슴 숙임 한계 34°·옆 기울기 29°) 청하는 거리가 작게 나오고, 몸은 턱 밑에 낀 채 뒤틀려 있었다
     const neut = DIM.boxCollide ? [[DIM.hipY + DIM.boxHip.c[1], DIM.boxHip.h[1], DIM.boxHip.h[2], DIM.boxHip.h[0]], [1.345, DIM.boxChest.h[1], DIM.boxChest.h[2], 0.19], [1.68, DIM.headR, DIM.headR, DIM.headR]].map(([cy, hy, r, hw]) => ({ x: b.pos.x, z: b.pos.z, y0: b.pos.y + cy - hy, y1: b.pos.y + cy + hy, r, hw })) : [];
+    // p3d-0.12.3: 옆으로 겹친 폭이 CLEAR_LAT(6cm)보다 좁으면 세지 않는다 — 머리가 턱 A의 끝에 4cm 걸친 것만으로 몸 전체를 24cm 뺐고, 낮은 손의 버티는 각을 지키느라 풀이가 가슴을 벽 쪽으로 24° 숙여 얼굴이 벽에 붙었다(사용자: "얼굴을 벽에 처박고 있다". 캡처 p2). 좁게 걸친 것은 풀이의 머리·몸통 여유 항이 옆으로 비킨다. OLDCLEARLAT = 옛 방식
     // 올라가는 중이 아니면 턱 밑에 6cm 넘게 겹친 부위만 센다: 서 있는 높이에서 머리 꼭대기가 턱 밑면에 4~5cm 걸친 것만으로 몸을 24cm 빼고 있었다(h1: 턱 F를 잡고 선 자세). 올라가는 중에는 6cm 앞서 본다
     for (const P of [...parts, ...neut]) for (const x of S.world.boxes) { if (x.kind === 'floor' || x.kind === 'wall' || P.y1 <= x.min.y + (b.vel.y > 0.03 ? -0.06 : 0.06) || P.y0 >= x.max.y + 0.02) continue; const hw = P.hw || P.r;
-      const cs = [[x.min.x, x.min.z], [x.min.x, x.max.z], [x.max.x, x.min.z], [x.max.x, x.max.z]], ol = cs.map(c2 => c2[0] * lf.x + c2[1] * lf.z), pl = P.x * lf.x + P.z * lf.z; if (pl + hw < Math.min(...ol) || pl - hw > Math.max(...ol)) continue;
+      const cs = [[x.min.x, x.min.z], [x.min.x, x.max.z], [x.max.x, x.min.z], [x.max.x, x.max.z]], ol = cs.map(c2 => c2[0] * lf.x + c2[1] * lf.z), pl = P.x * lf.x + P.z * lf.z; if (Math.min(pl + hw, Math.max(...ol)) - Math.max(pl - hw, Math.min(...ol)) < (globalThis.OLDCLEARLAT ? 0 : globalThis.CLEAR_LAT ?? CL.CLEAR_LAT)) continue;
       const ext = Math.max(...cs.map(c2 => c2[0] * o.x + c2[1] * o.z)); need = Math.max(need, ext + P.r + 0.015 - (P.x * o.x + P.z * o.z)); }
     // 디딘 발이 없으면(손에만 매달림) 청하지 않는다: 매달린 몸의 앞뒤 자리는 손 밑으로 정해져 몸 빼기가 듣지 않고, 청한 거리만 한계까지 쌓여 발을 올릴 때 쓸 여유를 다 썼다(높은 발판 1.2m가 다시 거부됐다)
     K.clearNeed = need > -9 && K.feet.some(f => f.st === 'plant') ? Math.max(0, (K.wout || 0) + need) : 0; } else K.clearNeed = 0;
