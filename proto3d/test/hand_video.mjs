@@ -1,5 +1,6 @@
 // 손을 따라가는 가까운 영상(p3d-0.11.8 확인 영상): 계산 걸음 2개(1/60초)마다 찍어 1배속 영상으로 묶는다. 수정 전(비교 스위치)과 지금을 나란히.
 // 스크립트 입력(사람 손 아님). 장면 입력이 진행 중의 상태를 보지 않는 장면만(foot·reach·h 등).
+// 몸 전체(엉덩이를 따라가는 3.2m 시점): CAM=body
 // 사용: node test/hand_video.mjs <출력 폴더> <장면 id> <L|R> <시작 초> <끝 초> <수정 전 스위치(쉼표, 없으면 -)>   캡처 동작: MODE=clip   시점: OFF=뒤(기본)|옆
 // 수정 전을 옛 빌드로: BEFORE_BUILD=<옛 proto3d 폴더> BEFORE_LABEL=<이름표>   자세: POSTURE=fb|rule(없으면 화면 기본)   잡기 보정: ASSIST=0|1(없으면 화면 기본)
 import fs from 'fs'; import path from 'path'; import { fileURLToPath } from 'url'; import { createRequire } from 'module'; import { execFileSync } from 'child_process';
@@ -26,7 +27,7 @@ async function shoot(tag, g, label, file) {
   let n = 0;
   for (let k = k0; k <= k1; k += 2) {
     if (k > k0) await pg.evaluate(([part]) => { for (const x of part) { for (const c of x.cmd || []) __p3.cmd(c); __p3.run(1, x); } }, [inputs.slice(k - 2, k)]);
-    await pg.evaluate(([off, side, k, label]) => { const e = __p3.rig.bones['hand.' + side].matrixWorld.elements; __p3.shot({ off: off + Math.PI - __p3.body().yaw, dist: 0.8, pitch: 0.05, at: [e[12], e[13] - 0.05, e[14]] }); document.getElementById('lbl').textContent = label + ' · 게임 시간 ' + ((k + 1) / 120).toFixed(3) + '초'; }, [off0, side, k, label]);
+    await pg.evaluate(([off, side, k, label, cam]) => { const e = __p3.rig.bones[cam === 'body' ? 'hips' : 'hand.' + side].matrixWorld.elements; __p3.shot({ off: off + Math.PI - __p3.body().yaw, dist: cam === 'body' ? 3.2 : 0.8, pitch: cam === 'body' ? 0.12 : 0.05, at: cam === 'body' ? [e[12], e[13] + 0.25, e[14]] : [e[12], e[13] - 0.05, e[14]] }); document.getElementById('lbl').textContent = label + ' · 게임 시간 ' + ((k + 1) / 120).toFixed(3) + '초'; }, [off0, side, k, label, process.env.CAM || 'hand']);
     await pg.screenshot({ path: path.join(dir, String(n++).padStart(4, '0') + '.jpg'), type: 'jpeg', quality: 90 });
   }
   await pg.close(); return { dir, n, ver, errs };
