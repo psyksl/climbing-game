@@ -197,5 +197,5 @@ const hangB = () => { start([0.7, 0, -2.65]); jumpGrab(0, 400); };
 
 for (const h of [0.8, 1.0, 1.2, 1.4, 1.6]) { start([0.7, 0, -2.65], Math.PI, [['시험 발판', [0.25, h - 0.05, -3.0], [0.75, h, -2.86]]]); if (process.env.PA) sim.opt.poseAssist = true; jumpGrab(0, 400); const k0 = rec.length; const K = sim.climb;
   const hipY = K.T.hj[0].y; run(1, {}, [foot(0, [0.5, h, -2.93])]); run(300);
-  console.log('발판 높이', h, '고관절 높이', hipY.toFixed(2), '몸 z', sim.body.pos.z.toFixed(2), '→', evs(k0).filter(x => x.type !== 'try').map(x => x.type + (x.why ? '(' + x.why + ')' : '')).join(' | '), '· 발', K.feet.map(f => f.st + (f.box ? ':' + f.box.name : '')).join('/'), '손', K.hands.map(h => h.st).join('/'), 'out', (K.out || 0).toFixed(2)); }
+  console.log('발판 높이', h, '고관절 높이', hipY.toFixed(2), '몸 z', sim.body.pos.z.toFixed(2), '→', evs(k0).filter(x => x.type !== 'try').map(x => x.type + (x.why ? '(' + x.why + ')' : '')).join(' | '), '· 발', K.feet.map(f => f.st + (f.box ? ':' + f.box.name : '')).join('/'), '손', K.hands.map(h => h.st).join('/'), 'out', (K.wout || 0).toFixed(2)); }
 process.exit(0);
