@@ -7,7 +7,7 @@ import fs from 'fs'; import path from 'path'; import { fileURLToPath } from 'url
 const HERE = path.dirname(fileURLToPath(import.meta.url)), require = createRequire(import.meta.url), { chromium } = require('playwright');
 const SC = await import('./scenes_foot.mjs');
 const [out, id, side, t0s, t1s, globS] = process.argv.slice(2), t0 = +t0s, t1 = +t1s, clip = process.env.MODE === 'clip', glob = globS && globS !== '-' ? globS.split(',') : [];
-const list = [...SC.SCENES_FOOT.map((s, i) => ['foot' + (i + 1), ...s]), ...SC.SCENES.map((s, i) => ['reach' + (i + 1), ...s]), ...SC.SCENES_H.map(s => [s[0].split(' ')[0], ...s]), ...(SC.SCENES_U || []).map(s => [s[0].split(' ')[0], ...s]), ...(SC.SCENES_GW || []).map(s => [s[0].split(' ')[0], ...s])];
+const list = [...SC.SCENES_FOOT.map((s, i) => ['foot' + (i + 1), ...s]), ...SC.SCENES.map((s, i) => ['reach' + (i + 1), ...s]), ...SC.SCENES_H.map(s => [s[0].split(' ')[0], ...s]), ...(SC.SCENES_U || []).map(s => [s[0].split(' ')[0], ...s]), ...(SC.SCENES_GW || []).map(s => [s[0].split(' ')[0], ...s]), ...(SC.SCENES_P || []).map(s => [s[0].split(' ')[0], ...s])];
 const sc = list.find(s => s[0] === id); if (!sc) { console.log('장면 없음', id); process.exit(1); }
 const [, title, fn, assist, mode, st0] = sc, inputs = [], put = (inp = {}, cmd = []) => inputs.push({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd }), rep = (n, inp, cmd) => { for (let i = 0; i < n; i++) put(inp, i ? [] : cmd); };
 if (/\bsim\.|swingThen/.test(fn.toString())) { console.log('상태를 보는 장면은 지원하지 않음'); process.exit(1); }
