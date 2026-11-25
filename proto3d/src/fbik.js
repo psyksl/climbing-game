@@ -83,7 +83,8 @@ function resid(x, c, out) {
       // p3d-0.11.9: 발판을 디디고 서 있으면(몸무게 40% 넘게) 잡은 팔이 옆으로 비스듬히 당기지 않게 어깨를 손 아래 쪽에 둔다(옆 몫 25% 안) — 두 어깨가 손보다 옆에 있으면 팔이 몸을 손 아래로 끌어 디딘 발에서 벗어나 천천히 가라앉았다(W를 오래 누르면 옛 판에도). OLDGRIPLAT = 옛 방식
       // 잡은 손이 몸의 등 뒤로 가지 않게(물리의 판정: 어깨 → 손이 몸이 보는 쪽에서 −0.2보다 뒤면 놓친다. 여유 0.1)
       r[n++] = W.behind * hp(-0.10 - (d3[0] * g.F[0] + d3[2] * g.F[2]) / d); }
-    else { const e = hp(d - 0.92 * c.ARM), sat = W.reachSat * Math.tanh(e / W.reachSat); r[n++] = W.reach * sat * A.w; r[n++] = 0; r[n++] = 0; r[n++] = 0.5 * W.armBack * hp(-0.10 - u[2]) * A.w; r[n++] = 0.5 * W.armCross * hp(-0.45 - out) * A.w; r[n++] = 0; r[n++] = 0.3 * W.behind * hp(-0.10 - (d3[0] * g.F[0] + d3[2] * g.F[2]) / d) * A.w; } }
+    // p3d-0.12.0 자세 보조(c.pa): 뻗는 손의 목표가 어깨에서 27cm보다 가까우면 어깨가 물러나 팔을 접을 자리를 만든다(전에는 먼 목표로 다가가기만 했다 — 한 손을 놓자 윗몸이 펴지며 어깨가 목표 16cm 앞까지 가 팔이 턱에 걸렸다)
+    else { const e = hp(d - 0.92 * c.ARM), sat = W.reachSat * Math.tanh(e / W.reachSat); r[n++] = W.reach * sat * A.w; r[n++] = c.pa ? W.armFold * hp(0.27 - d) * A.w : 0; r[n++] = 0; r[n++] = 0.5 * W.armBack * hp(-0.10 - u[2]) * A.w; r[n++] = 0.5 * W.armCross * hp(-0.45 - out) * A.w; r[n++] = 0; r[n++] = 0.3 * W.behind * hp(-0.10 - (d3[0] * g.F[0] + d3[2] * g.F[2]) / d) * A.w; } }
   // ⑤ 다리: 디딘 발은 늘어나지 않게·다 접히지 않게, 다리가 몸 건너편으로 깊이 넘어가지 않게, 무릎·넓적다리가 지형에 닿지 않게(골반이 물러나거나 돌아서 자리를 만든다). 가는 발은 그 자리를 미리 본다(약하게)
   const qHi = qinv(g.qH);
   const KN = [null, null];

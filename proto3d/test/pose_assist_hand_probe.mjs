@@ -197,6 +197,13 @@ const hangB = () => { start([0.7, 0, -2.65]); jumpGrab(0, 400); };
 
 const AL = [-0.72, 1.92, -2.84], LOW = [-0.45, 0.5, -2.93];
 const show = (tag, k0) => { const K = sim.climb; console.log(tag, '→', evs(k0).filter(x => x.type !== 'try').map(x => x.type + (x.limb ? ' ' + x.name : '') + (x.why ? '(' + x.why + ')' : '')).join(' | '), '· 손', K.on ? K.hands.map(h => h.st + (h.box ? ':' + h.box.name : '')).join('/') : '지상', '몸y', sim.body.pos.y.toFixed(2)); };
+if (process.env.PHASE) { start([-0.62, 0, -2.58]); sim.opt.poseAssist = !!process.env.PA; sim.opt.grabAssist = true; run(60); run(150, {}, [hand(0, AL)]); run(260, {}, [foot(0, LOW)]); const K = sim.climb;
+  const row = (tag, k) => console.log(tag, String(k).padStart(3), 'pos', sim.body.pos.toArray().map(v => v.toFixed(3)).join(','), 'out', (K.out || 0).toFixed(3), 'clear', (K.clearNeed || 0).toFixed(3), 'sh1', K.T.sh[1].toArray().map(v => v.toFixed(2)).join(','), 'head', K.T.head.toArray().map(v => v.toFixed(2)).join(','), 'hc', (K.hc || 0).toFixed(2), '손', K.hands.map(h => h.st[0] + (h.loadS || 0).toFixed(2)).join('/'), '발', K.feet.map(f => f.st[0] + (f.loadS || 0).toFixed(2)).join('/'));
+  for (let k = 0; k < 60; k++) { run(1, { cy: 1 }); if (k % 10 === 9) row('W ', k); }
+  for (let k = 0; k < 60; k++) { run(1, { cy: 1 }, k ? [] : [hand(1, [-0.3, 2.15, -2.86])]); if (k % 10 === 9) row('W+손', k); }
+  for (let k = 0; k < 200; k++) { run(1, { cy: 1 }); if (k % 25 === 24) row('W잡은뒤', k); }
+  for (let k = 0; k < 240; k++) { run(1); if (k % 30 === 29) row('쉼', k); }
+  process.exit(0); }
 { const W = 60, tgt = [-0.4, 2.15, -2.86];
   start([-0.62, 0, -2.58]); sim.opt.poseAssist = !!process.env.PA; sim.opt.grabAssist = true; run(60); run(150, {}, [hand(0, AL)]); run(260, {}, [foot(0, LOW)]); run(W, { cy: 1 }); run(60, { cy: 1 }, [hand(1, [-0.3, 2.15, -2.86])]); run(200, { cy: 1 });
   run(120); const K = sim.climb; run(1, {}, [hand(1, tgt)]);
