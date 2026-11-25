@@ -354,7 +354,8 @@ function outRoom(S) { const K = S.climb, T = K.T || joints(S), o = outDir(S); le
 function outNeed(S, test) { const room = outRoom(S); for (let d = CL.OUT_STEP; d <= room + 1e-6; d += CL.OUT_STEP) if (!test(d)) return d; return 0; }
 // 손: 턱·제 몸·손목 때문에 거부될 손은 한 번 몸을 OUT_HAND만큼 빼고 다시 해 본다. 참 = 아직 거부하지 않는다(기다린다)
 function handOutTry(S, H, why, dt) { const K = S.climb; if (!poseAssistOn(S) || !/손목|걸려|막혀|지나감|돌아가지/.test(why) || !K.on) return false;
-  if (!H.outTried) { const room = Math.min(outRoom(S), CL.OUT_HAND); if (room < 0.03) return false; H.outTried = true; H.outT0 = 0; H.needOut = (K.out || 0) + room; H.wait = 0; H.blockT = 0; H.stall = 0; H.best = undefined; H.t = Math.min(H.t, H.T - CL.OUT_WAIT - CL.TRY_T); H.outWhy = why; return true; }
+  // 몸을 뺄 수 없어도 머리·몸에 막힌 손은 고개가 비킬 시간을 한 번 더 준다
+  if (!H.outTried) { const room = Math.min(outRoom(S), CL.OUT_HAND); if (room < 0.03 && !(H.headTouch || (H.selfBlock || 0) > 0 || (H.selfTot || 0) > 0.05)) return false; H.outTried = true; H.outT0 = 0; H.needOut = (K.out || 0) + room; H.wait = 0; H.blockT = 0; H.stall = 0; H.best = undefined; H.t = Math.min(H.t, H.T - CL.OUT_WAIT - CL.TRY_T); H.outWhy = why; return true; }
   H.outT0 = (H.outT0 || 0) + dt; return H.outT0 < CL.OUT_WAIT && (K.out || 0) < (H.needOut || 0) - 0.01; }
 function armVia(S, H, sh, goal, SB, fwdW, leftW, yaw, sx, qC) {
   if (!SB || !SB.caps || globalThis.NOVIA) return null; const c = SB.caps[1], RW = ARM_R.fore[1], len = c.a.distanceTo(c.b); if (len < 0.05) return null;
@@ -1101,9 +1102,10 @@ export function stepClimb(S, inp, dt) {
       if (sf) { hit = true; const k = Math.min(sf.d / 0.01, 2) * 5 * dt / 0.65 * 0.1 * (DIM.boxCollide ? 3 : 1); g.x += -sf.n.dot(fwd) * k * 6.5; g.z += sf.n.dot(left) * k * 6.5; } // 사람형 몸은 세 배 빨리 비킨다(p3d-0.10.1: 땅 → 벽 섞기 동안 머리가 팔에 5걸음 겹쳤다)
       else if (loose) { const s2 = armSelf(selfShapes(S, h.i), hp.ik, Tn.sh[h.i], 0.015); if (s2 && s2.body && s2.body.head) loose = false; } }
     // p3d-0.11.2: 목표 6cm 안까지 온 뻗는 팔의 끝 자세가 머리를 지나가야 하면(한 손 매달림에서 다른 손을 머리 위의 턱에 모을 때) 잡은 팔과 같이 머리가 비킨다(고개를 젖히고 옆으로 뺀다). 0.11.1까지는 손목이 목표 1cm 앞에서 "몸에 막혀"로 거부됐다
-    if (DIM.boxCollide && !globalThis.NOSELF && !globalThis.NOREACHYIELD) for (const h of K.hands) if (h.st === 'reach' && h.edge && h.w.distanceTo(h.goal) < 0.06) { const hp = heldPole(S, h.s, Tn.sh[h.i], h.goal, b.yaw, h.i ? -1 : 1, Tn.qC), sf = hp.self && hp.self.body && hp.self.body.head ? hp.self.body : null;
+    if (DIM.boxCollide && !globalThis.NOSELF && !globalThis.NOREACHYIELD) for (const h of K.hands) if (h.st === 'reach' && h.edge && h.w.distanceTo(h.goal) < (poseAssistOn(S) ? 0.30 : 0.06)) { const hp = heldPole(S, h.s, Tn.sh[h.i], h.goal, b.yaw, h.i ? -1 : 1, Tn.qC), sf = hp.self && hp.self.body && hp.self.body.head ? hp.self.body : null;
       if (sf) { hit = true; const k = Math.min(sf.d / 0.01, 2) * 5 * dt / 0.65 * 0.3; g.x += -sf.n.dot(fwd) * k * 6.5; g.z += sf.n.dot(left) * k * 6.5; } }
-    if (DIM.boxCollide) for (const h of K.hands) if (h.st === 'reach' && h.headTouch) { hit = true; const k = Math.min(h.headTouch.d / 0.01, 2) * 5 * dt / 0.65 * (h.over ? 0.4 : 0.1); g.x += -h.headTouch.n.dot(fwd) * k * 6.5; g.z += h.headTouch.n.dot(left) * k * 6.5; }
+    // p3d-0.12.0 자세 보조: 뻗는 손이 머리에 닿으면 고개가 빨리 비킨다(0.1 → 0.5)
+    if (DIM.boxCollide) for (const h of K.hands) if (h.st === 'reach' && h.headTouch) { hit = true; const k = Math.min(h.headTouch.d / 0.01, 2) * 5 * dt / 0.65 * (h.over ? 0.4 : poseAssistOn(S) ? 0.5 : 0.1); g.x += -h.headTouch.n.dot(fwd) * k * 6.5; g.z += h.headTouch.n.dot(left) * k * 6.5; }
     if (!hit && loose) { const k = Math.exp(-1.2 * dt); g.x *= k; g.z *= k; } g.x = clamp(g.x, -0.35, 0.35); g.z = clamp(g.z, -0.35, 0.35); }
   // 고개 젖히기(p3d-0.10.1, 사람형 몸만): 머리 공 위 15cm 안에 턱·벽의 아랫면이 있고 머리가 그 아래로 반지름 + 2cm 안에 들면 그만큼 젖힌다(지렛대 18cm로 각을 정함, 끝 0.5rad).
   //   반지름 + 4cm 밖으로 벗어나면 천천히 되돌린다(젖힌 뒤의 머리 자리로 재므로 사이에 2cm의 이력을 둔다 — 걸음마다 젖혔다 폈다 하지 않게)
