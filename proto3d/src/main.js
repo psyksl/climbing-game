@@ -7,7 +7,7 @@ import { makeWorld, makeFixtureWorld, buildWorldMeshes, rayHit } from './world.j
 import { PHY } from './controller.js';
 import { makeSim } from './sim.js';
 import { BIND, conflicts, keyName, makeInput, setKeys, resetKeys, loadKeys, TAP } from './input.js';
-import { probeHand, probeFoot, limbState, CL } from './climb.js';
+import { probeHand, probeFoot, limbState, CL, aimGrip } from './climb.js';
 import CLIPS from 'clip-data';
 import REFIDX from 'ref-data'; // 참고 자세 색인(캡처 빌드에만. 자작 빌드는 null)
 import GALLERY from 'gallery-data'; // 동작 보기용 자료(받은 동작 전부를 이 뼈대로 옮긴 값. 있을 때만)
@@ -42,7 +42,7 @@ loadKeys();
 const input = makeInput(renderer.domElement);
 const pending = []; // 다음 계산 걸음에 한 번만 들어갈 명령(손발 보내기·놓기)
 // 고를 수 있는 조작 설정(저장됨). handMode 1 = 눌러 보내기, 2 = 누르는 동안 뻗기(떼면 잡기). footAssist = 발 보조(간편 조작). diag = 진단 정보. helpAll = 조작표 모두 보기
-const OPT = { handMode: 1, grabAssist: true, poseAssist: true, footAssist: true, wallRest: false, diag: false, helpAll: false, oldPose: false };
+const OPT = { handMode: 1, grabAssist: true, poseAssist: true, easy: true, footAssist: true, wallRest: false, diag: false, helpAll: false, oldPose: false };
 try { Object.assign(OPT, JSON.parse(localStorage.getItem('p3dOpt_v1') || '{}')); } catch (e) { OPT.handMode = 1; }
 // 시범용 수동 프로필(p3d-0.8.1, GPT 권고): 주소에 ?manual 을 붙이면 발 보조·벽 딛기를 끄고 시작한다(발은 사용자가 고른다). 저장된 사용자 옵션은 덮어쓰지 않는다(이 프로필에서는 저장하지 않는다)
 const MANUAL = /[?&]manual\b/.test(location.search); if (MANUAL) { OPT.footAssist = false; OPT.wallRest = false; }
@@ -51,7 +51,7 @@ const MANUAL = /[?&]manual\b/.test(location.search); if (MANUAL) { OPT.footAssis
 const OLDRISE_URL = /[?&]oldrise\b/.test(location.search); if (OLDRISE_URL) globalThis.OLDRISE = 1;
 const FOOTX = /[?&]footx\b/.test(location.search); if (FOOTX) setKeys('footMod', ['KeyX'], false);
 const saveOpt = () => { if (MANUAL) return; try { localStorage.setItem('p3dOpt_v1', JSON.stringify(OPT)); } catch (e) { return; } };
-sim.opt.footAssist = OPT.footAssist; sim.opt.grabAssist = OPT.grabAssist; sim.opt.poseAssist = OPT.poseAssist; sim.opt.wallRest = OPT.wallRest; sim.climb.oldPose = OPT.oldPose;
+sim.opt.footAssist = OPT.footAssist; sim.opt.grabAssist = OPT.grabAssist; sim.opt.poseAssist = OPT.poseAssist; sim.opt.easy = OPT.easy; sim.opt.wallRest = OPT.wallRest; sim.climb.oldPose = OPT.oldPose;
 let viewMode = false, cxSign = 1; // viewMode = 시점 보기 모드(조작 멈춤). cxSign = 몸 좌우 입력을 화면에서 보이는 쪽으로 맞추는 부호
 const aim = { world: null, held: [null, null], foot: [false, false], tap: [false, false] }; // 겨눈 자리(세계 좌표). 마우스를 움직이지 않는 동안에는 화면이 저절로 움직여도 이 자리를 그대로 겨눈다
 const cam = { yaw: Math.PI + 0.35, pitch: 0.28, dist: 4.2, target: new THREE.Vector3(0, 1.1, 2), eff: 4.2, follow: null, followOff: 0, blocked: false }; // eff = 벽에 막혀 줄인 실제 거리, follow = 영상용 따라가기(몸 방향 기준 각도)
@@ -83,8 +83,8 @@ function readInput() {
   let mx = fx * f + rx * r, mz = fz * f + rz * r; const l = Math.hypot(mx, mz); if (l > 1) { mx /= l; mz /= l; }
   // 벽 문맥: 몸 옮기기. 좌우는 화면에서 보이는 쪽(cxSign), 위아래는 그대로. 문맥이 다르면 isDown이 거짓이라 0이다
   // reach = 누르는 동안 뻗는 손이 지금 겨누는 점(손 조작 2번)
-  const a = aim.world ? aim.world.toArray() : null;
-  return { mx, mz, run: input.isDown('run'), crouch: input.isDown('crouch'), jump: input.isDown('jump'), cx: (input.isDown('bodyR') ? 1 : 0) - (input.isDown('bodyL') ? 1 : 0), cy: (input.isDown('bodyU') ? 1 : 0) - (input.isDown('bodyD') ? 1 : 0), cxSign, reach: [aim.held[0] && a, aim.held[1] && a], look: a };
+  const a = aim.world ? aim.world.toArray() : null, ah = handPoint() ? handPoint().toArray() : null;
+  return { mx, mz, run: input.isDown('run'), crouch: input.isDown('crouch'), jump: input.isDown('jump'), cx: (input.isDown('bodyR') ? 1 : 0) - (input.isDown('bodyL') ? 1 : 0), cy: (input.isDown('bodyU') ? 1 : 0) - (input.isDown('bodyD') ? 1 : 0), cxSign, reach: [aim.held[0] && ah, aim.held[1] && ah], look: a };
 }
 // 겨눈 곳: 마우스 자리에서 화면 안쪽으로 쏜 선이 지형에 처음 닿는 점(없으면 null)
 const ray = new THREE.Raycaster();
@@ -96,7 +96,9 @@ function rayPoint() {
 }
 // 겨눈 자리 고정(사용자 의견 4: 뛰면 화면만 움직여 조준이 벗어났다): 마우스를 움직였을 때만 겨눈 자리를 새로 정한다.
 // 마우스가 가만히 있으면 화면이 저절로 움직여도 겨눈 자리(벽의 그 점)는 그대로다. 표시는 그 점에 그린다
-function updateAim() { if (input.st.moved || !aim.world || aim.resync) { aim.world = rayPoint(); aim.resync = false; } }
+// 쉬운 조작 ① 조준 맞춤: 손을 보낼 자리는 누른 자리의 시선에서 가장 가까운 잡을 수 있는 턱 모서리(aim.grip). 겨눈 점(aim.world)과 함께, 마우스를 움직였을 때만 새로 정한다. 발과 볼 곳에는 겨눈 점을 그대로 쓴다
+function updateAim() { if (input.st.moved || !aim.world || aim.resync) { aim.world = rayPoint(); const g = OPT.easy && input.st.has && !globalThis.NOAIMSNAP ? aimGrip(world, ray.ray.origin, ray.ray.direction, aim.world) : null; aim.grip = g ? g.p.clone() : null; aim.resync = false; } }
+function handPoint() { return aim.grip || aim.world; }
 function aimPoint() { return aim.world; }
 function screenOf(p) { const v = (p.isVector3 ? p.clone() : new THREE.Vector3(...p)).project(camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, front: v.z < 1 }; }
 // 손발 명령: 겨눈 점과 함께 다음 계산 걸음으로 보낸다. 시점 보기 모드에서는 문맥이 view라 wasPressed가 거짓이어서 새지 않는다
@@ -106,7 +108,7 @@ function wantsFoot() { return input.isDown(input.st.mode === 'ground' ? 'footGro
 function readCommands() {
   // 손인가 발인가(B1, p3d-0.8.1): wantsFoot() 한곳에서 정하고 명령·미리보기가 함께 쓴다. 달리기 키는 관여하지 않는다(달리며 뛰어 클릭하면 언제나 손).
   // 대상은 누르는 순간에 정해 두고(aim.foot), 짧게 눌렀다 떼는 입력(지상의 오른쪽 단추)이 떼는 순간에 다른 대상으로 바뀌지 않게 한다
-  const ground = input.st.mode === 'ground', p = () => (aim.world ? aim.world.toArray() : [0, -99, 0]);
+  const ground = input.st.mode === 'ground', p = foot => { const q = foot ? aim.world : handPoint(); return q ? q.toArray() : [0, -99, 0]; };
   for (const [id, i] of [['limbL', 0], ['limbR', 1]]) {
     // 누르는 순간에 정해 두는 것 둘(p3d-0.8.2): 대상(손·발 = 그 순간 발 지정 키가 눌려 있었는가, 이벤트 시각 기준)과 보내는 방식(짧게 눌렀다 떼기 = 땅에 서서 누른 오른쪽 단추).
     // 방식을 떼는 순간의 상태로 다시 정하면 ① 땅에서 누르고 뜬 뒤에 떼면 명령이 사라지고 ② 공중에서 눌러 이미 보낸 뒤 내려서서 떼면 한 번 더 나간다(둘 다 실제 이벤트로 재현됨)
@@ -114,7 +116,7 @@ function readCommands() {
       const g = { i, tick: sim.tick, ctx: input.st.mode, onGround: !!body.onGround, limb: aim.foot[i] ? 'foot' : 'hand', tap: aim.tap[i], issued: 0, cancelled: '' }; gest.open[i] = g; gest.log.push(g); if (gest.log.length > 40) gest.log.shift(); }
     // 지상에서 떠 있는 동안(뛰거나 벽에서 놓고 떨어지는 중)은 우클릭도 누르는 순간 오른손(그동안 시점 돌리기는 쉰다)
     const foot = !!aim.foot[i], tapOnly = !!aim.tap[i], hold = OPT.handMode === 2 && !foot && !tapOnly;
-    if (tapOnly ? input.tapped(id) : input.wasPressed(id)) { pending.push({ type: foot ? 'foot' : 'hand', i, p: p(), hold }); aim.held[i] = hold; if (gest.open[i]) gest.open[i].issued++; }
+    if (tapOnly ? input.tapped(id) : input.wasPressed(id)) { pending.push({ type: foot ? 'foot' : 'hand', i, p: p(foot), hold }); aim.held[i] = hold; if (gest.open[i]) gest.open[i].issued++; }
     if (aim.held[i] && (input.wasReleased(id) || !input.isDown(id))) { aim.held[i] = null; pending.push({ type: 'handUp', i }); }
   }
   for (const [id, i] of [['relL', 0], ['relR', 1]]) if (input.wasPressed(id)) pending.push({ type: 'release', limb: input.pressedWith(id, ground ? 'footGround' : 'footMod') ? 'foot' : 'hand', i });
@@ -132,7 +134,7 @@ addEventListener('blur', () => { lostFocus = 'blur'; }); document.addEventListen
 // 마우스가 화면 밖으로 나간 채 단추를 떼면 그 뗌을 듣지 못할 수 있다 → 나가는 순간에 거둔다(밖에서 떼어도 잡으러 가지 않는다)
 document.documentElement.addEventListener('mouseleave', () => { lostFocus = 'mouseleave'; });
 function physStep(inp) { const c = pending.splice(0); sim.step(c.length ? { ...inp, cmd: (inp.cmd || []).concat(c) } : inp); }
-function reset(o) { sim.reset(o); sim.opt.footAssist = OPT.footAssist; sim.opt.grabAssist = OPT.grabAssist; sim.opt.poseAssist = OPT.poseAssist; sim.opt.wallRest = OPT.wallRest; sim.climb.oldPose = OPT.oldPose; body = sim.body; pending.length = 0; aim.held[0] = aim.held[1] = null; }
+function reset(o) { sim.reset(o); sim.opt.footAssist = OPT.footAssist; sim.opt.grabAssist = OPT.grabAssist; sim.opt.poseAssist = OPT.poseAssist; sim.opt.easy = OPT.easy; sim.opt.wallRest = OPT.wallRest; sim.climb.oldPose = OPT.oldPose; body = sim.body; pending.length = 0; aim.held[0] = aim.held[1] = null; }
 
 const CAM = { AIR_BOX: 0.9, WALL_DEAD: 0.12, WALL_RATE: 2.5, LAND_T: 0.8 }, lerpN = (a, b, t) => a + (b - a) * t;
 function updateCamera(dt) {
@@ -199,8 +201,8 @@ function drawTags() {
   // 미리보기: 겨눈 자리를 지금 자세에서 잡을(디딜) 수 있는지. 실제 판정과 같은 함수. 몸이 움직이는 중이면 확정처럼 보이지 않게 "?"를 붙인다
   const tip = (html, x, y) => { const d = tags[4]; d.style.display = 'block'; d.className = 'tag pv'; d.innerHTML = html; const w = d.offsetWidth, h = d.offsetHeight, maxX = innerWidth - (help.offsetWidth + 22) - w; d.style.left = `${Math.max(6, Math.min(x + 16, maxX > 6 ? maxX : innerWidth - w - 6))}px`; d.style.top = `${Math.max(6, Math.min(y - h - 26 > 6 ? y - h - 26 : y + 22, innerHeight - h - 6))}px`; };
   if (viewMode) { if (input.st.has) tip('시점 보기 모드 · 조작 멈춤', input.st.mx, input.st.my); return; }
-  const a = aimPoint(); if (!a) return;
-  const sa = screenOf(a), foot = wantsFoot(), P = [0, 1].map(i => (foot ? probeFoot : probeHand)(sim, i, a)), g = P.find(x => x.grip);
+  const foot = wantsFoot(), a = foot ? aimPoint() : handPoint(); if (!a) return;
+  const sa = screenOf(a), P = [0, 1].map(i => (foot ? probeFoot : probeHand)(sim, i, a)), g = P.find(x => x.grip);
   if (!g && !foot) return; // 턱이 아닌 곳을 겨눌 때는 손 미리보기를 띄우지 않는다(눌렀을 때의 거부 까닭은 기록에 남는다)
   if (g) { mark.position.set(...g.grip); mark.visible = true; mark.material.color.set(P.some(x => x.ok) ? '#7be08a' : '#ffb35c'); }
   // 단추 이름표(임시 모양, GPT 답): 발 선택을 누르고 있으면 같은 단추의 이름이 왼손·오른손 → 왼발·오른발로 바뀐다. 키 설정에서 읽는다(이름을 코드에 고정해 쓰지 않는다)
@@ -229,7 +231,7 @@ function drawHud(fps) {
   hud.innerHTML = `<div class=ver>3D 모션 시제품 ${VERSION}${OLDRISE_URL ? ' · W 옛 빠르기(?oldrise)' : ''} · ${BODY === 'old' ? '옛 몸(자작)' : '사람형 몸(Quaternius 마네킹, CC0) · 자세 ' + ({ fb: '전신 자세 풀이(O = 옛 규칙과 바꾸기)', rule: '옛 규칙 0.10.4(O = 전신 자세 풀이)', base: '0.10.0', solve: '함께 고르기(실험)', ref: '참고 자세(실험)' })[POSTURE] + (globalThis.GRIP_FRAME ? ' · 손 접촉 틀(실험)' : '')}</div>`
     + (K.on ? `<div><b>동작</b> 벽 등반(IK) <span class=dim>· 지상 동작: ${sim.clipSet && sim.useClip ? '캡처' : '자작'}</span></div>` : `<div><b>모션</b> ${!sim.clipSet ? '자작(코드로 만든 동작)' : sim.useClip ? `캡처 동작${cap ? '' : ' → 지금은 자작(웅크림·점프·착지)'}` : '자작(코드로 만든 동작)'}</div>`)
     + `<div><b>문맥</b> <span class=ctx>${viewMode ? '시점 보기 · 조작 멈춤' : K.on ? '벽 등반' : '지상 조작'}</span> &nbsp; <b>상태</b> ${stateName()}${OPT.diag ? ` &nbsp; <b>속도</b> ${(K.on ? body.vel.length() : v).toFixed(2)} m/s` : ''}</div>`
-    + `<div class=dim>손 조작 ${OPT.handMode === 2 ? '2 · 누르는 동안 뻗고 떼면 잡기' : '1 · 눌러 보내기'} &nbsp; 발 보조 ${OPT.footAssist ? '켬' : '끔'} &nbsp; 잡기 보정 ${OPT.grabAssist ? '켬' : '끔'} &nbsp; 자세 보조 ${OPT.poseAssist ? '켬' : '끔'}${OPT.wallRest ? ' &nbsp; <b>실험: 벽 딛기 켬</b>' : ''}${OPT.oldPose ? ' &nbsp; <b>비교: 옛 몸 자세(0.8.8)</b>' : ''}${FOOTX ? ' &nbsp; <b>발 선택 = X(시범 프로필)</b>' : ''}${MANUAL ? ' &nbsp; <b>수동 발 프로필</b>(저장하지 않음)' : ''}</div>`
+    + `<div class=dim>손 조작 ${OPT.handMode === 2 ? '2 · 누르는 동안 뻗고 떼면 잡기' : '1 · 눌러 보내기'} &nbsp; 발 보조 ${OPT.footAssist ? '켬' : '끔'} &nbsp; 잡기 보정 ${OPT.grabAssist ? '켬' : '끔'} &nbsp; 자세 보조 ${OPT.poseAssist ? '켬' : '끔'} &nbsp; 쉬운 조작 ${OPT.easy ? '켬' : '끔'}${OPT.wallRest ? ' &nbsp; <b>실험: 벽 딛기 켬</b>' : ''}${OPT.oldPose ? ' &nbsp; <b>비교: 옛 몸 자세(0.8.8)</b>' : ''}${FOOTX ? ' &nbsp; <b>발 선택 = X(시범 프로필)</b>' : ''}${MANUAL ? ' &nbsp; <b>수동 발 프로필</b>(저장하지 않음)' : ''}</div>`
     + (K.on ? `<div><b>손</b> ${K.hands.map((h, i) => `${i ? '오른손' : '왼손'} ${h.st === 'hold' ? `잡음(${h.edge.box.name}${OPT.diag ? `, 몸무게의 ${(h.loadS || 0).toFixed(1)}배` : ''})` : h.st === 'reach' ? '보내는 중' : '놓음'}`).join(' · ')}</div><div><b>발</b> ${K.feet.map((f, i) => `${i ? '오른발' : '왼발'} ${f.st === 'plant' ? ((f.loadS || 0) > 0.05 ? `디딤(${f.box.name}${OPT.diag ? `, ${(f.loadS || 0).toFixed(1)}배` : ''})` : `닿아만 있음(${f.box.name})`) : f.st === 'move' ? '보내는 중' : '떠 있음'}`).join(' · ')}</div>`
       : `<div><b>발</b> ${sim.motion.legs.map((L, i) => `${L.s === 'L' ? '왼발' : '오른발'} ${footName(L, i)}`).join(' · ')}</div>`)
     + `<div class=log>${K.log.filter(e => e.type !== 'try' && !(e.box === '바닥' && e.auto) && !(e.type === 'lift' && /범위/.test(e.why))).slice(-5).map(e => `<span class=t>${e.t.toFixed(2)}초</span> ${LOG_KO[e.type] || e.type}${e.name ? ' ' + e.name : ''}${e.box ? ' · ' + e.box : ''}${e.why ? ' · ' + e.why : ''}`).join('<br>')}</div>`
@@ -262,6 +264,7 @@ function frame(now) {
   if (input.wasPressed('handMode')) { cancelHolds('handMode'); OPT.handMode = OPT.handMode === 2 ? 1 : 2; saveOpt(); }
   // 보조를 켜고 끄는 것은 "보조 다시 시작"의 뜻이다: 직접 뗀 발의 표시를 지운다(그 밖에는 그 발을 다시 보낼 때만 지워진다)
   if (input.wasPressed('poseAssist')) { OPT.poseAssist = !OPT.poseAssist; sim.opt.poseAssist = OPT.poseAssist; saveOpt(); }
+  if (input.wasPressed('easy')) { OPT.easy = !OPT.easy; sim.opt.easy = OPT.easy; aim.resync = true; saveOpt(); }
   if (input.wasPressed('grabAssist')) { OPT.grabAssist = !OPT.grabAssist; sim.opt.grabAssist = OPT.grabAssist; sim.opt.poseAssist = OPT.poseAssist; saveOpt(); }
   if (input.wasPressed('footAssist')) { OPT.footAssist = !OPT.footAssist; sim.opt.footAssist = OPT.footAssist; pending.push({ type: 'assistResume' }); saveOpt(); }
   if (input.wasPressed('wallRest')) { OPT.wallRest = !OPT.wallRest; sim.opt.wallRest = OPT.wallRest; pending.push({ type: 'assistResume' }); saveOpt(); }
@@ -329,8 +332,8 @@ window.__p3 = {
   cmd: c => { pending.push(c); },
   // 영상·시연용: 계산 걸음마다의 입력 목록을 지금부터 차례로 넣는다(실제 화면 루프로 돈다). 끝나면 저절로 풀린다. 스크립트 입력이며 사람 손이 아니다
   script(inputs) { const k0 = sim.tick; tickInput = k => { const i = k - k0; if (i >= inputs.length - 1) tickInput = null; return inputs[Math.min(i, inputs.length - 1)]; }; }, scripting: () => !!tickInput, pending: () => pending.length, probe: (limb, i, p) => (limb === 'foot' ? probeFoot : probeHand)(sim, i, new THREE.Vector3(...p)),
-  screenOf: p => screenOf(p), aim: () => { const a = aimPoint(); return a ? a.toArray() : null; }, wallStart,
-  opt: o => { if (o) { if (('footAssist' in o && o.footAssist !== OPT.footAssist) || ('wallRest' in o && o.wallRest !== OPT.wallRest)) pending.push({ type: 'assistResume' }); if ('handMode' in o && o.handMode !== OPT.handMode) cancelHolds('handMode'); Object.assign(OPT, o); sim.opt.footAssist = OPT.footAssist; sim.opt.grabAssist = OPT.grabAssist; sim.opt.poseAssist = OPT.poseAssist; sim.opt.wallRest = OPT.wallRest; sim.climb.oldPose = OPT.oldPose; helpFor = ''; } return { ...OPT, viewMode, cxSign }; }, setView: v => { viewMode = !!v; }, aimSet: p => { aim.world = p ? new THREE.Vector3(...p) : null; },
+  screenOf: p => screenOf(p), aim: () => { const a = aimPoint(); return a ? a.toArray() : null; }, aimGrip: () => (aim.grip ? aim.grip.toArray() : null), wallStart,
+  opt: o => { if (o) { if (('footAssist' in o && o.footAssist !== OPT.footAssist) || ('wallRest' in o && o.wallRest !== OPT.wallRest)) pending.push({ type: 'assistResume' }); if ('handMode' in o && o.handMode !== OPT.handMode) cancelHolds('handMode'); Object.assign(OPT, o); sim.opt.footAssist = OPT.footAssist; sim.opt.grabAssist = OPT.grabAssist; sim.opt.poseAssist = OPT.poseAssist; sim.opt.easy = OPT.easy; sim.opt.wallRest = OPT.wallRest; sim.climb.oldPose = OPT.oldPose; helpFor = ''; } return { ...OPT, viewMode, cxSign }; }, setView: v => { viewMode = !!v; }, aimSet: p => { aim.world = p ? new THREE.Vector3(...p) : null; },
   input: () => ({ mode: input.st.mode, view: viewMode, cxSign, down: [...input.down.keys()], read: (() => { const o = override; override = null; const r = readInput(); override = o; return r; })() }),
   setKeys: (id, keys) => { cancelHolds('setKeys'); const r = setKeys(id, keys); helpFor = ''; return r; }, resetKeys: () => { resetKeys(); helpFor = ''; }, tagsText: () => tags.map(d => (d.style.display === 'none' ? '' : d.innerText)),
   hasClips: () => !!sim.clipSet, setMode: m => { if (sim.clipSet) sim.useClip = m === 'clip'; return sim.useClip ? 'clip' : 'proc'; }, mode: () => (sim.useClip ? 'clip' : 'proc'),
