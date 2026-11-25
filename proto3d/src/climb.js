@@ -51,7 +51,7 @@ export const CL = {
   // p3d-0.12.0 자세 보조(사용자 2026-11-25: "불가능하다고 거부되는 동작이 엉덩이를 빼면 되는 경우면 보조해 달라. 진짜 안 되면 어쩔 수 없다"):
   //   OUT_MAX = 몸을 벽에서 더 뺄 수 있는 가장 큰 거리, OUT_V = 빼고 돌아오는 빠르기, OUT_STEP = 시험해 보는 간격, OUT_WAIT = 보조를 기다리는 가장 긴 시간(넘으면 원래 까닭으로 거부),
   //   OUT_GRIP = 뺀 뒤에도 잡은 손이 당기는 방향이 아래에서 이 각 안이어야 한다(물리의 놓침은 GRIP_ANG 50°), OUT_PELVIS = 그 가운데 골반이 무게중심보다 더 빠지는 몫(전신 자세 풀이의 골반 앞뒤 값). 실험값
-  OUT_MAX: 0.24, OUT_V: 0.6, OUT_STEP: 0.04, OUT_WAIT: 1.0, OUT_GRIP: 40 * deg, OUT_PELVIS: 0.6, OUT_HAND: 0.14, ROCK_SPAN: 0.10, FOLD_GAP: 0.16, SH_Y0: 1.44, LOOK_UP: 0.35, LOOK_EL: 32 * deg, CLEAR_LAT: 0.06, AIM_SNAP: 0.26, ARM_T: 2.0, ARM_MAX: 1.0, ARM_TRY: 0.40, AUTO_MAX: 0.30, AUTO_T: 1.2, AIM_YAW: 0.12,
+  OUT_MAX: 0.24, OUT_V: 0.6, OUT_STEP: 0.04, OUT_WAIT: 1.0, OUT_GRIP: 40 * deg, OUT_PELVIS: 0.6, OUT_HAND: 0.14, ROCK_SPAN: 0.10, FOLD_GAP: 0.16, SH_Y0: 1.44, LOOK_UP: 0.35, LOOK_EL: 32 * deg, CLEAR_LAT: 0.06, AIM_SNAP: 0.26, AIM_SIDE: 0.20, ARM_T: 2.0, ARM_MAX: 1.0, ARM_TRY: 0.40, AUTO_MAX: 0.30, AUTO_T: 1.2, AIM_YAW: 0.12,
   // p3d-0.7.0 반동·벽에서 뛰기(임시값):
   //   SWING_A = 손으로만 매달렸을 때 A/D로 엉덩이를 흔드는 힘(가속, 벽과 나란한 쪽). 흔들리는 쪽과 같은 때에 넣으면 커지고 반대로 넣으면 줄어든다. HANG_DAMP = 매달려 흔들릴 때의 감쇠(초당)
   //   PUSH_A·PUSH_T = 벽에서 뛰기의 미는 가속과 시간(손발이 낼 수 있는 힘 안에서만 난다 — 디딘 발이 없으면 팔로 당기는 만큼만). 오르는 중에 떼면 밀기가 그때 끝난다
@@ -94,13 +94,17 @@ export function resolveGrip(world, pt) {
 //   여기서는 깊이를 빼고(시선과 모서리 사이의 수직 거리) AIM_SNAP 안이면 고른다. 정확히 누른 것(resolveGrip이 잡는 것)은 그대로 둔다. 시선이 닿은 면보다 40cm 넘게 뒤에 있는 모서리(가려진 것)와 손이 들어갈 틈이 없는 모서리는 고르지 않는다.
 //   입력만 바꾼다: 고른 점을 손 명령의 자리로 넘기면 판정(닿는 거리·길·관절)은 그대로다. 화면(main.js)과 여유 측정(route_tolerance)이 함께 쓴다
 export function aimGrip(world, o, d, hit) {
-  if (hit) { const g0 = resolveGrip(world, hit); if (g0) return { p: g0.p, edge: g0.edge, d: 0, exact: true }; }
-  const sHit = hit ? hit.clone().sub(o).dot(d) : Infinity; let best = null;
+  // 고침(p3d-0.13.1, 여유 측정의 "팔이 턱에 걸려" 13가지가 모두 이것이었다): 누른 자리의 턱이 **보는 쪽을 향한 모서리**일 때만 그대로 쓴다.
+  //   턱의 옆 끝 모서리(길이 = 턱의 깊이 14cm, 벽을 따라 옆을 향함)도 잡는 선이라, 턱 끝에서 14cm 안의 벽면(턱 위로 스쳐 지나간 시선도 벽에 닿는다)을 누르면 3차원 거리로는 앞 모서리(깊이 14cm 앞)보다 끝 모서리가 가까워 그쪽으로 갔다 — 매달린 팔로는 닿지 않는 자리다.
+  //   옆을 향한 모서리는 시선으로 찾는 아래의 후보들과 견주고(벌점 AIM_SIDE), 향한 모서리가 가까이 없을 때만 고른다. OLDAIMSIDE = 전처럼 누른 자리의 결과를 그대로
+  const facing = e => e.n.dot(d) < -0.3, g0 = hit ? resolveGrip(world, hit) : null;
+  if (g0 && (facing(g0.edge) || globalThis.OLDAIMSIDE)) return { p: g0.p, edge: g0.edge, d: 0, exact: true };
+  const sHit = hit ? hit.clone().sub(o).dot(d) : Infinity; let best = g0 ? { p: g0.p, edge: g0.edge, d: 0, cost: CL.AIM_SIDE, exact: true } : null;
   for (const e of gripEdges(world)) { const ab = e.b.clone().sub(e.a), len = ab.length(); if (len < 0.12) continue;
     // 시선(반직선)과 모서리(선분, 끝 5cm는 뺀다)의 가장 가까운 두 점
     const u = ab.clone().multiplyScalar(1 / len), w0 = o.clone().sub(e.a), b = d.dot(u), dd = d.dot(w0), e2 = u.dot(w0), den = 1 - b * b; let t = den < 1e-6 ? e2 : (e2 - b * dd) / den; t = clamp(t, 0.05, len - 0.05);
     const p = e.a.clone().addScaledVector(u, t), s = Math.max(0, p.clone().sub(o).dot(d)), dist = p.distanceTo(o.clone().addScaledVector(d, s));
-    if (dist > CL.AIM_SNAP || s > sHit + 0.40) continue; const cost = dist + (e.n.dot(d) < -0.5 ? 0 : 0.06);
+    if (dist > CL.AIM_SNAP || s > sHit + 0.40) continue; const cost = dist + (globalThis.OLDAIMSIDE ? (e.n.dot(d) < -0.5 ? 0 : 0.06) : facing(e) ? 0 : CL.AIM_SIDE);
     if ((!best || cost < best.cost) && openAt(world, e, p) && handFits(world, { p, n: e.n, edge: e })) best = { p, edge: e, d: dist, cost }; }
   return best;
 }
