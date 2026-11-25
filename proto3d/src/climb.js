@@ -194,6 +194,7 @@ const armPole = (yaw, sx) => V(sx * 0.5, -1, -0.35).applyAxisAngle(UP, yaw).norm
 // ARM_AW(1rad = 0.12 → 10° ≈ 지형 겹침 2mm·제 몸 겹침 7mm): 0.5로 두었을 때는 보통의 팔 교차가 "다른 팔에 막혀" 거부됐다(잡은 팔이 범위를 지키느라 비켜 주지 못했다). 0.12에서 잡은 팔의 범위 밖 걸음은 그대로 0
 const WRIST_W = 0.3; // p3d-0.12.0: 잡은 팔의 팔꿈치를 고를 때 손목이 한계에 가까운 만큼(rad)의 값
 const ARM_AW = 0.12, ELBOW_UP = 0.25, ELBOW_IN = 0.4, ELBOW_WING = 0.07; // ELBOW_WING(p3d-0.11.4, 잡은 팔 — 날개 값이 걸린 걸음에는 판정(armCheck)이 거부할 후보(제 몸 5mm 넘게, 팔이 벽·턱을 지나감)에 0.5를 더한다. 더하지 않았더니 그런 후보가 뽑혀 잡은 손이 놓쳤다(다른 벽 시험 A→B→A)): 손이 어깨 위일 때 위팔이 바깥으로 벌어진 몫(0.35 넘는 만큼) 1당 값(최대 0.045 — 팔꿈치가 지형에 드는 값 0.05보다 작게. 0.15로 두었더니 다른 벽의 턱을 잡을 때 벽 속 팔꿈치가 뽑혀 "팔이 벽·턱을 지나감"으로 거부됐다). 실험값
+const ELBOW_BACK = 0.2; // p3d-0.12.1: 잡은 팔의 팔꿈치가 어깨보다 뒤로 간 몫의 값(heldPole). 실험값
 function armOver(sh, ik, sx, q, yaw) { if (!(DIM.boxCollide && !globalThis.NOANAT)) return 0; const qq = q || Q().setFromAxisAngle(UP, yaw); return Math.max(0, armExcess([qq.x, qq.y, qq.z, qq.w], [sh.x, sh.y, sh.z], [ik.mid.x, ik.mid.y, ik.mid.z], [ik.end.x, ik.end.y, ik.end.z], sx)); }
 function armIK(world, sh, tgt, yaw, sx, q = null, full = false, tb = null) {
   let ik, pole, best = null;
@@ -1012,7 +1013,14 @@ function heldPole(S, s, sh, goal, yaw, sx, qC, nG) {
   //   팔을 엇갈려 잡은 것이 아니면(이 손의 목표가 다른 손의 목표를 넘어 반대쪽에 있지 않으면) 손이 어깨보다 10cm 넘게 위일 때 팔꿈치가 어깨에서 바깥 5cm보다 안쪽인 만큼을 값에 넣는다(ELBOW_IN — 처음에는 안쪽으로 든 만큼만 넣었더니 팔꿈치가 정면 앞에 섰다). 사람형 몸·fb에서만. 실험값
   const oH = S.climb.hands[s === 'L' ? 1 : 0], crossed = oH && oH.st !== 'free' && goal.clone().sub(oH.goal).dot(outW) < -0.02;
   const ein = ik => (DIM.boxCollide && !globalThis.OLDPOLE && S.climb.post === 'fb' && !crossed && goal.y > sh.y + 0.10 ? ELBOW_IN * Math.max(0, 0.05 - ik.mid.clone().sub(sh).dot(outW)) : 0);
-  const ehi = ik => (DIM.boxCollide && !globalThis.OLDPOLE && S.climb.post === 'fb' && goal.y > sh.y + 0.10 && sh.distanceTo(goal) < 0.85 * CL.ARM ? ELBOW_WING * Math.max(0, ik.mid.clone().sub(sh).dot(outW) / DIM.upperArm - 0.35) : 0), e0hi = ehi(base.ik) + ein(base.ik);
+  // p3d-0.12.1(사용자, 0.12.0 영상 p2: "오른손으로 턱을 잡을 때 팔꿈치가 뒤로 간다. 보통 그렇게 꺾이지 않는다. 팔꿈치가 오른쪽으로 빠졌다가 옆구리로 붙으면서 상체가 올라간다"):
+  //   재 보니 손이 어깨 바로 위 37~48cm일 때 팔꿈치는 어깨에서 바깥 7cm·뒤 14cm였다(바깥으로 벌어지는 것을 막는 위의 벌점 때문에 앞 아니면 뒤로 갔고, 앞은 벽·턱·머리에 막혀 뒤가 골라졌다).
+  //   자세 보조 켬(새 자세 방식): ① 손이 어깨보다 위일 때 팔꿈치가 어깨보다 뒤(가슴이 보는 쪽의 반대)로 간 몫을 값에 넣는다(ELBOW_BACK) ② 바깥 벌림의 벌점은 팔뚝이 누운 만큼만 건다 —
+  //   0.11.4에서 막으려던 닭 날개는 팔꿈치가 손 높이까지 들려 팔뚝이 수평인 자세였다. 팔뚝이 서 있으면(팔꿈치가 손보다 충분히 아래) 팔꿈치가 옆으로 나가는 것이 당겨 오르는 보통 모양이다. OLDELBACK = 옛 방식
+  const eb = poseAssistOn(S) && !globalThis.OLDELBACK, fwdC = V(0, 0, 1); if (qC) fwdC.applyQuaternion(qC); else fwdC.applyAxisAngle(UP, yaw);
+  const flat = ik => (eb ? clamp((0.62 - (ik.end.y - ik.mid.y) / DIM.foreArm) / 0.30, 0, 1) : 1);
+  const ebk = ik => (eb && DIM.boxCollide && goal.y > sh.y + 0.10 ? ELBOW_BACK * Math.max(0, -ik.mid.clone().sub(sh).dot(fwdC) / DIM.upperArm - 0.10) : 0);
+  const ehi = ik => (DIM.boxCollide && !globalThis.OLDPOLE && S.climb.post === 'fb' && goal.y > sh.y + 0.10 && sh.distanceTo(goal) < 0.85 * CL.ARM ? flat(ik) * ELBOW_WING * Math.max(0, ik.mid.clone().sub(sh).dot(outW) / DIM.upperArm - 0.35) : 0) + ebk(ik), e0hi = ehi(base.ik) + ein(base.ik);
   if (!s0 && !(base.over > 0) && !(e0hi > 0.004) && !(wr(base.ik) > 0)) return { pole: base.pole, ik: base.ik, self: null };
   const u = goal.clone().sub(sh); if (u.lengthSq() < 1e-8) return { pole: base.pole, ik: base.ik, self: s0 }; u.normalize();
   const e0 = base.pole.clone().addScaledVector(u, -base.pole.dot(u)); if (e0.lengthSq() < 1e-8) return { pole: base.pole, ik: base.ik, self: s0 }; e0.normalize();
