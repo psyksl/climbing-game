@@ -45,7 +45,7 @@ export const CL = {
   PO_W: 0.46, PO_H: 0.33, PO_SIDE: 0.30, PO_SIDE_MAX: 0.035, PO_BACK: 0.09, PO_YAW: 0.60, PO_REACH: 0, // PO_REACH는 0으로 둔다: 재 보니(test/reach_bound.mjs) 골반을 반대로 보내도 어깨가 목표에 가까워지지 않았다(0 ~ −1cm. 윗몸이 기울며 뻗는 어깨가 내려간다). 값은 실험용으로 남겨 둔다
   ARM_F: 0.65, LEG_F: 1.5, LEG_PERP: 0.35, LEG_PERP_SMEAR: 0.08, MU_TOP: 0.9, MU_WALL: 1.0, COM_H: 1.0, MOM: 8,
   GRIP_ANG: 50 * deg, GRIP_MIN: 0.15, SLIP_T: 0.10, SHOCK_V: 1.5,
-  KP: 60, KD: 14, ACC_MAX: 7, DAMP: 0.6, SHIFT_V: 0.5, REF_LAG: 0.08,
+  KP: 60, KD: 14, ACC_MAX: 7, DAMP: 0.6, SHIFT_V: 0.5, REF_LAG: 0.08, RISE_V: 0.75, // RISE_V = 몸 위로(W)의 빠르기(p3d-0.11.10, 사용자 "둘 다 더 빠르게" → 0.11.9의 0.5에서 1.5배). 옆(A·D)은 SHIFT_V
   BLEND_T: 0.25, TURN: 3, OUT_FEET: 0.30, DANGLE: 0.80, SHOULDER_BACK: -0.2, FACE_MIN: -0.17, SHRUG: 0.42, IDLE_T: 0.05,
   R_TORSO: 0.12, R_HEAD: 0.11, R_GROW: 0.4, TOPPLE: 0.10, ASSIST_T: 0.30,
   // p3d-0.7.0 반동·벽에서 뛰기(임시값):
@@ -1145,7 +1145,7 @@ export function stepClimb(S, inp, dt) {
     // 새 규칙(p3d-0.10.1)은 골반이 두 배 천천히 따라간다 — 골반 돌림·엉덩이 빼기가 0.15초로 따라가면 어깨가 함께 움직여 잡은 팔이 초속 300°를 넘는 걸음이 늘었다(718 → 1,052)
     K.poT = { x: tx, z: tz, yaw: ty }; if (fbOn(K)) { K.knA = null; fbUpdate(S, inp, dt, held, planted, left, fwd); } else if (K.post === 'solve' && poseOn(K)) solvePose(S, K, { x: tx, z: tz, yaw: clamp(ty, -0.7, 0.7) }, held, dt); else { K.knA = null; springS(P, 'x', tx, 0.13 * slow, dt); springS(P, 'z', tz, 0.15 * slow, dt); springS(P, 'yaw', clamp(ty, -0.7, 0.7), 0.15 * slow, dt); } }
   if (hanging) { K.ref.x = b.pos.x; K.ref.z = b.pos.z; } else K.ref.addScaledVector(left, side * CL.SHIFT_V * dt);
-  const upV = globalThis.RISE_V ?? CL.SHIFT_V; // RISE_V = 시험용: 위아래 빠르기만 바꿔 본다(빠르기 탓인 결과와 구조 탓인 결과를 가르려고)
+  const upV = globalThis.RISE_V ?? (globalThis.OLDRISE ? CL.SHIFT_V : CL.RISE_V); // RISE_V = 시험용: 위아래 빠르기만 바꿔 본다(빠르기 탓인 결과와 구조 탓인 결과를 가르려고)
   if (!K.push) K.ref.y += (inp.cy || 0) * upV * dt;
   // 전신 자세 풀이(p3d-0.11.0, 임시 — 조작에 닿는 것이라 기획 확인 대상): 발이 받치지 않는 매달림에서 위·아래 입력이 없으면 팔이 거의 펴질 때까지(96%) 몸이 천천히 가라앉는다(쉬는 매달림은 팔을 편다).
   //   0.10.x까지는 뛰어 잡은 높이에 팔을 굽힌 채 끝없이 머물렀다(피로가 없어서). 당겨 올라간 채 다른 손을 보내려면 W를 누르고 있어야 한다. 끄기: S.opt.hangSink = false
