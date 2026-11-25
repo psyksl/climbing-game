@@ -721,7 +721,8 @@ function limbsStep(S, dt) {
         H.w.add(stp); } }
     // p3d-0.10.3(사람형 몸, 실험·기본 끔 WMIN=1 — 교차 장면의 팔 줄기 시험을 깨뜨려 기본에서 뺐다): 손목은 어깨에서 WRIST_MIN보다 가까이 가지 않는다(팔을 다 접어도 손목은 어깨에서 14cm쯤 — 위팔·팔뚝 27cm, 팔꿈치 가장 작은 각 약 30°). 0.10.2까지는 뻗는 손목의 길이 어깨 3.5cm 안을 지났다(reach3)
     if (DIM.boxCollide && globalThis.WMIN) { const d0 = H.w.clone().sub(sh), L0 = d0.length(); if (L0 < CL.WRIST_MIN) H.w.copy(sh).addScaledVector(L0 > 1e-4 ? d0.multiplyScalar(1 / L0) : fwdW.clone(), CL.WRIST_MIN); }
-    if (SB) for (let it = 0; it < 2; it++) { const hh = selfHits(SB, H.w, RW, false, RW, RW, hn); keepN(hh); if (!hh.body && !hh.arm) break; if (hh.body) { H.w.addScaledVector(hh.body.n, Math.min(hh.body.d, 0.02 + shMv)); selfTouch = true; } if (hh.arm) { H.w.addScaledVector(hh.arm.n, Math.min(hh.arm.d, 0.02 + shMv)); armTouch = true; } }
+    // p3d-0.12.0 자세 보조: 머리에 닿은 손목은 아래·벽 쪽으로는 밀어내지 않는다(고개가 비킨다 — 아래 K.hg). 밀어내면 얼굴 앞의 턱으로 가던 손이 턱 밑·벽 쪽에 끼여 "팔이 턱에 걸려"로 거부됐다
+    if (SB) for (let it = 0; it < 2; it++) { const hh = selfHits(SB, H.w, RW, false, RW, RW, hn); keepN(hh); if (!hh.body && !hh.arm) break; if (hh.body) { const nn = hh.body.n; if (hh.body.head && poseAssistOn(S)) { if (nn.y < 0) nn.y = 0; const tw = nn.dot(fwdW); if (tw > 0) nn.addScaledVector(fwdW, -tw); } H.w.addScaledVector(nn, Math.min(hh.body.d, 0.02 + shMv)); selfTouch = true; } if (hh.arm) { H.w.addScaledVector(hh.arm.n, Math.min(hh.arm.d, 0.02 + shMv)); armTouch = true; } }
     // p3d-0.10.1(사람형 몸): 뻗는 손목이 머리에 닿아 있는가 — 머리가 비켜 준다(아래 K.hg). 손을 얼굴 앞의 턱에 모으는 자세에서 새 몸(머리 반지름 11.5cm)은 손목이 2~3cm 앞에서 머리에 막혀 되돌려 잡지 못했다
     H.headTouch = null; if (DIM.boxCollide && SB && SB.head) { const dh = H.w.distanceTo(SB.head.c) - SB.head.r - RW - 0.01; if (dh < 0) H.headTouch = { d: -dh, n: H.w.clone().sub(SB.head.c).normalize() }; }
     // 까닭을 고를 때 쓰는 누적(p3d-0.10.1): 흔들려 걸음마다 닿았다 떨어졌다 하면 이어진 시간(selfBlock·armCross)이 0으로 돌아가 까닭이 '닿지 않음(7cm 모자람)'으로 잘못 나왔다
