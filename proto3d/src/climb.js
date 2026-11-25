@@ -942,6 +942,13 @@ function collide(S, T) {
     else { b.pos.x += nx * ph; b.pos.z += nz * ph; if (DIM.boxCollide) shift(nx * ph, 0, nz * ph); else { P.x += nx * ph; P.z += nz * ph; } const vn = b.vel.x * nx + b.vel.z * nz; if (vn < 0) { b.vel.x -= vn * nx; b.vel.z -= vn * nz; K.stats.wallHit = Math.max(K.stats.wallHit, -vn); } }
   }
   if (bump && K.tick - K.bumpT > 120) { note(S, 'bump', null, 0, bump); K.bumpT = K.tick; }
+  // p3d-0.12.0 자세 보조: 머리·어깨·몸통이 튀어나온 턱(벽·바닥이 아닌 상자)의 높이에 걸쳐 있거나 바로 아래(6cm)에서 올라가는 중이면, 그 턱의 바깥 면을 비켜 갈 만큼 몸을 벽에서 빼기를 청한다(K.clearNeed = 지금 뺀 거리 + 더 필요한 거리).
+  //   없으면 벽에 붙은 몸이 턱 밑에 머리·어깨를 대고 멈췄다(사용자 영상: "부딪힘 · 머리: 턱 F 아래에 닿음", "몸통: 턱 A 아래에 닿음"). 사람은 윗몸을 뒤로 빼고 턱 앞을 지나 올라간다
+  if (poseAssistOn(S)) { const o = outDir(S), lf = V(-o.z, 0, o.x); let need = -9;
+    for (const P of parts) for (const x of S.world.boxes) { if (x.kind === 'floor' || x.kind === 'wall' || P.y1 <= x.min.y - (b.vel.y > 0.03 ? 0.06 : 0) || P.y0 >= x.max.y + 0.02) continue;
+      const cs = [[x.min.x, x.min.z], [x.min.x, x.max.z], [x.max.x, x.min.z], [x.max.x, x.max.z]], ol = cs.map(c2 => c2[0] * lf.x + c2[1] * lf.z), pl = P.x * lf.x + P.z * lf.z; if (pl + P.r < Math.min(...ol) || pl - P.r > Math.max(...ol)) continue;
+      const ext = Math.max(...cs.map(c2 => c2[0] * o.x + c2[1] * o.z)); need = Math.max(need, ext + P.r + 0.015 - (P.x * o.x + P.z * o.z)); }
+    K.clearNeed = need > -9 ? Math.max(0, (K.out || 0) + need) : 0; } else K.clearNeed = 0;
   // 엉덩이는 바닥·윗면 아래로 내려가지 않는다(주저앉은 높이까지)
   { const g = groundAt(S.world, b.pos.x, b.pos.z, b.pos.y + DIM.hipY, 0, 0.1); if (g.box && b.pos.y + DIM.hipY - 0.22 < g.y) { b.pos.y = g.y + 0.22 - DIM.hipY; if (b.vel.y < 0) b.vel.y = 0; } }
 }
@@ -1026,7 +1033,7 @@ function fbUpdate(S, inp, dt, held, planted, left, fwd) {
     K.sagT = tall && !busy && b.vel.y < -0.01 ? (K.sagT || 0) + dt : 0; if (globalThis.OLDGRIPLAT || busy || !tall) K.standFix = false; else if (K.sagT > 0.2) K.standFix = true; }
   const c = { pos, yaw: b.yaw, boxes, ARM: CL.ARM, LEG: CL.LEG, LEGMIN: 0.30, kneeClr: DIM.kneeClr, axis: a3(ax), pitch: -0.12 * clamp(K.pz.tuck, 0, 1), twist, yawT,
     arms: K.hands.map(h => ({ st: h.st === 'hold' ? 1 : h.st === 'reach' ? 2 : 0, goal: a3(h.goal), w: 1 })),
-    legs: K.feet.map(f => ({ st: f.st === 'plant' ? 1 : f.st === 'move' ? 2 : 0, ank: a3(f.ank), w: 1, pole: S.poleS && S.poleS['kn' + f.s + 'p'] ? a3(S.poleS['kn' + f.s + 'p']) : null, aW: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE ? kneeWant(S, f.i ? -1 : 1, K.T.hj[f.i], f.ank, b.yaw + K.po.yaw) : null, kw: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE && !globalThis.OLDCROSSKNEE ? 1 + CL.CROSS_KW * (K.crS ? K.crS[f.i] : 0) : 1, load: f.st === 'plant' && f.box && f.box.kind !== 'floor' ? clamp(f.F ? f.F.y / BW : f.load || 0, 0, 1) : 0 })),
+    legs: K.feet.map(f => ({ st: f.st === 'plant' || (f.st === 'move' && f.outT > 0 && poseAssistOn(S)) ? 1 : f.st === 'move' ? 2 : 0, ank: a3(f.ank), w: 1, pole: S.poleS && S.poleS['kn' + f.s + 'p'] ? a3(S.poleS['kn' + f.s + 'p']) : null, aW: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE ? kneeWant(S, f.i ? -1 : 1, K.T.hj[f.i], f.ank, b.yaw + K.po.yaw) : null, kw: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE && !globalThis.OLDCROSSKNEE ? 1 + CL.CROSS_KW * (K.crS ? K.crS[f.i] : 0) : 1, load: f.st === 'plant' && f.box && f.box.kind !== 'floor' ? clamp(f.F ? f.F.y / BW : f.load || 0, 0, 1) : 0 })),
     shr: K.hands.map(h => (h.st === 'reach' && h.goal.y > b.pos.y + 1.4 ? 0.40 : h.st === 'hold' && (h.load || 0) > 0.5 && !up && !rch ? 0.28 : 0)), iters: fb.cost > 3 ? 2 : 1, stand: K.standFix ? 1 : 0, pzT: -Math.min(0.16, (K.out || 0) * CL.OUT_PELVIS) };
   // p3d-0.11.9: 손으로 잡고 있는 턱은 아래로 늘리지 않는다(실제 턱 + 머리 여유만). 매달린 사람의 머리는 잡은 손 밑에 온다 — 늘린 상자(15cm) + 여유(4cm)로는 잡은 턱 밑 약 30cm 안에 머리가 들어갈 수 없어,
   //   W로 올라서면 풀이가 가슴을 31° 비틀고 29° 기울여 머리를 옆으로 뺐다(h1. 그 비틀린 가슴 때문에 뻗는 팔이 접혀 올라갔다 — 사용자 지적). 잡지 않은 턱은 그대로 늘린다(밑으로 들어가지 않고 비켜 올라간다). OLDHEADHELD = 모두 늘림
@@ -1172,6 +1179,7 @@ export function stepClimb(S, inp, dt) {
   { let T = 0; for (const F of K.feet) { if (F.st === 'free') { F.needOut = 0; F.holdOut = 0; F.outT = 0; } else if (F.st === 'move') { F.holdOut = 0; T = Math.max(T, F.needOut || 0); }
       else { if (F.holdOut > 0 && K.tick % 6 === 0 && K.T && F.ank && !legCheck(S, F.i, K.T.hj[F.i].clone().addScaledVector(outDir(S), -CL.OUT_STEP), F.ank)) F.holdOut = Math.max(0, F.holdOut - 0.3 * 6 * dt); T = Math.max(T, F.holdOut || 0); } }
     for (const H of K.hands) { if (H.st !== 'reach') { H.needOut = 0; H.outTried = false; } else T = Math.max(T, H.needOut || 0); }
+    T = Math.max(T, K.clearNeed || 0);
     if (!poseAssistOn(S) || !held.length) T = 0; else T = Math.min(T, (K.out || 0) + outRoom(S));
     K.outT = T; K.out = (K.out || 0) + clamp(T - (K.out || 0), -CL.OUT_V * dt, CL.OUT_V * dt); }
   if (hanging) { K.ref.x = b.pos.x; K.ref.z = b.pos.z; } else K.ref.addScaledVector(left, side * CL.SHIFT_V * dt);
