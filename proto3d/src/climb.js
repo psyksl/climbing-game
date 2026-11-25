@@ -51,7 +51,7 @@ export const CL = {
   // p3d-0.12.0 자세 보조(사용자 2026-11-25: "불가능하다고 거부되는 동작이 엉덩이를 빼면 되는 경우면 보조해 달라. 진짜 안 되면 어쩔 수 없다"):
   //   OUT_MAX = 몸을 벽에서 더 뺄 수 있는 가장 큰 거리, OUT_V = 빼고 돌아오는 빠르기, OUT_STEP = 시험해 보는 간격, OUT_WAIT = 보조를 기다리는 가장 긴 시간(넘으면 원래 까닭으로 거부),
   //   OUT_GRIP = 뺀 뒤에도 잡은 손이 당기는 방향이 아래에서 이 각 안이어야 한다(물리의 놓침은 GRIP_ANG 50°), OUT_PELVIS = 그 가운데 골반이 무게중심보다 더 빠지는 몫(전신 자세 풀이의 골반 앞뒤 값). 실험값
-  OUT_MAX: 0.24, OUT_V: 0.6, OUT_STEP: 0.04, OUT_WAIT: 1.0, OUT_GRIP: 40 * deg, OUT_PELVIS: 0.6, OUT_HAND: 0.14, ROCK_SPAN: 0.10,
+  OUT_MAX: 0.24, OUT_V: 0.6, OUT_STEP: 0.04, OUT_WAIT: 1.0, OUT_GRIP: 40 * deg, OUT_PELVIS: 0.6, OUT_HAND: 0.14, ROCK_SPAN: 0.10, FOLD_GAP: 0.16, SH_Y0: 1.44,
   // p3d-0.7.0 반동·벽에서 뛰기(임시값):
   //   SWING_A = 손으로만 매달렸을 때 A/D로 엉덩이를 흔드는 힘(가속, 벽과 나란한 쪽). 흔들리는 쪽과 같은 때에 넣으면 커지고 반대로 넣으면 줄어든다. HANG_DAMP = 매달려 흔들릴 때의 감쇠(초당)
   //   PUSH_A·PUSH_T = 벽에서 뛰기의 미는 가속과 시간(손발이 낼 수 있는 힘 안에서만 난다 — 디딘 발이 없으면 팔로 당기는 만큼만). 오르는 중에 떼면 밀기가 그때 끝난다
@@ -1216,7 +1216,7 @@ export function stepClimb(S, inp, dt) {
   //   계속 오르면 낮은 쪽 손이 어깨 높이에 오고, 전신 자세 풀이가 어깨를 손에서 36cm 떼려고 가슴을 한계(34°)까지 젖혀 머리가 골반보다 35cm 뒤로 갔다(캡처 동작의 p2: 몸 높이 0.48m).
   //   접힘 거리를 줄여 보면(0.30~0.22) 덜 젖혀지지만 "몸이 손을 지나 올라가 놓음"으로 그 손을 놓쳤다 → 거리는 그대로 두고 높이를 멈춘다. 더 오르려면 낮은 손을 올려 잡는다(누르기 = 맨틀은 아직 없다).
   //   손에만 매달려 당겨 오를 때(발판 없음)는 옛 방식 그대로. OLDFOLDSTOP = 옛 방식
-  let upLim = 9; if ((inp.cy || 0) > 0 && K.T && !globalThis.OLDBRAKE) { const sup = planted.filter(f => f.kind === 'top' && f.ank && f.box && f.box.kind !== 'floor'); if (sup.length) upLim = Math.min(upLim, Math.sqrt(2 * 2.5 * Math.max(0, 0.97 * CL.LEG - Math.min(...sup.map(f => K.T.hj[f.i].distanceTo(f.ank)))))); { const stand = sup.length && poseAssistOn(S) && !globalThis.OLDFOLDSTOP, dMin = stand ? (globalThis.FOLD_D ?? 0.36) + 0.01 : CL.FOLD + 0.03, vMin = stand ? 0 : 0.28; for (const h of held) upLim = Math.min(upLim, Math.max(vMin, Math.sqrt(2 * 2.5 * Math.max(0, K.T.sh[h.i].distanceTo(h.goal) - dMin)))); } }
+  let upLim = 9; if ((inp.cy || 0) > 0 && K.T && !globalThis.OLDBRAKE) { const sup = planted.filter(f => f.kind === 'top' && f.ank && f.box && f.box.kind !== 'floor'); if (sup.length) upLim = Math.min(upLim, Math.sqrt(2 * 2.5 * Math.max(0, 0.97 * CL.LEG - Math.min(...sup.map(f => K.T.hj[f.i].distanceTo(f.ank)))))); { const stand = sup.length && poseAssistOn(S) && !globalThis.OLDFOLDSTOP, gap = globalThis.FOLD_GAP ?? CL.FOLD_GAP; for (const h of held) { upLim = Math.min(upLim, Math.max(0.28, Math.sqrt(2 * 2.5 * Math.max(0, K.T.sh[h.i].distanceTo(h.goal) - CL.FOLD - 0.03)))); if (stand) upLim = Math.min(upLim, Math.sqrt(2 * 2.5 * Math.max(0, h.goal.y - (b.pos.y + CL.SH_Y0) - gap))); } } }
   // p3d-0.12.0 자세 보조: 잡은 팔이 제 몸에 걸리기 시작하면(놓치기 0.15초 전부터 쌓이는 h.jam) 더 올라가지 않고, 걸림이 풀릴 때까지 조금 내려온다. W를 뗄 때까지 다시 오르지 않는다(걸림 경계에서 오르내리며 떨지 않게).
   //   없으면 좁게 잡은 두 손으로 끝까지 당겨 올린 높이에서 접힌 팔이 가슴에 걸려 "팔이 몸통을 지나감 → 놓침"이 됐다 — 사람은 팔이 더 접히지 않는 데서 멈춘다
   { const jam = poseAssistOn(S) && held.some(h => (h.jam || 0) > 0); if (!((inp.cy || 0) > 0)) K.jamStop = false; else if (jam) K.jamStop = true;
