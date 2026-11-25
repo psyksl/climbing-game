@@ -8,7 +8,9 @@ const { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world
 const [id, side, t0s, t1s, evS] = process.argv.slice(2), every = +(evS || 12);
 const list = [...SC.SCENES_FOOT.map((s, i) => ['foot' + (i + 1), ...s]), ...SC.SCENES_H.map(s => [s[0].split(' ')[0], ...s]), ...(SC.SCENES_P || []).map(s => [s[0].split(' ')[0], ...s])], sc = list.find(s => s[0] === id); if (!sc) throw new Error('장면 없음 ' + id);
 const [, title, fn, assist, mode, st0] = sc, inputs = [], put = (inp = {}, cmd = []) => inputs.push({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd }), rep = (n, inp, cmd) => { for (let i = 0; i < n; i++) put(inp, i ? [] : cmd); }; fn(null, put, rep);
-const rig = buildCharacter(), sim = makeSim(rig, makeWorld(), null); sim.reset({ pos: st0 || SC.START, yaw: Math.PI }); sim.opt.wallRest = false; sim.opt.footAssist = !!assist; sim.opt.grabAssist = true; sim.opt.poseAssist = !!process.env.PA; if (process.env.POSTURE) sim.opt.posture = process.env.POSTURE;
+// MODE=clip: 캡처 동작(assets_local/clips.json)으로 돈다 — 영상·사용자 빌드와 같은 조건. 없으면 자작 동작(땅에서의 자세가 달라 벽에 붙는 순간의 상태가 조금 다르고, 아슬아슬한 장면은 흐름이 갈린다)
+const CLIPS = process.env.MODE === 'clip' ? JSON.parse((await import('fs')).readFileSync(path.join(HERE, '../assets_local/clips.json'), 'utf8')) : null;
+const rig = buildCharacter(), sim = makeSim(rig, makeWorld(), CLIPS); sim.reset({ pos: st0 || SC.START, yaw: Math.PI }); sim.opt.wallRest = false; sim.opt.footAssist = !!assist; sim.opt.grabAssist = true; sim.opt.poseAssist = !!process.env.PA; if (process.env.POSTURE) sim.opt.posture = process.env.POSTURE;
 const wp = n => rig.bones[n].getWorldPosition(new THREE.Vector3()), i = side === 'L' ? 0 : 1;
 console.log(title, '·', side, '· 바깥 = 그 팔 쪽 옆, 뒤 = 벽 반대쪽(cm). 팔꿈치 각 = 굽힌 각');
 for (let k = 0; k < inputs.length; k++) { sim.step(inputs[k]); const t = (k + 1) / 120; if (t < +t0s || t > +t1s || (k + 1) % every) continue; rig.root.updateMatrixWorld(true);

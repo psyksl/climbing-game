@@ -8,7 +8,12 @@ const { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world
 const [id, t0s, t1s, evS] = process.argv.slice(2), every = +(evS || 60), dup = !!process.env.DUP;
 const list = [...SC.SCENES_FOOT.map((s, i) => ['foot' + (i + 1), ...s]), ...SC.SCENES_H.map(s => [s[0].split(' ')[0], ...s]), ...(SC.SCENES_P || []).map(s => [s[0].split(' ')[0], ...s])], sc = list.find(s => s[0] === id); if (!sc) throw new Error('장면 없음 ' + id);
 const [, title, fn, assist, mode, st0] = sc, inputs = [], put = (inp = {}, cmd = []) => inputs.push({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd }), rep = (n, inp, cmd) => { for (let i = 0; i < n; i++) put(inp, i ? [] : cmd); }; fn(null, put, rep);
-const rig = buildCharacter(), sim = makeSim(rig, makeWorld(), null); sim.reset({ pos: st0 || SC.START, yaw: Math.PI }); sim.opt.wallRest = false; sim.opt.footAssist = !!assist; sim.opt.grabAssist = true; sim.opt.poseAssist = !!process.env.PA; if (process.env.POSTURE) sim.opt.posture = process.env.POSTURE;
+// MODE=clip: 캡처 동작(assets_local/clips.json)으로 돈다 — 영상·사용자 빌드와 같은 조건. 없으면 자작 동작(땅에서의 자세가 달라 벽에 붙는 순간의 상태가 조금 다르고, 아슬아슬한 장면은 흐름이 갈린다)
+const CLIPS = process.env.MODE === 'clip' ? JSON.parse((await import('fs')).readFileSync(path.join(HERE, '../assets_local/clips.json'), 'utf8')) : null;
+const rig = buildCharacter(), sim = makeSim(rig, makeWorld(), CLIPS);
+// PRE=n: 화면처럼 다시 시작하기 전에 n걸음을 먼저 돌린다(화면은 멈추기 전까지 실제 시간으로 돌고 있었다). 화면 도구와 node 시험의 차이를 가를 때 쓴다
+for (let i = 0; i < +(process.env.PRE || 0); i++) sim.step({ mx: 0, mz: 0, cxSign: 1, cmd: [] });
+sim.reset({ pos: st0 || SC.START, yaw: Math.PI }); sim.opt.wallRest = false; sim.opt.footAssist = !!assist; sim.opt.grabAssist = true; sim.opt.poseAssist = !!process.env.PA; if (process.env.POSTURE) sim.opt.posture = process.env.POSTURE;
 const wp = n => rig.bones[n].getWorldPosition(new THREE.Vector3()), f2 = v => (v === undefined || v === null ? '-' : (+v).toFixed(2)), ev = [];
 for (let k = 0; k < inputs.length; k++) { const x = inputs[k]; sim.step(dup && x.cmd.length ? { ...x, cmd: x.cmd.concat(x.cmd) } : x); for (const e of sim.climb.events) if (e.type !== 'try') ev.push(`${((k + 1) / 120).toFixed(2)} ${e.type}(${e.name || ''} ${e.why || ''})`);
   const t = (k + 1) / 120; if (t < +t0s || t > +t1s || (k + 1) % every) continue; rig.root.updateMatrixWorld(true); const K = sim.climb, hp = wp('hips'), ch = wp('chest'), hd = wp('head');
