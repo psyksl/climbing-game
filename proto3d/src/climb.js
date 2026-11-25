@@ -1214,7 +1214,8 @@ export function stepClimb(S, inp, dt) {
     if (!poseAssistOn(S) || !held.length) T = 0; else T = Math.min(T, (K.wout || 0) + outRoom(S));
     K.woutT = T; K.wout = (K.wout || 0) + clamp(T - (K.wout || 0), -CL.OUT_V * dt, CL.OUT_V * dt);
     K.woutL = Math.min(K.wout, (K.woutL || 0) + clamp(Math.min(TL, T) - (K.woutL || 0), -CL.OUT_V * dt, CL.OUT_V * dt)); }
-  if (hanging) { K.ref.x = b.pos.x; K.ref.z = b.pos.z; } else K.ref.addScaledVector(left, side * CL.SHIFT_V * dt);
+  // p3d-0.12.3 자세 보조: 벽면에 댄 발(smear)이 있으면 기준 자리의 깊이를 몸에 맞춰 되돌리지 않는다(OLDSMEARLEAD = 옛 방식). 되돌리면 "발 하중이 0.1을 넘어야 몸이 벽에서 떨어지고, 몸이 떨어져야 발 하중이 는다"가 되어, 하중이 0.09~0.10에 머물면 끝내 벽에 붙은 채 흔들렸다(캡처·벽 딛기: 고개를 들어 몸 자리가 1cm 달라진 것만으로 갈렸다)
+  if (hanging) { K.ref.x = b.pos.x; if (!(poseAssistOn(S) && !globalThis.OLDSMEARLEAD && planted.some(f => f.kind === 'smear'))) K.ref.z = b.pos.z; } else K.ref.addScaledVector(left, side * CL.SHIFT_V * dt);
   const upV = globalThis.RISE_V ?? (globalThis.OLDRISE ? CL.SHIFT_V : CL.RISE_V); // RISE_V = 시험용: 위아래 빠르기만 바꿔 본다(빠르기 탓인 결과와 구조 탓인 결과를 가르려고)
   // p3d-0.11.10: 남은 거리로 멈출 수 있는 빠르기를 넘지 않는다(제동 2.5m/s²: v ≤ √(2·a·d)) 기준 자리(ref)가 오르는 빠르기도 같은 한계(기준 자리가 몸보다 앞서 올라가 있으면 따라가는 힘이 다리를 지나치게 편다) — 발판(바닥 아님: 바닥에 선 다리는 이미 다 펴져 있어 팔로 당겨 오르지 못했다)에 디딘 다리가 다 펴지는 자리(97%)·잡은 팔이 다 접히는 자리(FOLD+3cm)까지 — 팔은 0으로 멈추지 않고 초속 0.28m("몸이 손을 지나 올라가 놓음"의 0.3 아래)까지만 줄인다(0으로 멈추면 매달려 당겨 오르는 높이가 21 → 12cm로 줄었다). 0.75m/s로 오르자 다리가 길이의 100.6%까지 지나쳐 발이 몸을 놓고 손에 걸린 몸이 옆으로 초속 1m로 휘청였다. OLDBRAKE = 옛 방식
   // p3d-0.12.2 자세 보조(사용자: 윗몸·고개가 과하게 젖혀진다): 발판을 디디고 오를 때는 잡은 손이 어깨에서 접힘 거리(FOLD_D 36cm) 안으로 들어오기 전에 오르기를 멈춘다(전에는 초속 0.28m로 계속 올랐다).
