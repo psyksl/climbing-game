@@ -192,6 +192,7 @@ const armPole = (yaw, sx) => V(sx * 0.5, -1, -0.35).applyAxisAngle(UP, yaw).norm
 // 팔이 사람 어깨·위팔의 범위를 넘은 각(rad, 안이면 0). qC = 가슴의 방향(없으면 몸이 보는 쪽). 사람형 몸에서만(p3d-0.11.1, src/anat.js)
 // ELBOW_UP = 팔꿈치가 어깨와 손목 둘 다보다 높이 올라간 만큼의 값(1m = 0.25): 접은 팔의 위팔이 몸통에 조금 닿는다고 팔꿈치를 머리 위로 세우지 않게(손은 어깨 옆에 있고 팔꿈치만 하늘을 가리키는 팔이 뻗는 중에 그려졌다)
 // ARM_AW(1rad = 0.12 → 10° ≈ 지형 겹침 2mm·제 몸 겹침 7mm): 0.5로 두었을 때는 보통의 팔 교차가 "다른 팔에 막혀" 거부됐다(잡은 팔이 범위를 지키느라 비켜 주지 못했다). 0.12에서 잡은 팔의 범위 밖 걸음은 그대로 0
+const WRIST_W = 0.3; // p3d-0.12.0: 잡은 팔의 팔꿈치를 고를 때 손목이 한계에 가까운 만큼(rad)의 값
 const ARM_AW = 0.12, ELBOW_UP = 0.25, ELBOW_IN = 0.4, ELBOW_WING = 0.07; // ELBOW_WING(p3d-0.11.4, 잡은 팔 — 날개 값이 걸린 걸음에는 판정(armCheck)이 거부할 후보(제 몸 5mm 넘게, 팔이 벽·턱을 지나감)에 0.5를 더한다. 더하지 않았더니 그런 후보가 뽑혀 잡은 손이 놓쳤다(다른 벽 시험 A→B→A)): 손이 어깨 위일 때 위팔이 바깥으로 벌어진 몫(0.35 넘는 만큼) 1당 값(최대 0.045 — 팔꿈치가 지형에 드는 값 0.05보다 작게. 0.15로 두었더니 다른 벽의 턱을 잡을 때 벽 속 팔꿈치가 뽑혀 "팔이 벽·턱을 지나감"으로 거부됐다). 실험값
 function armOver(sh, ik, sx, q, yaw) { if (!(DIM.boxCollide && !globalThis.NOANAT)) return 0; const qq = q || Q().setFromAxisAngle(UP, yaw); return Math.max(0, armExcess([qq.x, qq.y, qq.z, qq.w], [sh.x, sh.y, sh.z], [ik.mid.x, ik.mid.y, ik.mid.z], [ik.end.x, ik.end.y, ik.end.z], sx)); }
 function armIK(world, sh, tgt, yaw, sx, q = null, full = false, tb = null) {
@@ -392,12 +393,12 @@ function armCheck(S, i, sh, goal, n) {
   // 턱을 등진 채(100° 넘게 돌아선 채)로는 잡지 않는다. 잡은 손 아래에서 몸을 크게 돌리는 동작은 이번 판에 없다
   if (n && !S.climb.on && fwd.dot(n) > -CL.FACE_MIN) return '턱을 등지고 있음(돌아선 뒤에 잡기)';
   // p3d-0.8.5: 팔꿈치 방향은 그림과 같은 함수(heldPole)로 고른다 — 제 몸에 겹치지 않는 쪽이 있으면 그쪽으로 판정한다(팔 교차를 기본 후보 하나로 거부하지 않는다)
-  const { ik, self } = heldPole(S, i ? 'R' : 'L', sh, goal, yaw, sx, S.climb.on && S.climb.T ? S.climb.T.qC : null);
+  const { ik, self } = heldPole(S, i ? 'R' : 'L', sh, goal, yaw, sx, S.climb.on && S.climb.T ? S.climb.T.qC : null, n || null);
   if (rayHit(S.world, sh.clone().lerp(ik.mid, 0.2), ik.mid) < 1 || rayHit(S.world, ik.mid, ik.mid.clone().lerp(ik.end, 0.9)) < 1) return '팔이 벽·턱을 지나감';
   // 팔뚝: 어느 쪽으로 팔꿈치를 두어도 팔뚝의 줄기가 제 몸에 5mm 넘게 겹치면 그 자리에는 팔을 둘 수 없다(p3d-0.8.5. 전에는 기본 후보의 팔뚝이 엉덩이–목 선 둘레 20 × 13cm 안이거나 머리 가운데에서 11.5cm 안이면 거부했다)
   if (sd(self, 'body') > 0.005) return self.body.head ? '팔이 머리를 지나감' : '팔이 몸통을 지나감';
   // 손목(p3d-0.10.4, 같은 틀): 고른 팔꿈치에서 팔뚝이 오는 쪽과 바라는 손의 방향 사이가 손목이 꺾이는 한계(wristMax)를 넘으면 그 자리는 이 팔로 잡지 못한다(그림은 한계에서 멈춰 손가락이 공중에 섰다)
-  if (n && DIM.boxCollide && DIM.grip && DIM.grip.wristMax && !globalThis.OLDWRIST) { const fa = ik.end.clone().sub(ik.mid).normalize(), fd = gripFrame({ n }).fd; const wm = DIM.grip.wristMax + (S.opt && S.opt.grabAssist && !globalThis.NOASSIST ? CL.ASSIST_WRIST : 0); if (fa.angleTo(fd) > wm * Math.PI / 180 + 1e-3) return '손목이 그쪽으로 꺾이지 않음'; }
+  if (n && DIM.boxCollide && DIM.grip && DIM.grip.wristMax && !globalThis.OLDWRIST) { const fa = ik.end.clone().sub(ik.mid).normalize(), fd = gripFrame({ n }).fd; const wm = DIM.grip.wristMax + (S.opt && S.opt.grabAssist && !globalThis.NOASSIST ? CL.ASSIST_WRIST : 0); if (globalThis.WRDBG && fa.angleTo(fd) > wm * Math.PI / 180) console.log('WR', (fa.angleTo(fd) * 57.3).toFixed(0), 'fa', fa.toArray().map(v => v.toFixed(2)).join(','), 'fd', fd.toArray().map(v => v.toFixed(2)).join(','), 'n', n.toArray().map(v => v.toFixed(2)).join(','), 'sh', sh.toArray().map(v => v.toFixed(2)).join(','), 'mid', ik.mid.toArray().map(v => v.toFixed(2)).join(','), 'end', ik.end.toArray().map(v => v.toFixed(2)).join(',')); if (fa.angleTo(fd) > wm * Math.PI / 180 + 1e-3) return '손목이 그쪽으로 꺾이지 않음'; }
   // (위팔과 머리도 위의 self에 들어 있다: 귀 옆에 붙는 것 = 가운데 선이 머리 가운데에서 11.5cm까지는 된다)
   return '';
 }
@@ -985,7 +986,13 @@ function solveForces(C, Fd, lam) {
 // 겹치면 어깨–손목 축 둘레를 다 돌려 보고 제 몸에 겹치지 않는 쪽을 고른다(팔꿈치가 지형 안이면 벌점). 그림(poseArm)과 판정(armCheck)이 같은 함수를 쓴다.
 // 전에는 기본 후보 하나로만 "팔이 머리·몸통을 지나감"을 판정해서, 팔꿈치를 다른 쪽으로 두면 되는 팔 교차까지 놓쳤다
 const elbowIn = (world, p) => world.boxes.some(x => p.x > x.min.x - 0.03 && p.x < x.max.x + 0.03 && p.y > x.min.y - 0.03 && p.y < x.max.y + 0.03 && p.z > x.min.z - 0.03 && p.z < x.max.z + 0.03);
-function heldPole(S, s, sh, goal, yaw, sx, qC) {
+function heldPole(S, s, sh, goal, yaw, sx, qC, nG) {
+  // p3d-0.12.0 자세 보조: 팔꿈치를 고를 때 손목도 본다 — 팔뚝이 오는 쪽과 잡는 손의 방향(gripFrame의 fd) 사이가 손목 한계에 가까워지면(한계 − 8°부터) 그만큼 값에 넣는다(WRIST_W).
+  //   없으면 꽉 접힌 팔에서 팔꿈치가 손보다 높이·어깨 뒤로 들린 후보가 골라져(위팔 범위·날개 값만 보고) 손목이 91° 꺾여 "손목이 그쪽으로 꺾이지 않음"으로 거부됐다(사용자 영상 v1 30~31.8초: 손이 어깨 위 19cm).
+  //   사람은 팔꿈치를 손 아래에 두고 팔뚝을 세운다. nG = 잡는 면의 법선(판정이 넘겨 준다. 그림은 그 손의 상태에서 읽는다 — 같은 값)
+  { const Hh = S.climb.hands[s === 'L' ? 0 : 1]; if (nG === undefined) nG = Hh && Hh.n && Hh.st !== 'free' && Hh.goal && Hh.goal.distanceToSquared(goal) < 4e-4 ? Hh.n : null; }
+  const wOn = nG && poseAssistOn(S) && DIM.boxCollide && DIM.grip && DIM.grip.wristMax && !globalThis.OLDWRIST, wFd = wOn ? gripFrame({ n: nG }).fd : null, wLim = wOn ? (DIM.grip.wristMax + (assistOn(S) ? CL.ASSIST_WRIST : 0) - 8) * deg : 0;
+  const wr = ik => (wOn ? WRIST_W * Math.max(0, ik.end.clone().sub(ik.mid).normalize().angleTo(wFd) - wLim) : 0);
   const base = armIK(S.world, sh, goal, yaw, sx, qC), B = selfShapes(S, s === 'L' ? 0 : 1), XA = globalThis.NOYIELD ? 0 : (globalThis.XA ?? 0.06), s0 = armSelf(B, base.ik, sh, 0, XA);
   // p3d-0.8.6: 잡고 있는 팔은 다른 팔이 6cm 안으로 다가오면 팔꿈치를 돌려 미리 자리를 내 준다(뻗는 팔은 겹치기 전에 멈추므로, 겹친 뒤에야 비키면 둘 다 서 버린다)
   // p3d-0.11.4(사용자 영상 0.11.3 v2 29.9초·v3 45초·v4 3초): 당겨 올라가 손이 어깨 위 30cm 안에 오면 기본 후보(바깥·아래)가 팔뚝을 수평으로 눕혀 팔꿈치가 손 높이까지 들렸다(닭 날개, 한 팔이면 머리 위로 접힘).
@@ -997,14 +1004,14 @@ function heldPole(S, s, sh, goal, yaw, sx, qC) {
   const oH = S.climb.hands[s === 'L' ? 1 : 0], crossed = oH && oH.st !== 'free' && goal.clone().sub(oH.goal).dot(outW) < -0.02;
   const ein = ik => (DIM.boxCollide && !globalThis.OLDPOLE && S.climb.post === 'fb' && !crossed && goal.y > sh.y + 0.10 ? ELBOW_IN * Math.max(0, 0.05 - ik.mid.clone().sub(sh).dot(outW)) : 0);
   const ehi = ik => (DIM.boxCollide && !globalThis.OLDPOLE && S.climb.post === 'fb' && goal.y > sh.y + 0.10 && sh.distanceTo(goal) < 0.85 * CL.ARM ? ELBOW_WING * Math.max(0, ik.mid.clone().sub(sh).dot(outW) / DIM.upperArm - 0.35) : 0), e0hi = ehi(base.ik) + ein(base.ik);
-  if (!s0 && !(base.over > 0) && !(e0hi > 0.004)) return { pole: base.pole, ik: base.ik, self: null };
+  if (!s0 && !(base.over > 0) && !(e0hi > 0.004) && !(wr(base.ik) > 0)) return { pole: base.pole, ik: base.ik, self: null };
   const u = goal.clone().sub(sh); if (u.lengthSq() < 1e-8) return { pole: base.pole, ik: base.ik, self: s0 }; u.normalize();
   const e0 = base.pole.clone().addScaledVector(u, -base.pole.dot(u)); if (e0.lengthSq() < 1e-8) return { pole: base.pole, ik: base.ik, self: s0 }; e0.normalize();
   const e1 = u.clone().cross(e0), prev = S.pw && S.poleS && S.poleS['el' + s], pa = prev ? Math.atan2(prev.dot(e1), prev.dot(e0)) : 0; let best = null;
   for (let j = 0; j < 24; j++) { const a = j * Math.PI / 12, an = a > Math.PI ? a - 2 * Math.PI : a, pl = e0.clone().multiplyScalar(Math.cos(a)).addScaledVector(e1, Math.sin(a)), ik = twoBone(sh, goal, DIM.upperArm, DIM.foreArm, pl), sf = armSelf(B, ik, sh), sm = XA ? armSelf(B, ik, sh, 0, XA) : sf;
     let dp = Math.abs(an - pa); if (dp > Math.PI) dp = 2 * Math.PI - dp;
     // 실제 겹침(머리·몸통, 여유 밖의 다른 팔)이 먼저다. 다른 팔과의 여유(6cm 안)는 가볍게만 본다 — 여유를 벌리려고 팔꿈치를 머리 쪽으로 돌리면 머리에 닿는다(0.8.6 작업 중에, 그것을 윗몸이 비키느라 엇갈려 잡은 몸이 36cm 옆으로 밀려갔다)
-    const cost = 3 * sd(sf, 'body') + 3 * sd(sf, 'arm') + (globalThis.MW ?? 0.2) * Math.max(0, sd(sm, 'arm') - sd(sf, 'arm')) + (elbowIn(S.world, ik.mid) ? 0.05 : 0) + (e0hi > 0.004 && (sd(sf, 'body') > 0.005 || rayHit(S.world, sh.clone().lerp(ik.mid, 0.2), ik.mid) < 1 || rayHit(S.world, ik.mid, ik.mid.clone().lerp(ik.end, 0.9)) < 1) ? 0.5 : 0) + ARM_AW * armOver(sh, ik, sx, qC, yaw) + ehi(ik) + ein(ik) + 0.004 * Math.abs(an) + (prev ? 0.006 * dp : 0);
+    const cost = 3 * sd(sf, 'body') + 3 * sd(sf, 'arm') + (globalThis.MW ?? 0.2) * Math.max(0, sd(sm, 'arm') - sd(sf, 'arm')) + (elbowIn(S.world, ik.mid) ? 0.05 : 0) + (e0hi > 0.004 && (sd(sf, 'body') > 0.005 || rayHit(S.world, sh.clone().lerp(ik.mid, 0.2), ik.mid) < 1 || rayHit(S.world, ik.mid, ik.mid.clone().lerp(ik.end, 0.9)) < 1) ? 0.5 : 0) + ARM_AW * armOver(sh, ik, sx, qC, yaw) + ehi(ik) + ein(ik) + wr(ik) + 0.004 * Math.abs(an) + (prev ? 0.006 * dp : 0);
     if (!best || cost < best.cost - 1e-7) best = { cost, pole: pl, ik, self: sf }; }
   return best;
 }
