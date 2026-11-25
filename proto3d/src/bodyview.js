@@ -6,7 +6,7 @@ import { buildCharacter, DIM, BODY } from './rig.js';
 import { buildHuman, makeRetarget, playClip, restPose } from './human.js';
 import { aimBone, setWorldQuat, twoBone, worldPos } from './ik.js';
 
-const VERSION = 'p3d-0.11.10';
+const VERSION = 'p3d-0.12.0';
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z), Q = () => new THREE.Quaternion(), D = Math.PI / 180;
 const params = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: params.has('test') });
