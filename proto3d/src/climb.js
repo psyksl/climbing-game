@@ -344,7 +344,8 @@ const OVER_UP = 0.09;
 const assistOn = S => !!(S.opt && S.opt.grabAssist) && !globalThis.NOASSIST;
 // p3d-0.12.0 자세 보조(S.opt.poseAssist — 화면 기본 켬, 시험 기본 끔. NOPOSEASSIST = 끔): 거부될 손발을 위해 몸을 벽에서 빼 본다
 // POSEASSIST = 시험용: 옵션을 켜지 않은 시험 묶음 전체를 자세 보조 켬으로 돌려 본다
-const poseAssistOn = S => (!!(S.opt && S.opt.poseAssist) || !!globalThis.POSEASSIST) && !globalThis.NOPOSEASSIST;
+// 새 자세 방식(전신 자세 풀이)에서만 일한다: 옛 규칙 자세(O 키)에서는 몸이 턱을 피해 기울지 않아 턱 여유를 늘 가장 크게 청했고(선 채로 24cm), 옆 벽의 턱이 3cm 모자라 거부됐다(다른 벽 시험 4 → 6 실패)
+const poseAssistOn = S => (!!(S.opt && S.opt.poseAssist) || !!globalThis.POSEASSIST) && !globalThis.NOPOSEASSIST && fbOn(S.climb);
 const outDir = S => V(-Math.sin(S.body.yaw), 0, -Math.cos(S.body.yaw)); // 벽에서 멀어지는 쪽(몸이 보는 쪽의 반대)
 // 지금보다 더 뺄 수 있는 거리: OUT_MAX까지, 그리고 잡은 손마다 당기는 방향(어깨 → 손의 반대)이 아래에서 OUT_GRIP 안에 남고 팔이 다 펴지지 않는 만큼. 잡은 손이 없으면 0(기댈 데가 없다)
 // 벽에서 떨어진 정도는 두 어깨의 가운데로 잰다: 가슴이 틀어져 한 어깨만 물러나 있으면(발을 옆 발판에 디딘 뒤의 자세) 그 어깨로 재면 여유가 0이 되어, 몸을 빼야 풀리는 자세에서 몸을 뺄 수 없었다
