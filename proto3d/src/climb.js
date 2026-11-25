@@ -51,7 +51,7 @@ export const CL = {
   // p3d-0.12.0 자세 보조(사용자 2026-11-25: "불가능하다고 거부되는 동작이 엉덩이를 빼면 되는 경우면 보조해 달라. 진짜 안 되면 어쩔 수 없다"):
   //   OUT_MAX = 몸을 벽에서 더 뺄 수 있는 가장 큰 거리, OUT_V = 빼고 돌아오는 빠르기, OUT_STEP = 시험해 보는 간격, OUT_WAIT = 보조를 기다리는 가장 긴 시간(넘으면 원래 까닭으로 거부),
   //   OUT_GRIP = 뺀 뒤에도 잡은 손이 당기는 방향이 아래에서 이 각 안이어야 한다(물리의 놓침은 GRIP_ANG 50°), OUT_PELVIS = 그 가운데 골반이 무게중심보다 더 빠지는 몫(전신 자세 풀이의 골반 앞뒤 값). 실험값
-  OUT_MAX: 0.24, OUT_V: 0.6, OUT_STEP: 0.04, OUT_WAIT: 1.0, OUT_GRIP: 40 * deg, OUT_PELVIS: 0.6, OUT_HAND: 0.14, ROCK_SPAN: 0.10, FOLD_GAP: 0.16, SH_Y0: 1.44, LOOK_UP: 0.35, LOOK_EL: 32 * deg, CLEAR_LAT: 0.06, AIM_SNAP: 0.26, ARM_T: 2.0, ARM_MAX: 1.0, AUTO_MAX: 0.30, AIM_YAW: 0.12,
+  OUT_MAX: 0.24, OUT_V: 0.6, OUT_STEP: 0.04, OUT_WAIT: 1.0, OUT_GRIP: 40 * deg, OUT_PELVIS: 0.6, OUT_HAND: 0.14, ROCK_SPAN: 0.10, FOLD_GAP: 0.16, SH_Y0: 1.44, LOOK_UP: 0.35, LOOK_EL: 32 * deg, CLEAR_LAT: 0.06, AIM_SNAP: 0.26, ARM_T: 2.0, ARM_MAX: 1.0, ARM_TRY: 0.40, AUTO_MAX: 0.30, AUTO_T: 1.2, AIM_YAW: 0.12,
   // p3d-0.7.0 반동·벽에서 뛰기(임시값):
   //   SWING_A = 손으로만 매달렸을 때 A/D로 엉덩이를 흔드는 힘(가속, 벽과 나란한 쪽). 흔들리는 쪽과 같은 때에 넣으면 커지고 반대로 넣으면 줄어든다. HANG_DAMP = 매달려 흔들릴 때의 감쇠(초당)
   //   PUSH_A·PUSH_T = 벽에서 뛰기의 미는 가속과 시간(손발이 낼 수 있는 힘 안에서만 난다 — 디딘 발이 없으면 팔로 당기는 만큼만). 오르는 중에 떼면 밀기가 그때 끝난다
@@ -611,9 +611,14 @@ export function command(S, c) {
     // 쉬운 조작 ② 예약(p3d-0.13.0, 사용자: "대충 해도 되어야 한다"): 가만히 있는데 닿지 않는 턱을 누르면, 손을 떼어 0.3초 뻗다가 거부하는 대신 지금 잡은 자리를 그대로 둔 채 ARM_T 동안 기다린다(H.arm).
     //   그사이 닿게 되면(몸을 옮김 · ③ 자동 몸 맞추기) 또는 뛰기 시작하면 그때 보낸다 — 같은 명령·같은 판정을 거친다. 시간이 지나면 원래 까닭으로 거부한다(거부는 놓기가 아니다).
     //   발판에서 뛰어 턱 C를 잡을 때 점프와 거의 동시에(−0.10 ~ +0.05초) 눌러야 했던 것이 "먼저 누르고 2초 안에 뛰기"가 된다. 움직이는 중(뛰는 중·떠 있는 중)의 누름은 전처럼 바로 보낸다. NOARMREACH = 끔
-    if (armOn(S) && !c.armed && !jumping(S) && S.body.vel.length() < 0.3) { const pr = probeHand(S, c.i, pt); if (!pr.ok && pr.short !== undefined && pr.short <= CL.ARM_MAX) { H.arm = { p: c.p.slice(), t: 0, short: pr.short, jump: false, why: pr.why }; H.why = ''; note(S, 'arm', 'hand', c.i, `닿으면 잡음(${short(pr.short)} 모자람)`); return; } }
+    //   고침(같은 판, 여유 측정에서 찾음): 미리보기의 "모자람"은 손을 잡은 채의 어깨로 잰 것이라, 손을 놓고 뻗으면 윗몸이 목표 쪽으로 돌고 기울어 18~34cm가 더 닿는다. 모자란 손을 모두 예약으로 돌리자 전에는 바로 잡던 자리를 2초 기다린 뒤 거부했다(3·5단계).
+    //   그래서 ARM_TRY 안으로 모자란 것은 전과 똑같이 바로 뻗고(끔과 같은 결과), 뻗다가 거리 때문에 거부되면 그때 예약으로 남긴다(H.armP → 아래 뻗기의 거부). 그보다 먼 것만 손을 놓지 않고 예약한다
+    H.armP = null;
+    if (armOn(S) && !c.armed && !jumping(S) && S.body.vel.length() < 0.3) { const pr = probeHand(S, c.i, pt);
+      if (!pr.ok && pr.short !== undefined && pr.short > CL.ARM_TRY && pr.short <= CL.ARM_MAX) { H.arm = { p: c.p.slice(), t: 0, short: pr.short, jump: false, tried: false, why: pr.why }; H.why = ''; note(S, 'arm', 'hand', c.i, `닿으면 잡음(${short(pr.short)} 모자람)`); return; }
+      H.armP = c.p.slice(); }
     if (H.st === 'hold') releaseHand(S, c.i, '옮기려고 놓음');
-    Object.assign(H, { st: 'reach', drag: false, edge: g.edge, t: 0, T: 2.5, wait: 0, best: undefined, lastFar: undefined, stall: 0, lock: null, lockN: 0, lockBest: undefined, selfTot: 0, armTot: 0, blockT: 0, sp: 0, shPrev: null, ov: 1, why: '' });
+    Object.assign(H, { st: 'reach', drag: false, edge: g.edge, t: 0, T: 2.5, wait: 0, best: undefined, lastFar: undefined, stall: 0, lock: null, lockN: 0, lockBest: undefined, selfTot: 0, armTot: 0, blockT: 0, sp: 0, shPrev: null, ov: 1, why: '', auto: false, autoT: 0, autoDone: false });
     H.from.copy(H.w); H.goal.copy(goal); H.grip.copy(g.p); H.n.copy(g.n);
   }
   // 누르던 단추를 뗌: 그때 겨눈 곳이 턱이면 잡으러 가고(짧게), 아니면 헛손질
@@ -669,7 +674,7 @@ function limbsStep(S, dt) {
   const K = S.climb, J = joints(S);
   // 예약된 손(쉬운 조작 ②): 닿게 됐거나(probeHand = 누를 때와 같은 판정) 뛰기 시작한 걸음에 보낸다. ARM_T가 지나면 지금의 까닭으로 거부(접촉은 그대로)
   for (const H of K.hands) if (H.arm) { const A = H.arm, jn = jumping(S), pr = probeHand(S, H.i, V(...A.p)); A.t += dt; if (pr.short !== undefined) A.short = pr.short; A.why = pr.why;
-    if (pr.ok || (jn && !A.jump)) { H.arm = null; command(S, { type: 'hand', i: H.i, p: A.p, armed: true }); }
+    if (pr.ok || (jn && !A.jump) || (!A.tried && pr.short !== undefined && pr.short <= CL.ARM_TRY - 0.05)) { H.arm = null; command(S, { type: 'hand', i: H.i, p: A.p, armed: true }); }
     else if (A.t > CL.ARM_T) { H.arm = null; deny(S, H, 'hand', pr.why || '닿지 않음'); }
     else A.jump = jn; }
   for (const H of K.hands) {
@@ -829,7 +834,13 @@ function limbsStep(S, dt) {
     // p3d-0.10.1: 몸이 흔들려 손이 조금씩 움직이면 "멈춰 있음"이 쌓이지 않아, 막힌 손이 거부되지 않고 2.5초 한도까지 턱 앞에서 머뭇거렸다(새 몸의 되돌려 잡기, 다른 팔에 막힘).
     //   목표에 3mm 넘게 더 가까워지지 않은 채 0.25초가 지나면 그때부터도 센다
     if (H.best === undefined || miss < H.best - 0.003) { H.best = miss; H.stall = 0; } else H.stall = (H.stall || 0) + dt;
-    if ((H.w.clone().sub(sh).distanceTo(rel0) < 0.0015 || H.stall > 0.25) && !H.swivel && !yielding) H.wait += dt;
+    // 쉬운 조작 ③ 자동 몸 맞추기(p3d-0.13.0, 고침): 뻗은 손이 더 가지 못하고 멈췄는데(H.wait) 모자란 거리가 AUTO_MAX 안이고 막힌 것이 아니면, 거부까지의 시간(TRY_T)이 반쯤 찼을 때부터 그 시간을 세지 않고 몸을 목표 쪽으로 옮긴다(stepClimb가 W·A·D와 같은 입력을 넣는다).
+    //   모자람이 0.35초 동안 줄지 않거나 AUTO_T가 지나면 그만두고 전처럼 TRY_T 뒤에 거부한다. 처음에는 손을 잡은 채(예약) 몸을 옮겼는데, 그 모자람이 실제보다 18~34cm 크게 재져 필요 없는 때에 몸을 2초씩 옮겼다(3단계: 왼쪽으로 14cm 흔들림)
+    { const can = autoBodyOn(S) && K.on && H.edge && !H.autoDone && far > 0.02 && far <= CL.AUTO_MAX && !(H.blockT > 0) && !(H.selfBlock > 0) && !(H.armCross > 0) && !jumping(S);
+      if (can && (H.wait > CL.TRY_T * 0.5 || H.auto)) { if (!H.auto) { H.auto = true; H.autoT = 0; H.autoBest = far; H.autoStall = 0; note(S, 'auto', 'hand', H.i, `몸을 옮겨 닿는 중(${short(far)} 모자람)`); }
+        H.autoT += dt; if (far < H.autoBest - 0.002) { H.autoBest = far; H.autoStall = 0; } else H.autoStall += dt; if (H.autoT > CL.AUTO_T || H.autoStall > 0.35) { H.auto = false; H.autoDone = true; } }
+      else if (H.auto) { H.auto = false; H.autoDone = true; } }
+    if ((H.w.clone().sub(sh).distanceTo(rel0) < 0.0015 || H.stall > 0.25) && !H.swivel && !yielding && !H.auto) H.wait += dt;
     // 까닭의 순서(p3d-0.8.6): 팔이 턱에 걸림 → 팔을 다 펴도 닿지 않는 거리(몸·다른 팔에 스쳤더라도 거리가 까닭이다) → 제 몸에 가림 → 다른 팔에 가림
     // p3d-0.11.2: 떠 있는 채 내려가는 중이고 목표가 어깨보다 위인데 팔 길이로 모자라면 더 기다려도 멀어지기만 한다 → 그 자리에서 까닭(정점이 지남)을 알린다.
     //   0.11.1까지는 손이 그대로 기다리다가 착지한 뒤 0.3초에야 "닿지 않음(40cm 모자람)"(땅에서 잰 거리)으로 거부돼 왜 못 잡았는지 알기 어려웠다
@@ -838,7 +849,8 @@ function limbsStep(S, dt) {
     //   그리고 땅에 내려서서도 닿지 않는 높이일 때만(내려선 뒤 서서 닿는 턱은 그대로 기다린다 — 처음에는 이것도 보지 않아 턱 E 1.9m를 착지 뒤에 잡던 장면이 막혔다). 서서 닿는 높이 = 아래 지형 + 선 어깨 높이(STAND_SH 1.42m — 사람형 몸을 세워 잰 값) + 팔 길이
     const floorY = groundBelow(S.world, S.body.pos), standReach = floorY + CL.STAND_SH + CL.ARM;
     if (!K.on && !S.body.onGround && S.body.vel.y < -0.4 && H.goal.y > sh.y && H.goal.y > standReach + 0.02 && far > 0.03 && farUp && !globalThis.OLDJUMPHAND && !(assistOn(S) && far <= CL.ASSIST_S)) { reject(S, H, 'hand', `닿지 않음(점프 정점이 지남 · ${short(far)} 모자람)`); continue; }
-    if (H.wait > CL.TRY_T || H.t > H.T) { const why = H.blockT > 0.12 ? '팔이 턱에 걸려 닿지 않음' : far > 0.02 ? `닿지 않음(${short(Math.max(far, miss))} 모자람)` : (H.selfBlock || 0) > 0.12 || ((H.selfTot || 0) > 0.3 && (H.selfTot || 0) >= (H.armTot || 0)) ? '몸에 막혀 닿지 않음' : (H.armCross || 0) > 0.12 || (H.armTot || 0) > 0.3 ? '다른 팔에 막혀 닿지 않음' : `닿지 않음(${short(Math.max(far, miss))} 모자람)`; if (handOutTry(S, H, why, dt)) continue; reject(S, H, 'hand', why); }
+    if (H.wait > CL.TRY_T || H.t > H.T) { const why = H.blockT > 0.12 ? '팔이 턱에 걸려 닿지 않음' : far > 0.02 ? `닿지 않음(${short(Math.max(far, miss))} 모자람)` : (H.selfBlock || 0) > 0.12 || ((H.selfTot || 0) > 0.3 && (H.selfTot || 0) >= (H.armTot || 0)) ? '몸에 막혀 닿지 않음' : (H.armCross || 0) > 0.12 || (H.armTot || 0) > 0.3 ? '다른 팔에 막혀 닿지 않음' : `닿지 않음(${short(Math.max(far, miss))} 모자람)`; if (handOutTry(S, H, why, dt)) continue; reject(S, H, 'hand', why);
+      if (armOn(S) && H.armP && /^닿지 않음\(/.test(why) && H.t < CL.ARM_T) { H.arm = { p: H.armP, t: H.t, short: Math.max(far, 0), jump: jumping(S), tried: true, why }; note(S, 'arm', 'hand', H.i, '닿으면 잡음'); } H.armP = null; }
   }
   if (!K.on) return;
   for (const F of K.feet) {
@@ -1123,8 +1135,9 @@ export function stepClimb(S, inp, dt) {
   const left = V(Math.cos(b.yaw), 0, -Math.sin(b.yaw)), fwd = V(Math.sin(b.yaw), 0, Math.cos(b.yaw)), sup = planted.some(f => f.load > 0.1 && f.box.kind !== 'floor');
   // 쉬운 조작 ③ 자동 몸 맞추기(p3d-0.13.0): 예약된 손의 목표가 AUTO_MAX 안으로 모자라고 몸 입력(W·A·S·D·점프)이 없으면, 어깨에서 목표 쪽으로 W·A·D를 누른 것과 같은 입력을 넣는다.
   //   몸은 플레이어가 누를 때와 같은 길로만 움직인다(지금 붙은 손발이 낼 수 있는 힘, 같은 빠르기 한계·멈춤 규칙). 닿게 되면 예약이 손을 보낸다. 닿는 거리가 실제로 느는 보조다 — W를 얼마나 누를지 맞추지 않아도 된다. NOAUTOBODY = 끔
-  if (autoBodyOn(S) && K.T && !(inp.cx || 0) && !(inp.cy || 0) && !inp.jump && !K.push) { const H = K.hands.find(h => h.arm && h.arm.short <= CL.AUTO_MAX);
-    if (H) { const u = V(...H.arm.p).sub(K.T.sh[H.i]).normalize(), l = u.dot(left), cy = u.y > 0.3 ? 1 : u.y < -0.5 ? -1 : 0, sd = Math.abs(l) > 0.3 ? Math.sign(l) : 0; if (cy || sd) { inp = { ...inp, cy, cx: -sd, cxSign: 1, auto: true }; if (!H.arm.auto) { H.arm.auto = true; note(S, 'auto', 'hand', H.i, '몸을 옮겨 닿는 중'); } } } }
+  //   고침: 뻗다가 멈춘 손(H.auto — limbsStep이 정한다)에만 한다. 위아래와 옆 가운데 더 큰 쪽 하나만 누른다(둘을 함께 누르면 한 발로 선 몸이 좌우로 흔들렸다)
+  if (autoBodyOn(S) && K.T && !(inp.cx || 0) && !(inp.cy || 0) && !inp.jump && !K.push) { const H = K.hands.find(h => h.st === 'reach' && h.auto);
+    if (H) { const u = H.goal.clone().sub(K.T.sh[H.i]).normalize(), l = u.dot(left), vert = Math.abs(u.y) >= Math.abs(l), cy = vert ? (u.y > 0.3 ? 1 : u.y < -0.5 ? -1 : 0) : 0, sd = !vert && Math.abs(l) > 0.3 ? Math.sign(l) : 0; if (cy || sd) inp = { ...inp, cy, cx: -sd, cxSign: 1, auto: true }; } }
   let rollT = held.length === 1 && !planted.some(f => f.load > 0.1) ? (held[0].i ? -1 : 1) * (K.hands.some(h => h.st === 'reach') ? 0.12 : 0.3) : 0;
   // 손으로만 매달려 좌우로 흔들릴 때는 몸 전체가 손을 축으로 기운다(몸통이 꼿꼿한 채 옆으로만 밀리면 팔이 머리를 지나가게 된다)
   const swingRoll = held.length && !planted.some(f => f.load > 0.1);
@@ -1368,8 +1381,7 @@ export function stepClimb(S, inp, dt) {
     // 뛰어서 몸이 손을 지나 올라가면(팔이 다 접힌 채 위로 가는 중) 그 손은 놓인다(누르기로 바꾸는 동작 = 맨틀은 아직 없다)
     if (K.T.sh[h.i].distanceTo(h.goal) < CL.FOLD && b.vel.y > 0.3) { releaseHand(S, h.i, '몸이 손을 지나 올라가 놓음'); continue; }
     const jam = armCheck(S, h.i, K.T.sh[h.i], h.goal); h.jam = jam ? (h.jam || 0) + dt : 0;
-    // 쉬운 조작(p3d-0.13.0): 잡은 팔이 벽·턱·제 몸에 잠깐 스친 것으로는 놓치지 않는다(0.15 → 0.6초). 매달려 손을 옮긴 뒤 몸이 좌우로 30cm씩 흔들리는 동안 왼팔이 아래의 턱 B를 0.15초 스쳐 턱 D의 손을 놓쳤다(경로 13단계). 0.6초 넘게 이어지면 전과 같이 놓친다. NOEASYJAM = 끔
-    if (h.jam > (K.jamStop || (S.opt && S.opt.easy && !globalThis.NOEASYJAM) ? 0.6 : 0.15)) { releaseHand(S, h.i, `${jam} → 놓침`, 'slip'); continue; }
+    if (h.jam > (K.jamStop ? 0.6 : 0.15)) { releaseHand(S, h.i, `${jam} → 놓침`, 'slip'); continue; }
     if (lim.includes(h) && shock > (assistOn(S) && K.tick - (h.grabTick ?? -1e9) < CL.NEW_T / dt ? CL.ASSIST_SHOCK_V : CL.SHOCK_V)) releaseHand(S, h.i, `충격이 커서 놓침(${shock.toFixed(1)}m/s)`, 'slip'); // 잡기 보정: 막 잡은 손(뛰어 잡기·흔들어 잡기)은 ASSIST_SHOCK_V까지 버틴다
     else if (h.bad > CL.SLIP_T) {
       // 잡기 보정(p3d-0.11.4): 막 잡은 손(NEW_T 안)이 버티지 못하는 방향으로 당겨지면, 다른 손이 잡고 있으면 그 손을 놓는다 — 몸이 새 손 아래로 흔들려 가고 원했던 턱은 그대로 잡혀 있다(사용자 결정: "필요하면 다른 쪽을 놓고 원했던 턱을 잡게")
@@ -1709,6 +1721,6 @@ export function afterPose(S) {
 }
 export const limbState = K => ({
   on: K.on,
-  hands: K.hands.map(h => ({ s: h.s, st: h.st, armBlock: h.st === 'reach' && (h.blockT || 0) > 0.12, selfBlock: h.st === 'reach' && (h.selfBlock || 0) > 0.12, armCross: h.st === 'reach' && (h.armCross || 0) > 0.12, swivel: h.st === 'reach' && !!h.swivel, up: h.st === 'reach' && h.up ? { d: h.up.d, n: h.up.n.toArray() } : null, load: h.load, act: h.act || 0, pas: h.pas || 0, loadS: h.loadS || 0, cap: h.cap || 0, why: h.why, arm: h.arm ? { p: h.arm.p, short: h.arm.short, t: h.arm.t, auto: !!h.arm.auto } : null, grip: h.st === 'free' ? null : h.grip.toArray(), w: h.w.toArray(), box: h.st !== 'free' && h.edge ? h.edge.box.name : '' })),
+  hands: K.hands.map(h => ({ s: h.s, st: h.st, armBlock: h.st === 'reach' && (h.blockT || 0) > 0.12, selfBlock: h.st === 'reach' && (h.selfBlock || 0) > 0.12, armCross: h.st === 'reach' && (h.armCross || 0) > 0.12, swivel: h.st === 'reach' && !!h.swivel, up: h.st === 'reach' && h.up ? { d: h.up.d, n: h.up.n.toArray() } : null, load: h.load, act: h.act || 0, pas: h.pas || 0, loadS: h.loadS || 0, cap: h.cap || 0, why: h.why, arm: h.arm ? { p: h.arm.p, short: h.arm.short, t: h.arm.t, tried: !!h.arm.tried } : null, auto: h.st === 'reach' && !!h.auto, grip: h.st === 'free' ? null : h.grip.toArray(), w: h.w.toArray(), box: h.st !== 'free' && h.edge ? h.edge.box.name : '' })),
   feet: K.feet.map(f => ({ s: f.s, st: f.st, load: f.load, loadS: f.loadS || 0, cap: f.cap || 0, ok: f.ok, kind: f.kind, auto: f.auto, why: f.why, p: f.st === 'free' ? null : f.p.toArray(), box: f.st !== 'free' && f.box ? f.box.name : '' })),
 });
