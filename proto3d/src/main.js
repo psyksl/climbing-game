@@ -143,7 +143,9 @@ let lostFocus = false;
 addEventListener('blur', () => { lostFocus = 'blur'; }); document.addEventListener('visibilitychange', () => { if (document.hidden) lostFocus = 'hidden'; });
 // 마우스가 화면 밖으로 나간 채 단추를 떼면 그 뗌을 듣지 못할 수 있다 → 나가는 순간에 거둔다(밖에서 떼어도 잡으러 가지 않는다)
 document.documentElement.addEventListener('mouseleave', () => { lostFocus = 'mouseleave'; });
-function physStep(inp) { const c = pending.splice(0); sim.step(c.length ? { ...inp, cmd: (inp.cmd || []).concat(c) } : inp); }
+// 입력 기록(p3d-0.15.2, 시험·영상용): 실제 키·마우스로 넣은 입력을 계산 걸음마다(계산에 넘어간 그대로) 적어 두었다가, 같은 입력을 멈춘 화면에서 한 걸음씩 다시 틀어 영상으로 찍는다(__p3.recStart / recStop)
+let REC = null;
+function physStep(inp) { const c = pending.splice(0), x = c.length ? { ...inp, cmd: (inp.cmd || []).concat(c) } : inp; if (REC) REC.push(JSON.parse(JSON.stringify(x))); sim.step(x); }
 function reset(o) { sim.reset(o || world.spawn); courseReset(gym, sim.tick); sim.opt.footAssist = OPT.footAssist; sim.opt.grabAssist = OPT.grabAssist; sim.opt.poseAssist = OPT.poseAssist; sim.opt.easy = OPT.easy; sim.opt.autoBody = OPT.autoBody; sim.opt.keepHold = OPT.keepHold; sim.opt.press = OPT.press; sim.opt.wallRest = OPT.wallRest; sim.climb.oldPose = OPT.oldPose; body = sim.body; pending.length = 0; aim.held[0] = aim.held[1] = null; }
 
 const CAM = { AIR_BOX: 0.9, WALL_DEAD: 0.12, WALL_RATE: 2.5, LAND_T: 0.8 }, lerpN = (a, b, t) => a + (b - a) * t;
@@ -355,6 +357,7 @@ window.__p3 = {
   // 벽 접촉(W2): 상태·기록·명령·미리보기. 시험은 cmd()로 명령을 넣거나 실제 마우스·키 입력을 쓴다
   climb: () => ({ ...limbState(sim.climb), stats: { ...sim.climb.stats }, lean: { ...sim.climb.lean }, yaw: body.yaw }), climbLog: () => sim.climb.log.slice(), CL,
   cmd: c => { pending.push(c); },
+  recStart: () => { REC = []; return sim.tick; }, recStop: () => { const r = REC; REC = null; return r; }, tick: () => sim.tick,
   // 영상·시연용: 계산 걸음마다의 입력 목록을 지금부터 차례로 넣는다(실제 화면 루프로 돈다). 끝나면 저절로 풀린다. 스크립트 입력이며 사람 손이 아니다
   script(inputs) { const k0 = sim.tick; tickInput = k => { const i = k - k0; if (i >= inputs.length - 1) tickInput = null; return inputs[Math.min(i, inputs.length - 1)]; }; }, scripting: () => !!tickInput, pending: () => pending.length, probe: (limb, i, p) => (limb === 'foot' ? probeFoot : probeHand)(sim, i, new THREE.Vector3(...p)),
   screenOf: p => screenOf(p), aim: () => { const a = aimPoint(); return a ? a.toArray() : null; }, aimGrip: () => (aim.grip ? aim.grip.toArray() : null), wallStart, gym: () => { const v = courseView(gym), T = v.try; return { course: v.course && v.course.id, phase: v.phase, done: !!(T && T.done), tryId: T ? T.id : 0, clean: !!(T && T.clean), cleanWhy: T ? T.cleanWhy : '', doneT: T ? T.doneT : 0, live: v.live, rec: v.rec, world: WNAME }; },
