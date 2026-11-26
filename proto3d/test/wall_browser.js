@@ -53,7 +53,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   { // 발 이름표의 문구(p3d-0.8.5): 진단 표시에서 발은 '미는 힘 · 고른 값 · 미는 한계'로 나온다. 0.8.4는 발에도 팔의 문구('당김 · 편 팔 버팀 · 당김 한계')가 나왔다
     await wait(300); const tg = await P(() => __p3.tagsText()), ft = [tg[2], tg[3]].filter(x => /디딤/.test(x || '')).map(x => x.replace(/\s+/g, ' '));
     check('진단 표시(임시): 디딘 발의 이름표는 "미는 힘 · 고른 값 · 미는 한계"이고 팔의 문구(당김·편 팔)가 없다', ft.length > 0 && ft.every(x => /미는 힘 [0-9.]+ · 고른 값 [0-9.]+ · 미는 한계/.test(x) && !/당김|편 팔/.test(x)), ft.join(' | ').slice(0, 150) || '디딘 발의 이름표가 없음'); }
-  { await wait(300); const t = (await P(() => __p3.tagsText())).join(' | '); { const m = /잡음 당김 ([0-9.]+) · 편 팔 버팀 [0-9.]+ · 고른 값 ([0-9.]+) · 당김 한계 (0\.65)/.exec(t.replace(/\s+/g, ' ')); check('진단 표시(임시): 잡은 손의 이름표에 당기는 힘·편 팔로 버티는 몫·고른 값·당김 한계가 따로 나온다(모두 몸무게의 배수). 당기는 힘은 한계를 넘지 않는다', !!m && +m[1] <= +m[3] + 0.005, t.replace(/\s+/g, ' ').slice(0, 130)); } }
+  { await wait(300); const t = (await P(() => __p3.tagsText())).join(' | '); { const m = /잡고 있음 당김 ([0-9.]+) · 편 팔 버팀 [0-9.]+ · 고른 값 ([0-9.]+) · 당김 한계 (0\.65)/.exec(t.replace(/\s+/g, ' ')); check('진단 표시(임시): 잡은 손의 이름표에 당기는 힘·편 팔로 버티는 몫·고른 값·당김 한계가 따로 나온다(모두 몸무게의 배수). 당기는 힘은 한계를 넘지 않는다', !!m && +m[1] <= +m[3] + 0.005, t.replace(/\s+/g, ' ').slice(0, 130)); } }
   // 시점 보기 모드: 조작이 모두 멈추고 우클릭 끌기로 시점만 돈다
   await key('KeyV', 80); await wait(100);
   { const n0 = await tries(), s0 = await st(); await pg.keyboard.down('Space'); await pg.keyboard.down('KeyQ'); await pg.keyboard.down('KeyW'); await wait(150); const mid = await st(); await pg.keyboard.up('Space'); await pg.keyboard.up('KeyQ'); await pg.keyboard.up('KeyW');
@@ -69,8 +69,8 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   { const s = await st(); check('포커스를 잃으면 눌린 키가 모두 풀린다(몸 위로 멈춤). 잡은 손은 그대로', cyBefore === 1 && s.i.read.cy === 0 && s.i.down.length === 0 && s.c.hands.every(h => h.st === 'hold'), `전 ${cyBefore} → 후 ${s.i.read.cy} · 눌린 키 ${s.i.down.length}개`); }
   await pg.keyboard.up('KeyW');
   // 키 다시 정하기
-  await P(() => __p3.setKeys('relL', ['KeyZ'])); await key('KeyQ'); await wait(150); const afterQ = (await st()).c.hands[0].st; await key('KeyZ'); await handIs(0, 'free');
-  { const s = await st(), cf = await P(() => __p3.conflicts().length), stored = await P(() => localStorage.getItem('p3dBind_v2')); check('키 다시 정하기: 왼손 놓기를 Z로 바꾸면 Q는 듣지 않고 Z가 듣는다(저장됨, 겹침 없음)', afterQ === 'hold' && s.c.hands[0].st === 'free' && cf === 0 && /KeyZ/.test(stored || ''), `Q 뒤 ${afterQ} · Z 뒤 ${s.c.hands[0].st} · 겹침 ${cf}`); }
+  await P(() => __p3.setKeys('relL', ['Backquote'])); await key('KeyQ'); await wait(150); const afterQ = (await st()).c.hands[0].st; await key('Backquote'); await handIs(0, 'free');
+  { const s = await st(), cf = await P(() => __p3.conflicts().length), stored = await P(() => localStorage.getItem('p3dBind_v2')); check('키 다시 정하기: 왼손 놓기를 `(1 왼쪽 키)로 바꾸면 Q는 듣지 않고 그 키가 듣는다(저장됨, 겹침 없음)', afterQ === 'hold' && s.c.hands[0].st === 'free' && cf === 0 && /Backquote/.test(stored || ''), `Q 뒤 ${afterQ} · Z 뒤 ${s.c.hands[0].st} · 겹침 ${cf}`); }
   await P(() => __p3.resetKeys());
   { const c = await P(() => __p3.conflicts()); check('기본 입력 표에 겹친 키가 없다(문맥이 겹치는 것끼리. 끌기와 누르기는 같은 단추를 나눠 쓴다)', c.length === 0, JSON.stringify(c)); }
 
