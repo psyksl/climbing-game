@@ -27,7 +27,7 @@ const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(4, 8, 5)
 // 지형(p3d-0.14.0): 화면 기본 = 클라이밍장. ?world=old = 옛 작은 벽(시험의 기준 장면 — ?test·?manual로 여는 브라우저 시험은 따로 정하지 않으면 이것), ?world=corner = 다른 벽으로 옮겨 가기 시험용(p3d-0.10.4)
 const WNAME = params.get('world') || (params.has('test') || params.has('manual') ? 'old' : 'gym');
 const world = WNAME === 'corner' ? makeFixtureWorld() : WNAME === 'old' ? makeWorld() : makeGym(); buildWorldMeshes(world, scene);
-if (world.gym) { Object.assign(sun.shadow.camera, { left: -11, right: 11, top: 9, bottom: -9 }); sun.shadow.mapSize.set(2048, 2048); sun.position.set(2, 10, 6); }
+if (world.gym) { Object.assign(sun.shadow.camera, { left: -11, right: 11, top: 13, bottom: -3 }); sun.shadow.mapSize.set(2048, 2048); sun.position.set(2, 14, 8); scene.fog = new THREE.Fog('#cfd6dc', 40, 90); } // 클라이밍장은 12m 벽을 멀리서도 보게 안개를 멀리
 const rig = buildCharacter(); scene.add(rig.root);
 const skel = new THREE.SkeletonHelper(rig.mesh); skel.visible = false; scene.add(skel);
 // 사람형 몸(p3d-0.10.0, 기본): 제어 뼈대(rig)는 계산에만 쓰고 숨긴다. 그릴 때마다 제어 뼈대의 확정된 자세를 새 몸에 옮긴다(human.js — 계산 상태를 바꾸지 않는다). 옛 몸: 주소에 ?body=old
