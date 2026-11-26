@@ -1,12 +1,13 @@
 // short_browser.mjs가 기록한 입력(실제 키·마우스 이벤트가 계산 걸음마다 만든 입력)을 같은 빌드에서 한 걸음씩 다시 틀어 **1배속 영상**으로 찍는다(p3d-0.15.2).
 // 계산 걸음 4개(1/30초)마다 한 장 → 초당 30장으로 묶으므로 영상의 1초 = 게임의 1초다. 화면 기본 렌더링(그림자 켬). 끝의 접촉을 기록한 것과 견준다(같은 계산인지).
+// (옆 = 몸의 오른쪽에서 본다. 처음에는 왼쪽에서 찍었는데 초록 코스는 왼쪽 벽이 1.2m 옆이라 카메라가 벽에 막혀 몸통만 크게 찍혔다 — 찍은 영상은 띠 그림으로 확인한다)
 // 보는 쪽(VIEWS): back = 뒤 전신, side = 옆 전신, feet = 발 확대(뒤), hands = 손 확대(뒤). **스크립트가 넣은 입력이며 사람 손이 아니다.**
 // 사용: [MODE=clip] IN=<short_browser의 OUT.json> [VIEWS=back,side,feet,hands] [T0=초 T1=초] node test/short_video.mjs <출력 폴더>
 import fs from 'fs'; import path from 'path'; import { fileURLToPath } from 'url'; import { createRequire } from 'module'; import { execFileSync } from 'child_process';
 const HERE = path.dirname(fileURLToPath(import.meta.url)), require = createRequire(import.meta.url), { chromium } = require('playwright');
 const [out] = process.argv.slice(2), E = process.env, R = JSON.parse(fs.readFileSync(E.IN, 'utf8')); if (!out) { console.log('사용: IN=입력.json node test/short_video.mjs <출력 폴더>'); process.exit(1); }
 const build = path.join(HERE, '..', R.clip ? 'climb3d_mocap.html' : 'climb3d.html'), EVERY = +(E.EVERY || 4), VIEWS = (E.VIEWS || 'back,side,feet,hands').split(','), T0 = +(E.T0 || 0), T1 = +(E.T1 || 1e9), NAME = E.NAME || `짧은구간_${R.route}${R.recover ? '_복구' : ''}`;
-const CAMS = { back: { off: Math.PI + 0.30, dist: 4.2, pitch: 0.10, dy: 0.45 }, side: { off: Math.PI / 2 + 0.12, dist: 4.2, pitch: 0.06, dy: 0.45 }, feet: { off: Math.PI + 0.35, dist: 2.1, pitch: 0.16, dy: -0.55 }, hands: { off: Math.PI + 0.30, dist: 2.0, pitch: 0.02, dy: 0.80 } };
+const CAMS = { back: { off: Math.PI + 0.30, dist: 4.2, pitch: 0.10, dy: 0.45 }, side: { off: -Math.PI / 2 - 0.12, dist: 4.0, pitch: 0.06, dy: 0.45 }, feet: { off: Math.PI + 0.35, dist: 2.1, pitch: 0.16, dy: -0.55 }, hands: { off: Math.PI + 0.30, dist: 2.0, pitch: 0.02, dy: 0.80 } };
 fs.mkdirSync(out, { recursive: true }); for (const v of VIEWS) { fs.rmSync(path.join(out, 'f_' + v), { recursive: true, force: true }); fs.mkdirSync(path.join(out, 'f_' + v), { recursive: true }); }
 const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }), pg = await b.newPage({ viewport: { width: +(E.VW || 960), height: +(E.VH || 640) } }), errs = []; pg.on('pageerror', e => errs.push(e.message));
 await pg.goto('file://' + build + (R.shadow === false || E.SHADOW === '0' ? '?noshadow' : '')); await pg.waitForTimeout(2500);
