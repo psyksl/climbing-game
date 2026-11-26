@@ -1374,11 +1374,12 @@ export function stepClimb(S, inp, dt) {
   //   사람은 버티지 못하는 방향으로는 손에 힘을 싣지 않는다 → 발이 디뎌 있고 뛰는 중이 아니면, 당기는 방향이 턱이 버티는 범위(GRIP_ANG)를 벗어난 손은 GRIP_BAD_CAP까지만 당긴다(뛰는 중에도 묶었더니 벽을 디딘 채 뛰는 높이가 35.8 → 25.1cm로 줄었다). 발이 받치지 못하면(매달림) 몸이 처지며 다 편 팔이 받는 몫(pas)이 생겨 전처럼 놓친다
   const gripOk = h => { const pull = T.sh[h.i].clone().sub(h.goal).normalize(), down = -pull.y, out = Math.max(0, pull.dot(h.n)), lat = pull.clone().addScaledVector(h.n, -pull.dot(h.n)).setY(0).length(); return down > 0.05 && Math.hypot(out, lat) / down <= Math.tan(CL.GRIP_ANG); };
   // p3d-0.11.5 점프 보정(사용자: "점프를 하면 보정을 해 줘야 되는데 반응도 없다"): 한 손으로 매달려 뛰면 한 팔의 순간 힘 0.85배로는 중력도 못 이겨 0.0~0.3cm(발을 벽에 대면 7cm) 올랐다 → 잡기 보정이 켜져 있으면 한 손만 잡고 뛸 때 ASSIST_BURST1
-  // 누르기: 어깨가 손보다 위(어깨 → 손이 아래로 25% 넘게 기움)면 미는 팔(u = 손 → 어깨), 손 높이 둘레(위로 5~25%)에서는 당기는 힘이 줄어든다
+  // 누르기: 어깨가 손보다 위(어깨 → 손이 아래로 25% 넘게 기움)면 미는 팔(u = 손 → 어깨). 당기는 팔은 당기는 방향이 버틸 수 있는 범위(GRIP_ANG)의 끝에 다가갈수록 힘을 줄인다 — 버티지 못할 방향으로는 당기지 않는다
+  //   (처음에는 높이로만 줄였더니, 어깨가 손 높이 가까이 올라간 채 발을 옮길 때 두 손이 "당기는 방향이 턱에서 벗어남"으로 함께 미끄러졌다 — 초록, 누르기 끔에서는 3/3이던 코스)
   const prsF = pressOn(S) && planted.some(f => f.kind === 'top' && f.box && f.box.kind !== 'floor');
   for (const h of held) { const uh = h.goal.clone().sub(T.sh[h.i]).normalize(), pk = prsF && !K.push ? clamp((-uh.y - 0.25) / 0.35, 0, 1) : 0; h.pressK = pk;
     if (pk > 0) { C.push({ arm: true, f0: null, u: uh.clone().negate(), cap: CL.PRESS_F * BW * pk, r: h.goal.clone().sub(com) }); who.push(h); continue; }
-    const cap = (K.push ? (assistOn(S) && held.length === 1 && !globalThis.OLDBURST ? CL.ASSIST_BURST1 : CL.ARM_BURST) : CL.ARM_F) * BW * (prsF && !K.push ? clamp((uh.y - 0.05) / 0.20, 0, 1) : 1);  C.push({ arm: true, f0: h.F, u: uh, cap: DIM.boxCollide && !globalThis.OLDGRIPCAP && !K.push && planted.length && !gripOk(h) ? Math.min(cap, CL.GRIP_BAD_CAP * BW) : cap, r: h.goal.clone().sub(com) }); who.push(h); }
+    const cap = (K.push ? (assistOn(S) && held.length === 1 && !globalThis.OLDBURST ? CL.ASSIST_BURST1 : CL.ARM_BURST) : CL.ARM_F) * BW * (prsF && !K.push ? clamp((Math.tan(CL.GRIP_ANG) - Math.hypot(uh.x, uh.z) / Math.max(uh.y, 1e-3)) / 0.3, 0, 1) : 1);  C.push({ arm: true, f0: h.F, u: uh, cap: DIM.boxCollide && !globalThis.OLDGRIPCAP && !K.push && planted.length && !gripOk(h) ? Math.min(cap, CL.GRIP_BAD_CAP * BW) : cap, r: h.goal.clone().sub(com) }); who.push(h); }
   const Fs = solveForces(C, Fd, held.length ? 0 : CL.MOM), acc = V(0, -PHY.G, 0), v0 = b.vel.clone(), p0 = b.pos.clone();
   Fs.forEach((f, i) => { acc.addScaledVector(f, 1 / m); who[i].load = who[i].act = f.length() / BW; who[i].pas = 0; who[i].cap = C[i].cap / BW; who[i].F = f; if (!C[i].arm) who[i].ok = f.lengthSq() > 1; });
   // 흔들기: 손으로만 매달렸을 때 A/D는 벽과 나란한 쪽으로 몸을 미는 힘(엉덩이·다리를 차서 흔드는 것을 질점 몸에 옮긴 근사. 팔 길이 구속이 진자 운동으로 바꾼다)
