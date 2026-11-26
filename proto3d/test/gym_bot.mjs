@@ -7,6 +7,7 @@
 import { prov, provLine } from './provenance.mjs';
 import fs from 'fs'; import path from 'path'; import { fileURLToPath, pathToFileURL } from 'url';
 const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pathToFileURL(path.join(HERE, '../src', f)).href);
+const { makeCourseState, courseSelect, courseStep, courseView } = await imp('course.js');
 const { buildCharacter } = await imp('rig.js'), { makeGym, rayHit } = await imp('world.js'), { makeSim } = await imp('sim.js'), { limbState, aimGrip, probeHand, probeFoot } = await imp('climb.js'), THREE = await import('three');
 const E = process.env, CLIPS = E.MODE === 'clip' ? JSON.parse(fs.readFileSync(path.join(HERE, '../assets_local/clips.json'), 'utf8')) : null, rig = buildCharacter();
 const EASY = E.EASY !== '0', NOISE = +(E.NOISE || 0), SEEDS = (E.SEED || '1').split(',').map(Number), TRACE = !!E.TRACE, OUT = E.OUT;
@@ -24,6 +25,8 @@ function climbCourse(courseId, seed) {
   sim.reset({ pos: C.startPos, yaw: C.startYaw }); Object.assign(sim.opt, { wallRest: false, footAssist: true, grabAssist: true, poseAssist: true, posture: 'fb', easy: EASY, press: E.PRESS === '1' });
   const W = C.frame, t = V3(...W.t), n = V3(...W.n), o = V3(...W.o), uOf = p => p.clone().sub(o).dot(t);
   const log = [], ev = [], res = { course: courseId, seed, ok: false, t: 0, moves: 0, rejects: 0, slips: 0, why: '', at: '' };
+  // 화면과 같은 코스 상태 모듈(p3d-0.15.1)을 걸음마다 불러, 봇의 완등 판정과 화면의 완등·색 지킴이 같은지 본다
+  const CG = makeCourseState(world.courses); courseSelect(CG, C, 0);
   let look = null, inp = {}, fell = false, onWall = false, topT = 0;
   const say = s => { log.push(`${f2(sim.tick / 120)} ${s}`); if (TRACE) console.log(`  ${f2(sim.tick / 120)} ${s}${E.TRACE === '2' ? ` · 몸 ${sim.body.pos.toArray().map(f2).join(',')}` : ''}`); };
   // 카메라: 등 뒤 3.6m·0.25rad 비스듬히(main.js의 T). 화면처럼 벽·기둥에 막히면 그 앞까지 당긴다(옆면 코스는 비스듬한 쪽이 옆 벽 속이었다)
@@ -33,6 +36,7 @@ function climbCourse(courseId, seed) {
     if (hit) look = hit.toArray(); const g = hand && EASY && hit ? aimGrip(world, c0, d, hit, sim.climb.hands.filter(h => h.st === 'hold').map(h => h.grip)) : null; return (g ? g.p : hit) || q; };
   const rec = E.REC ? [] : null;
   const step = (k, cmd = []) => { for (let i = 0; i < k; i++) { const x = { mx: 0, mz: 0, cxSign: 1, ...(look ? { look } : {}), ...inp, cmd: i ? [] : cmd }; if (rec) rec.push(JSON.parse(JSON.stringify(x))); sim.step(x);
+      courseStep(CG, { tick: sim.tick, on: sim.climb.on, pos: sim.body.pos.toArray(), hands: sim.climb.hands.map(h => ({ st: h.st, box: h.st === 'hold' && h.edge ? h.edge.box : null })) }, 1 / 120);
       for (const e of sim.climb.events) { ev.push(e); if (e.type === 'reject') res.rejects++; if (e.type === 'slip') res.slips++; if (TRACE && !/^(try|bump|lift)$/.test(e.type)) say(`${e.type} ${e.name || ''} ${e.why || ''}`); if (e.type === 'exit') { fell = onWall && sim.body.pos.y > 0.25; } }
       if (sim.climb.on) onWall = true; const L = limbState(sim.climb), top = L.hands.every(h => h.st === 'hold' && /완등/.test(h.box) && h.box.startsWith(C.name)); topT = top ? topT + 1 / 120 : 0; if (topT > 0.5) return 'top'; if (fell && !sim.climb.on) return 'fell'; }
     return ''; };
@@ -87,10 +91,10 @@ function climbCourse(courseId, seed) {
     z = sendHand(i, h, 0, !!h.jump); if (z === 'top') break; if (z !== 'ok') { res.why = z; res.at = h.name; return fin(); } }
   res.ok = z === 'top' || L().hands.every(x => x.st === 'hold' && /완등/.test(x.box)); if (!res.ok) { res.why = z || '두 손이 완등 홀드에 없음'; res.at = '완등'; }
   return fin();
-  function fin() { if (rec) fs.writeFileSync(E.REC, JSON.stringify({ course: courseId, startPos: C.startPos, startYaw: C.startYaw, easy: EASY, res: { ok: res.ok }, inputs: rec, log })); res.t = +(sim.tick / 120).toFixed(2); res.hands = held(); res.feet = L().feet.map(f => (f.st === 'plant' ? f.box : '')); res.y = +sim.body.pos.y.toFixed(2); if (!TRACE && !res.ok) res.log = log.slice(-8); return res; }
+  function fin() { if (rec) fs.writeFileSync(E.REC, JSON.stringify({ course: courseId, startPos: C.startPos, startYaw: C.startYaw, easy: EASY, res: { ok: res.ok }, inputs: rec, log })); { const v = courseView(CG), T = v.try || CG.last; res.cs = { sel: v.course && v.course.id, done: !!(T && T.done), clean: !!(T && T.clean), why: T ? T.cleanWhy : '', tries: CG.nTry }; } res.t = +(sim.tick / 120).toFixed(2); res.hands = held(); res.feet = L().feet.map(f => (f.st === 'plant' ? f.box : '')); res.y = +sim.body.pos.y.toFixed(2); if (!TRACE && !res.ok) res.log = log.slice(-8); return res; }
 }
 
 const courses = E.COURSE ? E.COURSE.split(',') : makeGym(GYMOPT).courses.map(c => c.id);
 for (const c of courses) for (const s of SEEDS) { const r = climbCourse(c, s); if (OUT) fs.appendFileSync(OUT, JSON.stringify(r) + '\n');
-  console.log(`${r.ok ? '완등' : '실패'} [${c}] 씨앗 ${s} · ${r.t}초 · 손 명령 ${r.moves} · 거부 ${r.rejects} · 놓침 ${r.slips}${r.ok ? '' : ` · ${r.at}: ${r.why}`} · 손 ${r.hands.join('/')} · 발 ${r.feet.join('/')}`);
+  console.log(`${r.ok ? '완등' : '실패'} [${c}] 씨앗 ${s} · ${r.t}초 · 손 명령 ${r.moves} · 거부 ${r.rejects} · 놓침 ${r.slips}${r.ok ? '' : ` · ${r.at}: ${r.why}`} · 화면 판정 ${r.cs.done ? '완등' : '미완'}${r.cs.done !== r.ok ? '(봇과 다름!)' : ''}·${r.cs.clean ? '색 지킴' : `자유(${r.cs.why})`}·시도 ${r.cs.tries} · 손 ${r.hands.join('/')} · 발 ${r.feet.join('/')}`);
   if (!r.ok && r.log) for (const l of r.log) console.log('    ' + l); }
