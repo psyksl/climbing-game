@@ -7,7 +7,7 @@ import { prov, provLine } from './provenance.mjs';
 import fs from 'fs'; import path from 'path'; import { fileURLToPath, pathToFileURL } from 'url';
 console.log(provLine(prov()));
 const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pathToFileURL(path.join(HERE, '../src', f)).href);
-const { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { limbState, aimGrip } = await imp('climb.js'), { rayHit } = await imp('world.js'), THREE = await import('three'), { ROUTE, ROUTE_START } = await import('./route_steps.mjs');
+const { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { limbState, aimGrip, probeHand } = await imp('climb.js'), { rayHit } = await imp('world.js'), THREE = await import('three'), { ROUTE, ROUTE_START } = await import('./route_steps.mjs');
 const CLIPS = process.env.MODE === 'clip' ? JSON.parse(fs.readFileSync(path.join(HERE, '../assets_local/clips.json'), 'utf8')) : null, rig = buildCharacter(), outF = process.argv[2];
 const [shI, shN] = (process.env.SHARD || '0/1').split('/').map(Number), clone = R => R.map(([n, segs]) => [n, segs.map(([k, inp = {}, cmd = []]) => [k, { ...inp }, cmd.map(c => ({ ...c, p: c.p ? [...c.p] : undefined }))])]);
 // 실제 플레이처럼: 화면의 기본 시점(몸 뒤 3.6m, 옆으로 0.25rad, 위로 0.12rad — main.js의 wallStart)에서 "턱의 그 자리에서 화면상 옆·위아래로 어긋난 점"을 겨눈 시선을 쏘아, 지형에 닿은 점을 손 명령의 자리로 넘긴다.
@@ -16,10 +16,12 @@ const SNAP = process.env.AIMSNAP === '1', V3 = (x, y, z) => new THREE.Vector3(x,
 function viaRay(sim, c) { const b = sim.body.pos, o = V3(b.x + 0.88, b.y + 1.73, b.z + 3.46), q = V3(c.p[0] + c.aimOff[0], c.p[1] + c.aimOff[1], c.p[2]), d = q.clone().sub(o).normalize(), far = o.clone().addScaledVector(d, 40), t = rayHit(sim.world, o, far), hit = t < 1 ? o.clone().lerp(far, t) : null;
   const g = SNAP ? aimGrip(sim.world, o, d, hit) : null, p = g ? g.p : hit; return { ...c, p: p ? p.toArray() : [0, -99, 0] }; }
 function run(R, upto, uptoSeg = 99, limb = null, who = '', from = 0) { const sim = makeSim(rig, makeWorld(), CLIPS); sim.reset({ pos: ROUTE_START, yaw: Math.PI }); Object.assign(sim.opt, { wallRest: false, footAssist: true, grabAssist: true, poseAssist: true, posture: 'fb', easy: process.env.EASY === '1' });
-  let look = null, fell = false, moved = false; const why = [];
+  let look = null, fell = false, moved = false, pr = null; const why = [];
   for (let si = 0; si <= upto; si++) for (let gi = 0; gi < R[si][1].length && (si < upto || gi <= uptoSeg); gi++) { const [n, inp, cmd] = R[si][1][gi]; for (const c of cmd) if (c.p) look = c.p; const cmd1 = cmd.map(c => (c.aimOff ? viaRay(sim, c) : c)); for (const c of cmd1) if (c.p) look = c.p;
+    // 누르기 직전의 미리보기(전 = 잡은 채의 어깨, 새 = 놓고 뻗은 자세의 어깨)를 적어 실제 결과와 견준다
+    if (si === upto && gi === from && limb && limb.type === 'hand' && sim.climb.on) { const c = cmd1.find(x => x.type === 'hand' && x.i === limb.i && x.p); if (c) { const was = globalThis.OLDPROBE, f = o => { globalThis.OLDPROBE = o; const r = probeHand(sim, c.i, V3(...c.p)); return r.ok ? 'ok' : r.short !== undefined ? Math.round(r.short * 100) : r.why; }; pr = [f(true), f(false)]; globalThis.OLDPROBE = was; } }
     for (let i = 0; i < n; i++) { sim.step({ mx: 0, mz: 0, cxSign: 1, ...(look ? { look } : {}), ...inp, cmd: i ? [] : cmd1 }); if (si === upto) for (const e of sim.climb.events) { if (e.type === 'exit') fell = true; if (gi >= from && e.name === who && /^(grab|step)$/.test(e.type)) moved = true; if (/reject|deny|slip/.test(e.type)) why.push(`${e.name || ''} ${e.why || ''}`.trim()); } } }
-  const L = limbState(sim.climb); if (limb) { const x = limb.type === 'hand' ? L.hands[limb.i] : L.feet[limb.i]; return { key: ((limb.type === 'hand' ? x.st === 'hold' : x.st === 'plant') ? x.box : '-') + (moved ? '' : '(옮기지 못함)'), fell, why: why.slice(-2).join(' | ') }; }
+  const L = limbState(sim.climb); if (limb) { const x = limb.type === 'hand' ? L.hands[limb.i] : L.feet[limb.i]; return { key: ((limb.type === 'hand' ? x.st === 'hold' : x.st === 'plant') ? x.box : '-') + (moved ? '' : '(옮기지 못함)'), fell, why: why.slice(-2).join(' | '), pr }; }
   return { key: L.hands.map(h => (h.st === 'hold' ? h.box : '-')).join('/'), feet: L.feet.map(f => (f.st === 'plant' ? f.box : '-')).join('/'), fell, why: why.slice(-2).join(' | '), y: sim.body.pos.y }; }
 // 흔들 것의 목록
 const V = []; ROUTE.forEach(([name, segs], si) => { const jumpStage = segs.some(s => s[1] && s[1].jump);
@@ -35,5 +37,5 @@ const V = []; ROUTE.forEach(([name, segs], si) => { const jumpStage = segs.some(
 const base = {}, jumpSt = si => ROUTE[si][1].some(s => s[1] && s[1].jump), segOf = v => (v.limb && !jumpSt(v.si) ? v.gi : 99), getBase = v => { const k = v.si + ':' + segOf(v) + ':' + v.gi + ':' + (v.limb ? v.limb.type + v.limb.i : ''); return base[k] || (base[k] = run(clone(ROUTE), v.si, segOf(v), v.limb || null, v.who, v.gi)); };
 console.log(`흔들 것 ${V.length}가지 · 이 조각 ${shI}/${shN}`);
 V.forEach((v, idx) => { if (idx % shN !== shI) return; const b = getBase(v), R = clone(ROUTE); v.mod(R); const r = run(R, v.si, segOf(v) === 99 ? 99 : segOf(v) + (v.shift || 0), v.limb || null, v.who, v.limb ? v.gi + (v.shift || 0) : 0), ok = r.key === b.key && !r.fell;
-  const row = { si: v.si + 1, stage: ROUTE[v.si][0], kind: v.kind, who: v.who, label: v.label, val: v.val, ok, base: b.key, got: r.key, fell: r.fell, why: r.why }; if (outF) fs.appendFileSync(outF, JSON.stringify(row) + '\n');
+  const row = { si: v.si + 1, stage: ROUTE[v.si][0], kind: v.kind, who: v.who, label: v.label, val: v.val, ok, base: b.key, got: r.key, fell: r.fell, why: r.why, pr: r.pr || undefined }; if (outF) fs.appendFileSync(outF, JSON.stringify(row) + '\n');
   console.log(`${ok ? '같음' : '다름'} [${row.si}] ${v.kind} · ${v.who} ${v.label} → 손 ${r.key}${r.fell ? ' (떨어짐)' : ''}${ok ? '' : ' · 기준 ' + b.key + (r.why ? ' · ' + r.why : '')}`); });
