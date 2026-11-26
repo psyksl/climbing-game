@@ -633,6 +633,8 @@ export function command(S, c) {
     if (armOn(S) && !c.armed && !jumping(S) && S.body.vel.length() < 0.3) { const pr = probeHand(S, c.i, pt);
       if (!pr.ok && pr.short !== undefined && pr.short > CL.ARM_TRY && pr.short <= CL.ARM_MAX) { H.arm = { p: c.p.slice(), t: 0, short: pr.short, jump: false, tried: false, why: pr.why }; H.why = ''; note(S, 'arm', 'hand', c.i, `닿으면 잡음(${short(pr.short)} 모자람)`); return; }
       H.armP = c.p.slice(); }
+    // 쉬운 조작 ②의 되돌아가기(p3d-0.13.1): 잡고 있던 자리를 적어 둔다. 뻗다가 거리 때문에 거부되면 그 자리로 돌아가 잡은 채 예약으로 기다린다(아래 뻗기의 거부). NOARMBACK = 돌아가지 않음(0.13.0)
+    H.back = H.st === 'hold' && H.armP && !globalThis.NOARMBACK ? H.grip.clone() : null;
     if (H.st === 'hold') releaseHand(S, c.i, '옮기려고 놓음');
     Object.assign(H, { st: 'reach', drag: false, edge: g.edge, t: 0, T: 2.5, wait: 0, best: undefined, lastFar: undefined, stall: 0, lock: null, lockN: 0, lockBest: undefined, selfTot: 0, armTot: 0, blockT: 0, sp: 0, shPrev: null, ov: 1, why: '', auto: false, autoT: 0, autoDone: false });
     H.from.copy(H.w); H.goal.copy(goal); H.grip.copy(g.p); H.n.copy(g.n);
@@ -690,7 +692,7 @@ function limbsStep(S, dt) {
   const K = S.climb, J = joints(S);
   // 예약된 손(쉬운 조작 ②): 닿게 됐거나(probeHand = 누를 때와 같은 판정) 뛰기 시작한 걸음에 보낸다. ARM_T가 지나면 지금의 까닭으로 거부(접촉은 그대로)
   for (const H of K.hands) if (H.arm) { const A = H.arm, jn = jumping(S), pr = probeHand(S, H.i, V(...A.p)); A.t += dt; if (pr.short !== undefined) A.short = pr.short; A.why = pr.why;
-    if (pr.ok || (jn && !A.jump) || (!A.tried && pr.short !== undefined && pr.short <= CL.ARM_TRY - 0.05)) { H.arm = null; command(S, { type: 'hand', i: H.i, p: A.p, armed: true }); }
+    if ((jn && !A.jump) || (A.tried ? pr.ok && S.body.pos.distanceTo(A.pos0) > 0.05 : pr.ok || (pr.short !== undefined && pr.short <= CL.ARM_TRY - 0.05))) { H.arm = null; command(S, { type: 'hand', i: H.i, p: A.p, armed: true }); }
     else if (A.t > CL.ARM_T) { H.arm = null; deny(S, H, 'hand', pr.why || '닿지 않음'); }
     else A.jump = jn; }
   for (const H of K.hands) {
@@ -866,7 +868,10 @@ function limbsStep(S, dt) {
     const floorY = groundBelow(S.world, S.body.pos), standReach = floorY + CL.STAND_SH + CL.ARM;
     if (!K.on && !S.body.onGround && S.body.vel.y < -0.4 && H.goal.y > sh.y && H.goal.y > standReach + 0.02 && far > 0.03 && farUp && !globalThis.OLDJUMPHAND && !(assistOn(S) && far <= CL.ASSIST_S)) { reject(S, H, 'hand', `닿지 않음(점프 정점이 지남 · ${short(far)} 모자람)`); continue; }
     if (H.wait > CL.TRY_T || H.t > H.T) { const why = H.blockT > 0.12 ? '팔이 턱에 걸려 닿지 않음' : far > 0.02 ? `닿지 않음(${short(Math.max(far, miss))} 모자람)` : (H.selfBlock || 0) > 0.12 || ((H.selfTot || 0) > 0.3 && (H.selfTot || 0) >= (H.armTot || 0)) ? '몸에 막혀 닿지 않음' : (H.armCross || 0) > 0.12 || (H.armTot || 0) > 0.3 ? '다른 팔에 막혀 닿지 않음' : `닿지 않음(${short(Math.max(far, miss))} 모자람)`; if (handOutTry(S, H, why, dt)) continue; reject(S, H, 'hand', why);
-      if (armOn(S) && H.armP && /^닿지 않음\(/.test(why) && H.t < CL.ARM_T) { H.arm = { p: H.armP, t: H.t, short: Math.max(far, 0), jump: jumping(S), tried: true, why }; note(S, 'arm', 'hand', H.i, '닿으면 잡음'); } H.armP = null; }
+      //   p3d-0.13.1: 손을 뗀 채 기다리면 한 손으로 버티는 자세가 되어 그 뒤의 점프가 낮아졌다(턱 C: 점프 1.5초 전에 누르면 실패, 1초 전은 성공). 사람처럼 잡던 자리로 손을 되돌려 놓고 기다린다.
+      //   되돌아간 뒤의 예약은 뛰기 시작하거나, 몸이 5cm 넘게 옮겨 가 닿게 됐을 때만 보낸다(같은 자리에서 다시 뻗어 봐야 같은 거부다)
+      if (armOn(S) && H.armP && /^닿지 않음\(/.test(why) && H.t < CL.ARM_T) { const A = { p: H.armP, t: H.t, short: Math.max(far, 0), jump: jumping(S), tried: true, why, pos0: S.body.pos.clone() }, bk = H.back; H.back = null;
+        if (bk && K.on) command(S, { type: 'hand', i: H.i, p: bk.toArray(), armed: true }); H.arm = A; note(S, 'arm', 'hand', H.i, bk && K.on ? '잡던 자리로 돌아가 기다림' : '닿으면 잡음'); } H.armP = null; H.back = null; }
   }
   if (!K.on) return;
   for (const F of K.feet) {

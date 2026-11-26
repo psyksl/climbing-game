@@ -36,6 +36,8 @@ const V = []; ROUTE.forEach(([name, segs], si) => { const jumpStage = segs.some(
 // 손·발 명령을 흔든 것은 그 명령의 구간이 끝난 때(뛰는 단계는 단계 끝)에 그 손발이 기준과 같은 턱을 잡았는가로 본다 — 단계 끝의 전체 접촉으로 보면 같은 단계의 다음 명령(고정된 자리)과 부딪혀 생긴 실패까지 센다
 const base = {}, jumpSt = si => ROUTE[si][1].some(s => s[1] && s[1].jump), segOf = v => (v.limb && !jumpSt(v.si) ? v.gi : 99), getBase = v => { const k = v.si + ':' + segOf(v) + ':' + v.gi + ':' + (v.limb ? v.limb.type + v.limb.i : ''); return base[k] || (base[k] = run(clone(ROUTE), v.si, segOf(v), v.limb || null, v.who, v.gi)); };
 console.log(`흔들 것 ${V.length}가지 · 이 조각 ${shI}/${shN}`);
-V.forEach((v, idx) => { if (idx % shN !== shI) return; const b = getBase(v), R = clone(ROUTE); v.mod(R); const r = run(R, v.si, segOf(v) === 99 ? 99 : segOf(v) + (v.shift || 0), v.limb || null, v.who, v.limb ? v.gi + (v.shift || 0) : 0), ok = r.key === b.key && !r.fell;
+// ONLY="6|보내는 시각" = 그 단계·종류로 시작하는 것만(고친 것을 빨리 다시 볼 때)
+const ONLY = process.env.ONLY || '';
+V.forEach((v, idx) => { if (idx % shN !== shI) return; if (ONLY && !`${v.si + 1}|${v.kind}|${v.who}|${v.label}`.startsWith(ONLY)) return; const b = getBase(v), R = clone(ROUTE); v.mod(R); const r = run(R, v.si, segOf(v) === 99 ? 99 : segOf(v) + (v.shift || 0), v.limb || null, v.who, v.limb ? v.gi + (v.shift || 0) : 0), ok = r.key === b.key && !r.fell;
   const row = { si: v.si + 1, stage: ROUTE[v.si][0], kind: v.kind, who: v.who, label: v.label, val: v.val, ok, base: b.key, got: r.key, fell: r.fell, why: r.why, pr: r.pr || undefined }; if (outF) fs.appendFileSync(outF, JSON.stringify(row) + '\n');
   console.log(`${ok ? '같음' : '다름'} [${row.si}] ${v.kind} · ${v.who} ${v.label} → 손 ${r.key}${r.fell ? ' (떨어짐)' : ''}${ok ? '' : ' · 기준 ' + b.key + (r.why ? ' · ' + r.why : '')}`); });
