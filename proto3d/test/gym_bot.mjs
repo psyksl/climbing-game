@@ -55,7 +55,8 @@ function climbCourse(courseId, seed) {
   // 다가가기(사람이 미리보기를 보며 하는 것): 닿지 않으면 → 발 올리기 → 옆으로 멀면 A·D → W. 닿더라도 잡기 보정으로 겨우 닿는 거리(3cm 넘게)면 W를 조금 더(0.6초까지).
   //   뛰어 잡는 홀드는 미리보기와 상관없이 두 번 다가간 뒤 뛴다
   // 닿지 않아서(거리) 안 되는 동안만 다가간다 — 몸·팔에 막혀 안 되는 것은 더 올라가면 나빠진다(누르기를 켜면 몸이 손 위로도 올라간다)
-  const okNow = (i, q) => { const pr = probeHand(sim, i, q); return pr.ok || pr.short === undefined; }, bodyU = () => uOf(sim.body.pos);
+  //   (처음에는 "거리가 아닌 까닭이면 모두 멈춤"으로 했는데, 미리보기는 길이 막힌 것을 거리보다 먼저 알려서 먼 홀드에도 다가가지 않았다 → 제 몸에 걸리는 까닭과 홀드가 이미 어깨 높이 아래인 때만 멈춘다)
+  const okNow = (i, q) => { const pr = probeHand(sim, i, q); return pr.ok || /머리|몸통|손목|어깨가/.test(pr.why || '') || q.y < sim.body.pos.y + 1.45 + 0.10; }, bodyU = () => uOf(sim.body.pos);
   const approach = (i, q, h, jump) => { let z;
     for (let r = 0; r < 2 && (jump || !okNow(i, q)); r++) { if (stepUp(h) === 'fell') return 'fell';
       const lat = uOf(q) - bodyU(); if (Math.abs(lat) > 0.18) { inp = { cx: Math.sign(lat) }; for (let k = 0; k < 10 && !okNow(i, q) && !z; k++) z = step(10); inp = {}; if (z) return z; z = step(20); if (z) return z; }
