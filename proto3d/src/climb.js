@@ -51,7 +51,7 @@ export const CL = {
   // p3d-0.12.0 자세 보조(사용자 2026-11-25: "불가능하다고 거부되는 동작이 엉덩이를 빼면 되는 경우면 보조해 달라. 진짜 안 되면 어쩔 수 없다"):
   //   OUT_MAX = 몸을 벽에서 더 뺄 수 있는 가장 큰 거리, OUT_V = 빼고 돌아오는 빠르기, OUT_STEP = 시험해 보는 간격, OUT_WAIT = 보조를 기다리는 가장 긴 시간(넘으면 원래 까닭으로 거부),
   //   OUT_GRIP = 뺀 뒤에도 잡은 손이 당기는 방향이 아래에서 이 각 안이어야 한다(물리의 놓침은 GRIP_ANG 50°), OUT_PELVIS = 그 가운데 골반이 무게중심보다 더 빠지는 몫(전신 자세 풀이의 골반 앞뒤 값). 실험값
-  OUT_MAX: 0.24, OUT_V: 0.6, OUT_STEP: 0.04, OUT_WAIT: 1.0, OUT_GRIP: 40 * deg, OUT_PELVIS: 0.6, OUT_HAND: 0.14, ROCK_SPAN: 0.10, FOLD_GAP: 0.16, PRESS_F: 0.55, PRESS_TOP: 0.90, SH_Y0: 1.44, LOOK_UP: 0.35, LOOK_EL: 32 * deg, CLEAR_LAT: 0.06, AIM_SNAP: 0.26, AIM_SIDE: 0.20, ARM_T: 2.0, ARM_MAX: 1.0, ARM_TRY: 0.40, AUTO_MAX: 0.30, AUTO_T: 1.2, AIM_YAW: 0.12,
+  OUT_MAX: 0.24, OUT_V: 0.6, OUT_STEP: 0.04, OUT_WAIT: 1.0, OUT_GRIP: 40 * deg, OUT_PELVIS: 0.6, OUT_HAND: 0.14, ROCK_SPAN: 0.10, FOLD_GAP: 0.16, PRESS_F: 0.55, PRESS_TOP: 0.90, OVER_OUT: 0.12, SH_Y0: 1.44, LOOK_UP: 0.35, LOOK_EL: 32 * deg, CLEAR_LAT: 0.06, AIM_SNAP: 0.26, AIM_SIDE: 0.20, ARM_T: 2.0, ARM_MAX: 1.0, ARM_TRY: 0.40, AUTO_MAX: 0.30, AUTO_T: 1.2, AIM_YAW: 0.12,
   // p3d-0.7.0 반동·벽에서 뛰기(임시값):
   //   SWING_A = 손으로만 매달렸을 때 A/D로 엉덩이를 흔드는 힘(가속, 벽과 나란한 쪽). 흔들리는 쪽과 같은 때에 넣으면 커지고 반대로 넣으면 줄어든다. HANG_DAMP = 매달려 흔들릴 때의 감쇠(초당)
   //   PUSH_A·PUSH_T = 벽에서 뛰기의 미는 가속과 시간(손발이 낼 수 있는 힘 안에서만 난다 — 디딘 발이 없으면 팔로 당기는 만큼만). 오르는 중에 떼면 밀기가 그때 끝난다
@@ -127,7 +127,8 @@ export function resolveFoot(world, pt, yaw) {
     const m = 0.06;
     if (pt.x < b.min.x - m || pt.x > b.max.x + m || pt.y < b.min.y - m || pt.y > b.max.y + m || pt.z < b.min.z - m || pt.z > b.max.z + m) continue;
     const thin = b.max.y - b.min.y < 0.12, dTop = Math.abs(pt.y - b.max.y);
-    if (dTop <= m || thin || b.kind === 'floor') {
+    // 기운 면의 계단 조각(b.stair, p3d-0.15.0)은 윗면을 디디지 않는다(2~4cm의 어긋남일 뿐이다) — 옆면(기운 면의 겉)에 대는 발로만 본다
+    if (!b.stair && (dTop <= m || thin || b.kind === 'floor')) {
       const p = V(clamp(pt.x, b.min.x + 0.01, b.max.x - 0.01), b.max.y, clamp(pt.z, b.min.z + 0.01, b.max.z - 0.01)), d = p.distanceTo(pt);
       // 사람형 몸(p3d-0.10.0): 발이 길다(발볼에서 발끝까지 9.2cm). 발끝이 벽·다른 상자에 들지 않게 발볼 자리를 몸 쪽으로 물린다(1cm씩 12cm까지, 그 윗면 안에서만). 옛 몸은 하지 않는다(0.9.1과 같게)
       if (DIM.boxCollide && b.kind !== 'floor' && yaw !== undefined) { const fw = V(Math.sin(yaw), 0, Math.cos(yaw)), tip = () => p.clone().addScaledVector(fw, DIM.toeZ - DIM.ballZ).add(V(0, 0.025, 0));
@@ -1300,6 +1301,11 @@ export function stepClimb(S, inp, dt) {
   // p3d-0.12.3 자세 보조: 벽면에 댄 발(smear)이 있으면 기준 자리의 깊이를 몸에 맞춰 되돌리지 않는다(OLDSMEARLEAD = 옛 방식). 되돌리면 "발 하중이 0.1을 넘어야 몸이 벽에서 떨어지고, 몸이 떨어져야 발 하중이 는다"가 되어, 하중이 0.09~0.10에 머물면 끝내 벽에 붙은 채 흔들렸다(캡처·벽 딛기: 고개를 들어 몸 자리가 1cm 달라진 것만으로 갈렸다)
   if (hanging) { K.ref.x = b.pos.x; if (!(poseAssistOn(S) && !globalThis.OLDSMEARLEAD && planted.some(f => f.kind === 'smear'))) K.ref.z = b.pos.z; } else K.ref.addScaledVector(left, side * CL.SHIFT_V * dt);
   const upV = globalThis.RISE_V ?? (globalThis.OLDRISE ? CL.SHIFT_V : CL.RISE_V); // RISE_V = 시험용: 위아래 빠르기만 바꿔 본다(빠르기 탓인 결과와 구조 탓인 결과를 가르려고)
+  // 오버행(p3d-0.15.0): 오버행 면의 홀드(box.tilt > 0)를 잡았거나 그리로 손을 뻗는 동안, 몸의 기준 자리는 그 손목 자리보다 OVER_OUT만큼은 벽에서 떨어져 있다.
+  //   위의 균형 잡기는 몸을 디딘 발판 위로 보내는데, 오버행에서는 발판이 손보다 벽 쪽 깊이 있어(15°·높이 1.5m면 40cm) 어깨가 홀드의 밑으로 들어가 팔이 그 홀드에 걸렸다("팔이 턱에 걸려").
+  //   사람은 발은 안쪽에 두고 엉덩이·어깨를 손 아래로 뺀다. 곧은 벽의 홀드에는 걸지 않는다(전과 같다). OLDOVEROUT = 끔
+  if (!globalThis.OLDOVEROUT) { let lim = null; for (const h of K.hands) if ((h.st === 'hold' || h.st === 'reach') && h.edge && h.edge.box.tilt > 0) { const d = h.goal.clone().sub(K.ref).dot(fwd); lim = lim === null ? d : Math.min(lim, d); }
+    if (lim !== null && lim < CL.OVER_OUT) K.ref.addScaledVector(fwd, -Math.min(CL.OVER_OUT - lim, 0.6 * dt)); }
   // p3d-0.11.10: 남은 거리로 멈출 수 있는 빠르기를 넘지 않는다(제동 2.5m/s²: v ≤ √(2·a·d)) 기준 자리(ref)가 오르는 빠르기도 같은 한계(기준 자리가 몸보다 앞서 올라가 있으면 따라가는 힘이 다리를 지나치게 편다) — 발판(바닥 아님: 바닥에 선 다리는 이미 다 펴져 있어 팔로 당겨 오르지 못했다)에 디딘 다리가 다 펴지는 자리(97%)·잡은 팔이 다 접히는 자리(FOLD+3cm)까지 — 팔은 0으로 멈추지 않고 초속 0.28m("몸이 손을 지나 올라가 놓음"의 0.3 아래)까지만 줄인다(0으로 멈추면 매달려 당겨 오르는 높이가 21 → 12cm로 줄었다). 0.75m/s로 오르자 다리가 길이의 100.6%까지 지나쳐 발이 몸을 놓고 손에 걸린 몸이 옆으로 초속 1m로 휘청였다. OLDBRAKE = 옛 방식
   // p3d-0.12.2 자세 보조(사용자: 윗몸·고개가 과하게 젖혀진다): 발판을 디디고 오를 때는 잡은 손이 어깨에서 접힘 거리(FOLD_D 36cm) 안으로 들어오기 전에 오르기를 멈춘다(전에는 초속 0.28m로 계속 올랐다).
   //   계속 오르면 낮은 쪽 손이 어깨 높이에 오고, 전신 자세 풀이가 어깨를 손에서 36cm 떼려고 가슴을 한계(34°)까지 젖혀 머리가 골반보다 35cm 뒤로 갔다(캡처 동작의 p2: 몸 높이 0.48m).

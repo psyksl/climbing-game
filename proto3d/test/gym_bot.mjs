@@ -25,7 +25,7 @@ function climbCourse(courseId, seed) {
   const W = C.frame, t = V3(...W.t), n = V3(...W.n), o = V3(...W.o), uOf = p => p.clone().sub(o).dot(t);
   const log = [], ev = [], res = { course: courseId, seed, ok: false, t: 0, moves: 0, rejects: 0, slips: 0, why: '', at: '' };
   let look = null, inp = {}, fell = false, onWall = false, topT = 0;
-  const say = s => { log.push(`${f2(sim.tick / 120)} ${s}`); if (TRACE) console.log(`  ${f2(sim.tick / 120)} ${s}`); };
+  const say = s => { log.push(`${f2(sim.tick / 120)} ${s}`); if (TRACE) console.log(`  ${f2(sim.tick / 120)} ${s}${E.TRACE === '2' ? ` · 몸 ${sim.body.pos.toArray().map(f2).join(',')}` : ''}`); };
   // 카메라: 등 뒤 3.6m·0.25rad 비스듬히(main.js의 T). 화면처럼 벽·기둥에 막히면 그 앞까지 당긴다(옆면 코스는 비스듬한 쪽이 옆 벽 속이었다)
   const cam = () => { const tg = sim.body.pos.clone().add(V3(0, 1.3, 0)), c = tg.clone().addScaledVector(t, 0.88).addScaledVector(n, 3.46).add(V3(0, 0.43, 0)), k = rayHit(world, tg, c, true); return k < 1 ? tg.lerp(c, Math.max(0.2, k - 0.05)) : c; };
   // 화면에서 겨누기: q(세계 자리)를 옆(t)·위로 흔들어 시선을 쏘고 처음 닿은 곳(쉬운 조작이면 조준 맞춤). 겨눈 곳(look)은 맞추기 전의 닿은 점
@@ -37,14 +37,14 @@ function climbCourse(courseId, seed) {
       if (sim.climb.on) onWall = true; const L = limbState(sim.climb), top = L.hands.every(h => h.st === 'hold' && /완등/.test(h.box) && h.box.startsWith(C.name)); topT = top ? topT + 1 / 120 : 0; if (topT > 0.5) return 'top'; if (fell && !sim.climb.on) return 'fell'; }
     return ''; };
   const L = () => limbState(sim.climb), held = () => L().hands.map(h => (h.st === 'hold' ? h.box : ''));
-  const edgePt = (h, du = 0) => { const c = h.min.clone().add(h.max).multiplyScalar(0.5), d = c.clone().sub(o).dot(n), u = uOf(c) + du; return o.clone().addScaledVector(t, u).addScaledVector(n, Math.max(d, 0) + 0.07 - 0.0).setY(h.max.y); }; // 턱의 앞 모서리 가운데(조금 옆으로)
-  const frontPt = h => { const c = h.min.clone().add(h.max).multiplyScalar(0.5), u = uOf(c); return o.clone().addScaledVector(t, u).addScaledVector(n, 0.14).setY(h.max.y); };
+  // 홀드의 앞 모서리 가운데(홀드 상자에서 면이 보는 쪽으로 가장 나온 자리, 윗면 높이). 기운 면에서는 홀드마다 깊이가 다르다
+  const frontPt = h => { const c = h.min.clone().add(h.max).multiplyScalar(0.5), half = Math.abs(n.x) * (h.max.x - h.min.x) / 2 + Math.abs(n.z) * (h.max.z - h.min.z) / 2; return c.addScaledVector(n, half).setY(h.max.y); };
   const footPt = (f, du = 0) => { const c = f.min.clone().add(f.max).multiplyScalar(0.5); return c.clone().addScaledVector(t, du).setY(f.max.y); };
   // 손 하나를 홀드로: 미리보기가 안 되면 발 올리기 → W → 그래도 안 되면 보낸다. 돌려주는 값 = 'ok' | 'top' | 'fell' | 까닭
   const sendHand = (i, h, du, jump) => { let q = frontPt(h).addScaledVector(t, du);
     for (let attempt = 0; attempt < 3; attempt++) {
       // 손이 가는 길이 막혔다고 거부되면 같은 홀드의 다른 자리(가운데 쪽으로 12cm)를 겨눠 본다(사람도 그렇게 한다)
-      if (attempt && /길이 막힘|턱에 걸려/.test(L().hands[i].why || '')) { du = du - Math.sign(du || (i ? 1 : -1)) * 0.12; q = frontPt(h).addScaledVector(t, du); say(`  다른 자리를 겨눔(${f2(du)})`); }
+      if (attempt && /길이 막힘|턱에 걸려|몸에 막혀/.test(L().hands[i].why || '')) { du = du - Math.sign(du || (i ? 1 : -1)) * 0.12; q = frontPt(h).addScaledVector(t, du); say(`  다른 자리를 겨눔(${f2(du)})`); }
       if (sim.climb.on) { const z0 = approach(i, q, h, jump); if (z0) return z0; }
       const p = aimAt(q, true); res.moves++; say(`${i ? '오른손' : '왼손'} → ${h.name}${jump ? ' (뛰며)' : ''} 겨눈 자리 ${p.toArray().map(f2).join(',')}`);
       let z; if (jump) { inp = { jump: true }; z = step(1); if (!z) z = step(1, [{ type: 'hand', i, p: p.toArray() }]); if (!z) z = step(40); inp = {}; if (z) return z; }
@@ -73,7 +73,7 @@ function climbCourse(courseId, seed) {
   // 시작: 시작 홀드에 두 손(홀드가 하나면 둘 다 그 홀드에 — 옆으로 6cm씩)
   const starts = C.holds.filter(h => h.role === 'start'), rest = C.holds.filter(h => h.role !== 'start');
   let z = step(30);
-  const sl = starts.length === 1 ? [[0, starts[0], -0.07], [1, starts[0], 0.07]] : [[0, starts[0], 0], [1, starts[1], 0]];
+  const sw = starts.length === 1 ? Math.min(0.14, Math.max(0.07, (Math.abs(t.x) * (starts[0].max.x - starts[0].min.x) + Math.abs(t.z) * (starts[0].max.z - starts[0].min.z)) / 2 - 0.09)) : 0, sl = starts.length === 1 ? [[0, starts[0], -sw], [1, starts[0], sw]] : [[0, starts[0], 0], [1, starts[1], 0]];
   for (const [i, h, du] of [sl[1], sl[0]]) { z = sendHand(i, h, du, false); if (z !== 'ok') { res.why = z; res.at = '시작'; return fin(); } }
   // 베타: 홀드마다 손 하나. 손 = 홀드가 다른 손보다 오른쪽이면 오른손(엇갈리지 않게). 완등 홀드는 두 손(먼저 닿는 쪽, 그다음 다른 손을 옆에)
   for (const h of rest) { const Lh = L().hands, gu = Lh.map(x => (x.grip ? uOf(V3(...x.grip)) : 0)), hu = uOf(h.min.clone().add(h.max).multiplyScalar(0.5));

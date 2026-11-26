@@ -15,12 +15,12 @@ import { DIM } from './rig.js';
 // inp.cmd = 이 걸음에 한 번만 들어오는 명령 목록({ type: 'hand'|'foot'|'release', limb, i, p }). inp.cx·cy = 벽에서 몸 옮기기(좌우·위아래)
 export function makeSim(rig, world, clips = null) {
   // opt.footAssist = 발 보조(간편 조작). 시험의 기본값은 끔(직접 보낸 발만) — 화면 쪽이 켠다
-  // p3d-0.14.0: 상자가 많은 지형(클라이밍장)에서는 계산에 몸 둘레 4.5m 안의 상자만 넘긴다(S.world = 그 목록을 담은 같은 틀의 보기, S.worldAll = 모두).
+  // p3d-0.14.0: 상자가 많은 지형(클라이밍장)에서는 계산에 몸 둘레 3.4m(위 4.6m·아래 2m) 안의 상자만 넘긴다(S.world = 그 목록을 담은 같은 틀의 보기, S.worldAll = 모두).
   //   계산이 지형을 보는 곳(팔·몸의 겹침, 길 막힘, 발 디딜 곳, 머리 여유 …)은 모두 몸에서 2m 안이라 결과는 같다 — 홀드 300개를 더한 벽에서 같은 오름이 3.4배 느려졌다(1배속 아래).
-  //   몸이 0.5m 움직일 때마다 고친다(그래서 늘 4.0m 안은 들어 있다). 손 명령이 겨눈 턱을 찾는 것과 미리보기는 모든 상자에서 찾는다(climb.js — 먼 턱도 "닿지 않음"으로 알리게). 상자 60개 이하(옛 벽)는 그대로. NOCULL = 끔
+  //   몸이 0.4m 움직일 때마다 고친다(그래서 늘 3.0m 안은 들어 있다). 손 명령이 겨눈 턱을 찾는 것과 미리보기는 모든 상자에서 찾는다(climb.js — 먼 턱도 "닿지 않음"으로 알리게). 상자 60개 이하(옛 벽)는 그대로. NOCULL = 끔
   const big = world.boxes.length > 60 && !globalThis.NOCULL, view = big ? { ...world, boxes: [], edges: null, edgesN: -1, full: world } : world; let viewAt = null;
-  const cull = () => { if (!big) return; const p = S.body.pos; if (viewAt && viewAt.distanceTo(p) < 0.5) return; viewAt = p.clone(); const R2 = 4.5 * 4.5;
-    view.boxes = world.boxes.filter(b => b.kind === 'floor' || (Math.max(b.min.x - p.x, 0, p.x - b.max.x) ** 2 + Math.max(b.min.z - p.z, 0, p.z - b.max.z) ** 2 < R2 && b.min.y < p.y + 6 && b.max.y > p.y - 3)); view.edges = null; view.edgesN = -1; };
+  const cull = () => { if (!big) return; const p = S.body.pos; if (viewAt && viewAt.distanceTo(p) < 0.4) return; viewAt = p.clone(); const R2 = 3.4 * 3.4;
+    view.boxes = world.boxes.filter(b => b.kind === 'floor' || (Math.max(b.min.x - p.x, 0, p.x - b.max.x) ** 2 + Math.max(b.min.z - p.z, 0, p.z - b.max.z) ** 2 < R2 && b.min.y < p.y + 4.6 && b.max.y > p.y - 2)); view.edges = null; view.edgesN = -1; };
   const S = { rig, world: view, worldAll: world, opt: { footAssist: false, wallRest: false, rockOver: true }, inp: null, body: null, motion: null, clip: null, climb: null, clipSet: clips ? makeClipSet(clips) : null, useClip: !!clips, tick: 0 };
   const ground = () => { S.motion = makeMotion(rig, S.body); S.clip = S.clipSet ? makeClipState(S.clipSet, rig, S.body) : null; if (S.clip) S.clip.world = view; if (S.clip && S.useClip) { S.clip.w = 1; S.clip.on = true; S.clip.init = true; } };
   const pose = dt => {
