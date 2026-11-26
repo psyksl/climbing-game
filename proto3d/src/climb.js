@@ -323,7 +323,7 @@ function pickPole(S, sh, target, yaw, sx, qC, tb, B) {
 // 당겨 올라간 자세에서는 몸에서 밀려난 팔뚝이 벽에 1.7cm 들어갔다. 팔꿈치 방향만으로는 풀리지 않는다 — 손이 가는 길 자체가 몸을 비켜 가야 한다(다음 판). 겹침은 test/arm_mesh.mjs가 잰다
 function armHit(world, sh, ik, tb = null, extra = 0, extraAll = 0) {
   let worst = null;
-  const test = (p, r0, t) => { for (const x of world.boxes) { if (x.kind === 'floor') continue; const h = sphereBox(p, r0 + extraAll + (x === tb ? ARM_PAD_GRIP : ARM_PAD), x); if (h && (!worst || h.d > worst.d)) worst = { d: h.d, n: h.n, t, box: x.name }; } };
+  const isT = Array.isArray(tb) ? x => tb.includes(x) : x => x === tb, test = (p, r0, t) => { for (const x of world.boxes) { if (x.kind === 'floor') continue; const h = sphereBox(p, r0 + extraAll + (isT(x) ? ARM_PAD_GRIP : ARM_PAD), x); if (h && (!worst || h.d > worst.d)) worst = { d: h.d, n: h.n, t, box: x.name }; } };
   for (const [t, r] of ARM_PTS) test(ik.mid.clone().lerp(ik.end, t), r, t);
   const fore = worst;
   let up = null; { const keep = worst; worst = null; for (const [t, r] of ARM_UP) test(sh.clone().lerp(ik.mid, t), r + extra, -1); up = worst; worst = up && (!keep || up.d > keep.d) ? up : keep; }
@@ -657,7 +657,12 @@ export function command(S, c) {
       H.armP = c.p.slice(); }
     // 쉬운 조작 ②의 되돌아가기(p3d-0.13.1): 잡고 있던 자리를 적어 둔다. 뻗다가 거리 때문에 거부되면 그 자리로 돌아가 잡은 채 예약으로 기다린다(아래 뻗기의 거부). NOARMBACK = 돌아가지 않음(0.13.0)
     H.back = H.st === 'hold' && H.armP && !globalThis.NOARMBACK ? H.grip.clone() : null;
+    // p3d-0.15.1: 방금 놓은 턱(H.leftBox)을 적어 둔다 — 그 턱에 대한 팔뚝의 여유는 떠나는 동안에도 잡고 있을 때의 값(ARM_PAD_GRIP 1mm)으로 본다(아래 limbsStep의 tb).
+    //   잡고 있을 때는 그 턱이 "잡는 턱"이라 1mm였다가 놓는 걸음에 보통 여유(4mm)로 바뀌어, 같은 자세의 팔뚝이 그 턱에 3~5mm 겹친 것으로 세어져 손이 첫 걸음부터 나아가지 못했다
+    //   (완등 홀드 바로 아래 26cm의 홀드에서 손을 모으러 올릴 때 "팔이 턱에 걸려 닿지 않음"). 손목이 놓은 자리에서 20cm 넘게 떠나면 보통 여유로 돌아간다. OLDLEFTPAD = 전처럼
+    const leftBox = H.st === 'hold' && H.edge && !globalThis.OLDLEFTPAD ? H.edge.box : null;
     if (H.st === 'hold') releaseHand(S, c.i, '옮기려고 놓음');
+    H.leftBox = leftBox;
     Object.assign(H, { st: 'reach', drag: false, edge: g.edge, t: 0, T: 2.5, wait: 0, best: undefined, lastFar: undefined, stall: 0, lock: null, lockN: 0, lockBest: undefined, selfTot: 0, armTot: 0, blockT: 0, sp: 0, shPrev: null, ov: 1, why: '', auto: false, autoT: 0, autoDone: false });
     H.from.copy(H.w); H.goal.copy(goal); H.grip.copy(g.p); H.n.copy(g.n);
   }
@@ -813,13 +818,14 @@ function limbsStep(S, dt) {
     // 순서는 "팔꿈치 먼저": 나아간 자리에서 그림의 팔이 겹치면 ① 손목은 이번 걸음에 나아가지 않고(앞 자리), 굽는 쪽은 나아간 자리에서 겹치지 않는 쪽으로 돈다(H.poleWant — 그림이 이 값을 쓴다)
     // ② 앞 자리에서도 겹치면(몸이 움직여 팔이 턱 쪽으로 끌려갈 때) 겹친 만큼 손목을 가장 얕은 쪽으로 빼낸다. 한 걸음에 1.2cm + 그 걸음에 어깨가 움직인 거리까지(한 번에 다 빼내면 팔이 한 걸음에 30° 넘게 튄다. 몸이 빨리 떨어질 때는 그만큼 더 빼내야 팔이 턱에 끌려 들어가지 않는다)
     H.armBlock = false; H.poleWant = null;
-    { const qC = K.on && K.T ? K.T.qC : null, sx = H.i ? -1 : 1, key = 'el' + H.s, tb = H.edge ? H.edge.box : null, tryAt = (w, want) => dryBend(S, key, () => reachArm(S, H.s, sh, w, S.body.yaw, sx, qC, want, tb));
+    { const qC = K.on && K.T ? K.T.qC : null, sx = H.i ? -1 : 1, key = 'el' + H.s, tb0 = H.edge ? H.edge.box : null, tb = H.leftBox && tb0 && H.leftBox !== tb0 && H.w.distanceTo(H.from) < 0.20 ? [tb0, H.leftBox] : tb0, tryAt = (w, want) => dryBend(S, key, () => reachArm(S, H.s, sh, w, S.body.yaw, sx, qC, want, tb));
       // 손을 멈추거나 빼내는 것은 **팔뚝**의 겹침으로만 한다. 위팔의 겹침은 굽는 쪽을 고르는 데만 쓴다(가장 덜 겹치는 쪽으로 돈다):
       // 위팔은 어깨에 붙어 있어 손목을 옮겨도 거의 움직이지 않고, 어깨가 벽에 얼마나 가까운지는 몸통 쪽의 일이다. 위팔로도 손을 멈추면, 당겨 올라가 어깨가 턱 바로 앞 아래에 있을 때
       // 팔을 어느 쪽으로 돌려도 위팔(반지름 5cm)이 턱 끝에 2~4cm 걸려 손이 끝내 가지 못한다(턱 A → 턱 F). 그 겹침은 남아 있고 test/arm_mesh.mjs가 잰다 — 몸통·어깨 연결의 과제다
       const fd = R => (R.hit && R.hit.f ? R.hit.f.d : 0);
       let A = tryAt(H.w, null);
-      if (fd(A) > 0) { const B = tryAt(w0, A.want); H.armBlock = true; if (fd(B) < fd(A)) { H.w.copy(w0); H.poleWant = A.want; A = B; }
+      H.blockAt = '';
+      if (fd(A) > 0) { const B = tryAt(w0, A.want); H.armBlock = true; H.blockAt = `${A.hit.f.box} ${Math.round(A.hit.f.d * 1000)}mm`; if (fd(B) < fd(A)) { H.w.copy(w0); H.poleWant = A.want; A = B; }
         // 빼낼 쪽은 해 보고 고른다: 겹친 면의 바깥쪽과 여섯 축 방향으로 손목을 조금 옮겨 보고, 그림의 팔뚝이 가장 덜 겹치는 쪽으로 간다.
         // (0.8.2는 "겹친 면의 바깥쪽으로, 깊이 ÷ t만큼"이었다. 팔을 접은 자세에서 팔꿈치 쪽이 겹쳤을 때 그렇게 밀면 손목이 어깨에 가까워지며 팔꿈치가 오히려 벽 속으로 들어갔다 — 표면으로 재니 5cm)
         for (let it = 0, left = 0.012 + shMv; it < 2 && fd(A) > 0 && left > 1e-4; it++) { const st = Math.min(left, Math.max(0.004, fd(A))); let best = null;
@@ -837,8 +843,8 @@ function limbsStep(S, dt) {
       // p3d-0.11.9: 위의 팔뚝·제 몸 처리가 손목을 지형 속으로 옮기지 않는다(앞 걸음 자리로 되돌리거나 여섯 방향으로 옮겨 볼 때 손목의 지형 겹침은 보지 않았다 — 앞 걸음 자리가 이미 벽 속이면 걸음마다 1cm씩 더 들어가 손목이 벽 속 14cm까지 갔다. h1 fb). 손목은 다시 겉으로 빼낸다. OLDWRISTG = 빼지 않음
       if (!globalThis.OLDWRISTG && DIM.boxCollide) { let moved = false; for (const x of S.world.boxes) { const h = sphereBox(H.w, ARM_R.fore[1] + (H.edge && H.edge.box === x ? ARM_PAD_GRIP : ARM_PAD), x); if (h) { H.w.addScaledVector(h.n, h.d + 0.002); moved = true; } } if (moved) { wristHit = true; A = tryAt(H.w, H.poleWant); } } // 2mm 더: 정확히 반지름만큼만 떼면 다음 걸음의 팔뚝 검사가 0mm 겹침을 막힘으로 보고 손목을 앞 자리로 되돌려 벽을 따라 미끄러지다 멈췄다(foot2)
       H.up = A.hit && A.hit.u ? { d: A.hit.u.d, n: A.hit.u.n.clone() } : null;
-      // 무엇에 걸렸는지(진단·추적용. 판정에는 쓰지 않는다): 팔뚝이 걸린 상자의 이름, 손목만 닿았으면 '(손목)'
-      H.blockBox = A.hit && A.hit.f ? A.hit.f.box : wristHit ? '(손목)' : '';
+      // 무엇에 걸렸는지(진단·추적용. 판정에는 쓰지 않는다): 나아가려던 자리에서 팔뚝이 걸린 상자의 이름과 깊이(blockAt), 손목만 닿았으면 '(손목)'
+      H.blockBox = H.blockAt || (A.hit && A.hit.f ? A.hit.f.box : wristHit ? '(손목)' : '');
     }
     if (H.armBlock) { const d2 = H.w.clone().sub(sh); if (d2.length() > CL.ARM) H.w.copy(sh).addScaledVector(d2.normalize(), CL.ARM); }
     // 막힌 채 이어진 시간(손목이 지형에 닿아 멈췄거나 팔뚝이 걸려 기다리는 중). 화면의 "팔 경로 막힘"과 거부 까닭은 0.12초 넘게 이어졌을 때만 쓴다(스치는 한두 걸음에 깜박이지 않게)
@@ -1114,7 +1120,7 @@ function heldPole(S, s, sh, goal, yaw, sx, qC, nG) {
   //   지형에 든 깊이도 값에 넣는다(뻗는 팔의 고르기와 같은 1m = 10 — 단단한 조건이 부드러운 조건(관절 범위)에 가려지지 않게). 자세 보조 켬(새 자세 방식)에서만. OLDHELDTERR = 전처럼
   const HT = poseAssistOn(S) && DIM.boxCollide && !globalThis.OLDHELDTERR, tbH = HT ? (() => { const Hh = S.climb.hands[s === 'L' ? 0 : 1]; return Hh && Hh.edge ? Hh.edge.box : null; })() : null;
   const WH = HT ? (() => { const r = DIM.upperArm + DIM.foreArm + 0.08; return { boxes: S.world.boxes.filter(x => x.kind !== 'floor' && sh.x > x.min.x - r && sh.x < x.max.x + r && sh.y > x.min.y - r && sh.y < x.max.y + r && sh.z > x.min.z - r && sh.z < x.max.z + r) }; })() : null;
-  const terr = ik => { if (!HT) return 0; const h = armHit(WH, sh, ik, tbH); return h ? 10 * h.d : 0; };
+  const terr = ik => { if (!HT) return 0; const h = armHit(WH, sh, ik, tbH); return h ? 10 * Math.max(0, h.d - (globalThis.HELD_DB ?? 0.02)) : 0; };
   for (let j = 0; j < 24; j++) { const a = j * Math.PI / 12, an = a > Math.PI ? a - 2 * Math.PI : a, pl = e0.clone().multiplyScalar(Math.cos(a)).addScaledVector(e1, Math.sin(a)), ik = twoBone(sh, goal, DIM.upperArm, DIM.foreArm, pl), sf = armSelf(B, ik, sh), sm = XA ? armSelf(B, ik, sh, 0, XA) : sf;
     let dp = Math.abs(an - pa); if (dp > Math.PI) dp = 2 * Math.PI - dp;
     // 실제 겹침(머리·몸통, 여유 밖의 다른 팔)이 먼저다. 다른 팔과의 여유(6cm 안)는 가볍게만 본다 — 여유를 벌리려고 팔꿈치를 머리 쪽으로 돌리면 머리에 닿는다(0.8.6 작업 중에, 그것을 윗몸이 비키느라 엇갈려 잡은 몸이 36cm 옆으로 밀려갔다)
