@@ -18,11 +18,11 @@ const ladder = (s, k) => { const hands = [[-0.18, 1.50, 0.32, 'start'], [0.18, 1
   const feet = []; for (let fy = 0.30, j = 0; fy < y - 1.0; fy += s, j++) feet.push([j % 2 ? 0.38 : -0.38, +fy.toFixed(3), 0.24]); return { id: 'lad' + Math.round(s * 100), name: `사다리${Math.round(s * 100)}`, grade: '재기', color: '#3fa34d', wall: 'main', at: -6.6 + 0 * k, hands, feet }; };
 const GYMOPT = LAD ? { courses: LAD.map(ladder) } : E.FILLER ? { filler: +E.FILLER } : {};
 const mulberry = a => () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-console.log(provLine(prov()), `· 쉬운 조작 ${EASY ? '켬' : '끔'} · 누르기 ${E.PRESS === '1' ? '켬' : '끔'} · 흔들기 ${NOISE * 100}cm`);
+console.log(provLine(prov()), `· 쉬운 조작 ${EASY ? '켬' : '끔'} · 누르기 ${E.PRESS === '1' ? '켬' : '끔'} · 자동 몸 맞추기 ${E.AUTOBODY !== '0' ? '켬' : '끔'} · 흔들기 ${NOISE * 100}cm`);
 
 function climbCourse(courseId, seed) {
   const world = makeGym(LAD ? { courses: GYMOPT.courses.filter(c => c.id === courseId), free: false } : { ...GYMOPT, free: E.FREE !== '0' }), C = world.courses.find(c => c.id === courseId), sim = makeSim(rig, world, CLIPS), rnd = mulberry(seed * 7919 + courseId.length);
-  sim.reset({ pos: C.startPos, yaw: C.startYaw }); Object.assign(sim.opt, { wallRest: false, footAssist: true, grabAssist: true, poseAssist: true, posture: 'fb', easy: EASY, press: E.PRESS === '1' });
+  sim.reset({ pos: C.startPos, yaw: C.startYaw }); Object.assign(sim.opt, { wallRest: false, footAssist: true, grabAssist: true, poseAssist: true, posture: 'fb', easy: EASY, press: E.PRESS === '1', autoBody: E.AUTOBODY !== '0' });
   const W = C.frame, t = V3(...W.t), n = V3(...W.n), o = V3(...W.o), uOf = p => p.clone().sub(o).dot(t);
   const log = [], ev = [], res = { course: courseId, seed, ok: false, t: 0, moves: 0, rejects: 0, slips: 0, why: '', at: '' };
   // 화면과 같은 코스 상태 모듈(p3d-0.15.1)을 걸음마다 불러, 봇의 완등 판정과 화면의 완등·색 지킴이 같은지 본다
@@ -91,10 +91,10 @@ function climbCourse(courseId, seed) {
     z = sendHand(i, h, 0, !!h.jump); if (z === 'top') break; if (z !== 'ok') { res.why = z; res.at = h.name; return fin(); } }
   res.ok = z === 'top' || L().hands.every(x => x.st === 'hold' && /완등/.test(x.box)); if (!res.ok) { res.why = z || '두 손이 완등 홀드에 없음'; res.at = '완등'; }
   return fin();
-  function fin() { if (rec) fs.writeFileSync(E.REC, JSON.stringify({ course: courseId, startPos: C.startPos, startYaw: C.startYaw, easy: EASY, res: { ok: res.ok }, inputs: rec, log })); { const v = courseView(CG), T = v.try || CG.last; res.cs = { sel: v.course && v.course.id, done: !!(T && T.done), clean: !!(T && T.clean), why: T ? T.cleanWhy : '', tries: CG.nTry }; } res.t = +(sim.tick / 120).toFixed(2); res.hands = held(); res.feet = L().feet.map(f => (f.st === 'plant' ? f.box : '')); res.y = +sim.body.pos.y.toFixed(2); if (!TRACE && !res.ok) res.log = log.slice(-8); return res; }
+  function fin() { if (rec) fs.writeFileSync(E.REC, JSON.stringify({ course: courseId, startPos: C.startPos, startYaw: C.startYaw, easy: EASY, res: { ok: res.ok }, inputs: rec, log })); { const A = sim.climb.autoStat || []; res.auto = { n: A.length, got: A.filter(x => x.got).length, moved: +A.reduce((m, x) => m + x.moved, 0).toFixed(3), max: +A.reduce((m, x) => Math.max(m, x.moved), 0).toFixed(3), chg: A.filter(x => x.sig0 !== x.sig1 && !x.got).length, lost: A.filter(x => { const a = x.sig0.split(' | ')[0].split('/'), b = x.sig1.split(' | ')[0].split('/'); return a[1 - x.i] !== '-' && b[1 - x.i] === '-'; }).length }; } { const v = courseView(CG), T = v.try || CG.last; res.cs = { sel: v.course && v.course.id, done: !!(T && T.done), clean: !!(T && T.clean), why: T ? T.cleanWhy : '', tries: CG.nTry }; } res.t = +(sim.tick / 120).toFixed(2); res.hands = held(); res.feet = L().feet.map(f => (f.st === 'plant' ? f.box : '')); res.y = +sim.body.pos.y.toFixed(2); if (!TRACE && !res.ok) res.log = log.slice(-8); return res; }
 }
 
 const courses = E.COURSE ? E.COURSE.split(',') : makeGym(GYMOPT).courses.map(c => c.id);
 for (const c of courses) for (const s of SEEDS) { const r = climbCourse(c, s); if (OUT) fs.appendFileSync(OUT, JSON.stringify(r) + '\n');
-  console.log(`${r.ok ? '완등' : '실패'} [${c}] 씨앗 ${s} · ${r.t}초 · 손 명령 ${r.moves} · 거부 ${r.rejects} · 놓침 ${r.slips}${r.ok ? '' : ` · ${r.at}: ${r.why}`} · 화면 판정 ${r.cs.done ? '완등' : '미완'}${r.cs.done !== r.ok ? '(봇과 다름!)' : ''}·${r.cs.clean ? '색 지킴' : `자유(${r.cs.why})`}·시도 ${r.cs.tries} · 손 ${r.hands.join('/')} · 발 ${r.feet.join('/')}`);
+  console.log(`${r.ok ? '완등' : '실패'} [${c}] 씨앗 ${s} · ${r.t}초 · 손 명령 ${r.moves} · 거부 ${r.rejects} · 놓침 ${r.slips}${r.ok ? '' : ` · ${r.at}: ${r.why}`} · 자동 몸 맞추기 ${r.auto.n}번(잡음 ${r.auto.got} · 모두 ${Math.round(r.auto.moved * 100)}cm · 가장 큰 ${Math.round(r.auto.max * 100)}cm · 다른 손 잃음 ${r.auto.lost}) · 화면 판정 ${r.cs.done ? '완등' : '미완'}${r.cs.done !== r.ok ? '(봇과 다름!)' : ''}·${r.cs.clean ? '색 지킴' : `자유(${r.cs.why})`}·시도 ${r.cs.tries} · 손 ${r.hands.join('/')} · 발 ${r.feet.join('/')}`);
   if (!r.ok && r.log) for (const l of r.log) console.log('    ' + l); }
