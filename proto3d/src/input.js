@@ -34,6 +34,7 @@ const DEFAULT = [
   { id: 'handMode', ctx: ['any'], keys: ['KeyH'], label: '손 조작 방식 바꾸기(눌러 보내기 ↔ 누르는 동안 뻗기)' },
   { id: 'footAssist', ctx: ['any'], keys: ['KeyF'], label: '발 보조 켬·끔' },
   { id: 'poseAssist', ctx: ['any'], keys: ['KeyY'], label: '자세 보조 켬·끔(엉덩이 빼기 등)' },
+  { id: 'press', ctx: ['any'], keys: ['KeyP'], label: '누르기 켬·끔(낮은 손 위로 몸 올리기)' },
   { id: 'easy', ctx: ['any'], keys: ['KeyL'], label: '쉬운 조작 켬·끔(조준 맞춤 등)' },
   { id: 'grabAssist', ctx: ['any'], keys: ['KeyU'], label: '잡기 보정 켬·끔' }, // p3d-0.11.4(임시 키)
   { id: 'wallRest', ctx: ['any'], keys: ['KeyJ'], dev: true, label: '실험: 벽 딛기(매달리면 발을 벽에 대고 버팀) 켬·끔 · 기본 끔' },

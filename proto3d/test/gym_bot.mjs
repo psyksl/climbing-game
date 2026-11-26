@@ -17,11 +17,11 @@ const ladder = (s, k) => { const hands = [[-0.18, 1.50, 0.32, 'start'], [0.18, 1
   const feet = []; for (let fy = 0.30, j = 0; fy < y - 1.0; fy += s, j++) feet.push([j % 2 ? 0.38 : -0.38, +fy.toFixed(3), 0.24]); return { id: 'lad' + Math.round(s * 100), name: `사다리${Math.round(s * 100)}`, grade: '재기', color: '#3fa34d', wall: 'main', at: -6.6 + 0 * k, hands, feet }; };
 const GYMOPT = LAD ? { courses: LAD.map(ladder) } : E.FILLER ? { filler: +E.FILLER } : {};
 const mulberry = a => () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-console.log(provLine(prov()), `· 쉬운 조작 ${EASY ? '켬' : '끔'} · 흔들기 ${NOISE * 100}cm`);
+console.log(provLine(prov()), `· 쉬운 조작 ${EASY ? '켬' : '끔'} · 누르기 ${E.PRESS === '1' ? '켬' : '끔'} · 흔들기 ${NOISE * 100}cm`);
 
 function climbCourse(courseId, seed) {
   const world = makeGym(LAD ? { courses: GYMOPT.courses.filter(c => c.id === courseId), free: false } : { ...GYMOPT, free: E.FREE !== '0' }), C = world.courses.find(c => c.id === courseId), sim = makeSim(rig, world, CLIPS), rnd = mulberry(seed * 7919 + courseId.length);
-  sim.reset({ pos: C.startPos, yaw: C.startYaw }); Object.assign(sim.opt, { wallRest: false, footAssist: true, grabAssist: true, poseAssist: true, posture: 'fb', easy: EASY });
+  sim.reset({ pos: C.startPos, yaw: C.startYaw }); Object.assign(sim.opt, { wallRest: false, footAssist: true, grabAssist: true, poseAssist: true, posture: 'fb', easy: EASY, press: E.PRESS === '1' });
   const W = C.frame, t = V3(...W.t), n = V3(...W.n), o = V3(...W.o), uOf = p => p.clone().sub(o).dot(t);
   const log = [], ev = [], res = { course: courseId, seed, ok: false, t: 0, moves: 0, rejects: 0, slips: 0, why: '', at: '' };
   let look = null, inp = {}, fell = false, onWall = false, topT = 0;
