@@ -26,13 +26,14 @@ function climbCourse(courseId, seed) {
   const log = [], ev = [], res = { course: courseId, seed, ok: false, t: 0, moves: 0, rejects: 0, slips: 0, why: '', at: '' };
   let look = null, inp = {}, fell = false, onWall = false, topT = 0;
   const say = s => { log.push(`${f2(sim.tick / 120)} ${s}`); if (TRACE) console.log(`  ${f2(sim.tick / 120)} ${s}`); };
-  const cam = () => sim.body.pos.clone().addScaledVector(t, 0.88).addScaledVector(n, 3.46).add(V3(0, 1.73, 0));
+  // 카메라: 등 뒤 3.6m·0.25rad 비스듬히(main.js의 T). 화면처럼 벽·기둥에 막히면 그 앞까지 당긴다(옆면 코스는 비스듬한 쪽이 옆 벽 속이었다)
+  const cam = () => { const tg = sim.body.pos.clone().add(V3(0, 1.3, 0)), c = tg.clone().addScaledVector(t, 0.88).addScaledVector(n, 3.46).add(V3(0, 0.43, 0)), k = rayHit(world, tg, c, true); return k < 1 ? tg.lerp(c, Math.max(0.2, k - 0.05)) : c; };
   // 화면에서 겨누기: q(세계 자리)를 옆(t)·위로 흔들어 시선을 쏘고 처음 닿은 곳(쉬운 조작이면 조준 맞춤). 겨눈 곳(look)은 맞추기 전의 닿은 점
   const aimAt = (q, hand) => { const nx = (rnd() * 2 - 1) * NOISE, ny = (rnd() * 2 - 1) * NOISE, c0 = cam(), q2 = q.clone().addScaledVector(t, nx).add(V3(0, ny, 0)), d = q2.clone().sub(c0).normalize(), far = c0.clone().addScaledVector(d, 40), k = rayHit(world, c0, far), hit = k < 1 ? c0.clone().lerp(far, k) : null;
     if (hit) look = hit.toArray(); const g = hand && EASY && hit ? aimGrip(world, c0, d, hit, sim.climb.hands.filter(h => h.st === 'hold').map(h => h.grip)) : null; return (g ? g.p : hit) || q; };
   const rec = E.REC ? [] : null;
   const step = (k, cmd = []) => { for (let i = 0; i < k; i++) { const x = { mx: 0, mz: 0, cxSign: 1, ...(look ? { look } : {}), ...inp, cmd: i ? [] : cmd }; if (rec) rec.push(JSON.parse(JSON.stringify(x))); sim.step(x);
-      for (const e of sim.climb.events) { ev.push(e); if (e.type === 'reject') res.rejects++; if (e.type === 'slip') res.slips++; if (TRACE && !/^(try|bump|lift)$/.test(e.type)) say(`${e.type} ${e.name || ''} ${e.why || ''}`); if (e.type === 'exit') { fell = onWall; } }
+      for (const e of sim.climb.events) { ev.push(e); if (e.type === 'reject') res.rejects++; if (e.type === 'slip') res.slips++; if (TRACE && !/^(try|bump|lift)$/.test(e.type)) say(`${e.type} ${e.name || ''} ${e.why || ''}`); if (e.type === 'exit') { fell = onWall && sim.body.pos.y > 0.25; } }
       if (sim.climb.on) onWall = true; const L = limbState(sim.climb), top = L.hands.every(h => h.st === 'hold' && /완등/.test(h.box) && h.box.startsWith(C.name)); topT = top ? topT + 1 / 120 : 0; if (topT > 0.5) return 'top'; if (fell && !sim.climb.on) return 'fell'; }
     return ''; };
   const L = () => limbState(sim.climb), held = () => L().hands.map(h => (h.st === 'hold' ? h.box : ''));
