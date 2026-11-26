@@ -1453,8 +1453,8 @@ export function stepClimb(S, inp, dt) {
     // p3d-0.15.1(GPT의 0.15.0 검토 — 완등 홀드에 두 손을 모을 때 먼저 잡은 손이 풀림): 다른 손이 **같은 턱**을 잡고 있으면 그 손을 놓지 않는다. 두 손 모두 "원했던 턱"에 있으므로
     //   끌려가지 못한 새 손의 잡기를 거둔다(먼저 잡은 손·발은 그대로). 다른 턱을 잡은 손은 전처럼 놓는다(0.11.4의 사용자 결정). OLDMATCHREL = 전처럼
     if (L > CL.ARM + h.slack + 0.01) { const same = !globalThis.OLDMATCHREL && h.edge && held.some(o => o !== h && !(o.slack > 0) && o.st === 'hold' && o.edge && o.edge.box === h.edge.box);
-      // 문구(GPT의 0.15.1 재검토, 임시): 새 잡기를 거둘 때는 CANCEL_WHY. 먼저 잡은 접촉이 실제로 남아 있는지는 기록의 kept에 적고 화면이 그때만 "현재 잡기를 유지했어요"를 덧붙인다
-      if (same || (keepHoldOn(S) && held.some(o => o !== h && !(o.slack > 0) && o.st === 'hold'))) { releaseHand(S, h.i, CANCEL_WHY, 'reject'); const e = K.log[K.log.length - 1]; if (e && e.why === CANCEL_WHY) { e.kept = K.hands.some(o => o !== h && o.st === 'hold'); e.same = !!same; } }
+      // 문구(GPT의 0.15.1 재검토, 임시): 새 잡기를 거둘 때는 CANCEL_WHY. 먼저 잡은 접촉이 실제로 남아 있는지는 기록의 keptGrip에 적고(kept는 거부 기록이 이미 다른 뜻으로 쓴다) 화면이 그때만 "현재 잡기를 유지했어요"를 덧붙인다
+      if (same || (keepHoldOn(S) && held.some(o => o !== h && !(o.slack > 0) && o.st === 'hold'))) { releaseHand(S, h.i, CANCEL_WHY, 'reject'); const e = K.log[K.log.length - 1]; if (e && e.why === CANCEL_WHY) { e.keptGrip = K.hands.some(o => o !== h && o.st === 'hold'); e.sameHold = !!same; } }
       else for (const o of held) if (o !== h && !(o.slack > 0) && o.st === 'hold') releaseHand(S, o.i, '잡으려고 놓음(잡기 보정)'); } }
   const shock = lim.length ? armDv / lim.length : 0;
   // 손의 하중 = 근육이 당기는 힘(act. 한계 cap 안) + 다 편 팔이 줄처럼 버티는 몫(pas. 뼈대가 받는 것이라 당기는 한계와 무관하다. 충격도 여기 든다)
