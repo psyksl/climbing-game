@@ -97,7 +97,7 @@ function rayPoint() {
 // 겨눈 자리 고정(사용자 의견 4: 뛰면 화면만 움직여 조준이 벗어났다): 마우스를 움직였을 때만 겨눈 자리를 새로 정한다.
 // 마우스가 가만히 있으면 화면이 저절로 움직여도 겨눈 자리(벽의 그 점)는 그대로다. 표시는 그 점에 그린다
 // 쉬운 조작 ① 조준 맞춤: 손을 보낼 자리는 누른 자리의 시선에서 가장 가까운 잡을 수 있는 턱 모서리(aim.grip). 겨눈 점(aim.world)과 함께, 마우스를 움직였을 때만 새로 정한다. 발과 볼 곳에는 겨눈 점을 그대로 쓴다
-function updateAim() { if (input.st.moved || !aim.world || aim.resync) { aim.world = rayPoint(); const g = OPT.easy && input.st.has && !globalThis.NOAIMSNAP ? aimGrip(world, ray.ray.origin, ray.ray.direction, aim.world) : null; aim.grip = g ? g.p.clone() : null; aim.resync = false; } }
+function updateAim() { if (input.st.moved || !aim.world || aim.resync) { aim.world = rayPoint(); const g = OPT.easy && input.st.has && !globalThis.NOAIMSNAP ? aimGrip(world, ray.ray.origin, ray.ray.direction, aim.world, sim.climb.hands.filter(h => h.st === 'hold').map(h => h.grip)) : null; aim.grip = g ? g.p.clone() : null; aim.resync = false; } }
 function handPoint() { return aim.grip || aim.world; }
 function aimPoint() { return aim.world; }
 function screenOf(p) { const v = (p.isVector3 ? p.clone() : new THREE.Vector3(...p)).project(camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, front: v.z < 1 }; }

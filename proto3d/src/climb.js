@@ -51,7 +51,7 @@ export const CL = {
   // p3d-0.12.0 자세 보조(사용자 2026-11-25: "불가능하다고 거부되는 동작이 엉덩이를 빼면 되는 경우면 보조해 달라. 진짜 안 되면 어쩔 수 없다"):
   //   OUT_MAX = 몸을 벽에서 더 뺄 수 있는 가장 큰 거리, OUT_V = 빼고 돌아오는 빠르기, OUT_STEP = 시험해 보는 간격, OUT_WAIT = 보조를 기다리는 가장 긴 시간(넘으면 원래 까닭으로 거부),
   //   OUT_GRIP = 뺀 뒤에도 잡은 손이 당기는 방향이 아래에서 이 각 안이어야 한다(물리의 놓침은 GRIP_ANG 50°), OUT_PELVIS = 그 가운데 골반이 무게중심보다 더 빠지는 몫(전신 자세 풀이의 골반 앞뒤 값). 실험값
-  OUT_MAX: 0.24, OUT_V: 0.6, OUT_STEP: 0.04, OUT_WAIT: 1.0, OUT_GRIP: 40 * deg, OUT_PELVIS: 0.6, OUT_HAND: 0.14, OUT_HANG: 0.08, ROCK_SPAN: 0.10, FOLD_GAP: 0.16, SH_Y0: 1.44, LOOK_UP: 0.35, LOOK_EL: 32 * deg, CLEAR_LAT: 0.06, AIM_SNAP: 0.26, AIM_SIDE: 0.20, ARM_T: 2.0, ARM_MAX: 1.0, ARM_TRY: 0.40, AUTO_MAX: 0.30, AUTO_T: 1.2, AIM_YAW: 0.12,
+  OUT_MAX: 0.24, OUT_V: 0.6, OUT_STEP: 0.04, OUT_WAIT: 1.0, OUT_GRIP: 40 * deg, OUT_PELVIS: 0.6, OUT_HAND: 0.14, ROCK_SPAN: 0.10, FOLD_GAP: 0.16, SH_Y0: 1.44, LOOK_UP: 0.35, LOOK_EL: 32 * deg, CLEAR_LAT: 0.06, AIM_SNAP: 0.26, AIM_SIDE: 0.20, ARM_T: 2.0, ARM_MAX: 1.0, ARM_TRY: 0.40, AUTO_MAX: 0.30, AUTO_T: 1.2, AIM_YAW: 0.12,
   // p3d-0.7.0 반동·벽에서 뛰기(임시값):
   //   SWING_A = 손으로만 매달렸을 때 A/D로 엉덩이를 흔드는 힘(가속, 벽과 나란한 쪽). 흔들리는 쪽과 같은 때에 넣으면 커지고 반대로 넣으면 줄어든다. HANG_DAMP = 매달려 흔들릴 때의 감쇠(초당)
   //   PUSH_A·PUSH_T = 벽에서 뛰기의 미는 가속과 시간(손발이 낼 수 있는 힘 안에서만 난다 — 디딘 발이 없으면 팔로 당기는 만큼만). 오르는 중에 떼면 밀기가 그때 끝난다
@@ -93,7 +93,7 @@ export function resolveGrip(world, pt) {
 //   resolveGrip은 겨눈 점(시선이 지형에 닿은 점)에서 3차원 거리 14cm 안의 모서리만 잡는다 — 턱이 벽에서 14~16cm 튀어나와 있어, 턱 바로 위아래의 벽면을 누르면 깊이만으로 한계를 넘어 거부됐다(여유 측정: 벽면 위 5cm 8/24, 아래 10cm 0/24).
 //   여기서는 깊이를 빼고(시선과 모서리 사이의 수직 거리) AIM_SNAP 안이면 고른다. 정확히 누른 것(resolveGrip이 잡는 것)은 그대로 둔다. 시선이 닿은 면보다 40cm 넘게 뒤에 있는 모서리(가려진 것)와 손이 들어갈 틈이 없는 모서리는 고르지 않는다.
 //   입력만 바꾼다: 고른 점을 손 명령의 자리로 넘기면 판정(닿는 거리·길·관절)은 그대로다. 화면(main.js)과 여유 측정(route_tolerance)이 함께 쓴다
-export function aimGrip(world, o, d, hit) {
+export function aimGrip(world, o, d, hit, avoid = null) {
   // 고침(p3d-0.13.1, 여유 측정의 "팔이 턱에 걸려" 13가지가 모두 이것이었다): 누른 자리의 턱이 **보는 쪽을 향한 모서리**일 때만 그대로 쓴다.
   //   턱의 옆 끝 모서리(길이 = 턱의 깊이 14cm, 벽을 따라 옆을 향함)도 잡는 선이라, 턱 끝에서 14cm 안의 벽면(턱 위로 스쳐 지나간 시선도 벽에 닿는다)을 누르면 3차원 거리로는 앞 모서리(깊이 14cm 앞)보다 끝 모서리가 가까워 그쪽으로 갔다 — 매달린 팔로는 닿지 않는 자리다.
   //   옆을 향한 모서리는 시선으로 찾는 아래의 후보들과 견주고(벌점 AIM_SIDE), 향한 모서리가 가까이 없을 때만 고른다. OLDAIMSIDE = 전처럼 누른 자리의 결과를 그대로
@@ -106,7 +106,8 @@ export function aimGrip(world, o, d, hit) {
     // 시선(반직선)과 모서리(선분, 끝 5cm는 뺀다)의 가장 가까운 두 점
     const u = ab.clone().multiplyScalar(1 / len), w0 = o.clone().sub(e.a), b = d.dot(u), dd = d.dot(w0), e2 = u.dot(w0), den = 1 - b * b; let t = den < 1e-6 ? e2 : (e2 - b * dd) / den; t = clamp(t, 0.05, len - 0.05);
     const p = e.a.clone().addScaledVector(u, t), s = Math.max(0, p.clone().sub(o).dot(d)), dist = p.distanceTo(o.clone().addScaledVector(d, s));
-    if (dist > CL.AIM_SNAP || s > sHit + 0.40) continue; const cost = dist + (globalThis.OLDAIMSIDE ? (e.n.dot(d) < -0.5 ? 0 : 0.06) : facing(e) ? 0 : CL.AIM_SIDE);
+    if (dist > CL.AIM_SNAP || s > sHit + 0.40) continue; // avoid = 지금 손이 잡고 있는 자리들: 그 6cm 안의 후보는 벌점(어느 손을 보내도 "이미 잡고 있는 자리"거나 다른 손과 겹친다 — 12단계: 턱 D의 10cm 아래를 눌렀는데 오른손이 잡고 있는 턱 B의 그 자리로 맞췄다)
+    const cost = dist + (globalThis.OLDAIMSIDE ? (e.n.dot(d) < -0.5 ? 0 : 0.06) : facing(e) ? 0 : CL.AIM_SIDE) + (avoid && avoid.some(a => a.distanceTo(p) < 0.06) ? 0.10 : 0);
     if ((!best || cost < best.cost) && openAt(world, e, p) && handFits(world, { p, n: e.n, edge: e })) best = { p, edge: e, d: dist, cost }; }
   return best || (fall ? { p: fall.p, edge: fall.edge, d: 0, exact: true } : null);
 }
@@ -633,7 +634,7 @@ export function command(S, c) {
       if (!pr.ok && pr.short !== undefined && pr.short > CL.ARM_TRY && pr.short <= CL.ARM_MAX) { H.arm = { p: c.p.slice(), t: 0, short: pr.short, jump: false, tried: false, why: pr.why }; H.why = ''; note(S, 'arm', 'hand', c.i, `닿으면 잡음(${short(pr.short)} 모자람)`); return; }
       H.armP = c.p.slice(); }
     if (H.st === 'hold') releaseHand(S, c.i, '옮기려고 놓음');
-    Object.assign(H, { st: 'reach', drag: false, edge: g.edge, t: 0, T: 2.5, wait: 0, best: undefined, lastFar: undefined, stall: 0, lock: null, lockN: 0, lockBest: undefined, selfTot: 0, armTot: 0, blockT: 0, sp: 0, shPrev: null, ov: 1, why: '', auto: false, autoT: 0, autoDone: false, hangOut: 0 });
+    Object.assign(H, { st: 'reach', drag: false, edge: g.edge, t: 0, T: 2.5, wait: 0, best: undefined, lastFar: undefined, stall: 0, lock: null, lockN: 0, lockBest: undefined, selfTot: 0, armTot: 0, blockT: 0, sp: 0, shPrev: null, ov: 1, why: '', auto: false, autoT: 0, autoDone: false });
     H.from.copy(H.w); H.goal.copy(goal); H.grip.copy(g.p); H.n.copy(g.n);
   }
   // 누르던 단추를 뗌: 그때 겨눈 곳이 턱이면 잡으러 가고(짧게), 아니면 헛손질
@@ -855,10 +856,7 @@ function limbsStep(S, dt) {
       if (can && (H.wait > CL.TRY_T * 0.5 || H.auto)) { if (!H.auto) { H.auto = true; H.autoT = 0; H.autoBest = far; H.autoStall = 0; note(S, 'auto', 'hand', H.i, `몸을 옮겨 닿는 중(${short(far)} 모자람)`); }
         H.autoT += dt; if (far < H.autoBest - 0.002) { H.autoBest = far; H.autoStall = 0; } else H.autoStall += dt; if (H.autoT > CL.AUTO_T || H.autoStall > 0.35) { H.auto = false; H.autoDone = true; } }
       else if (H.auto) { H.auto = false; H.autoDone = true; } }
-    // p3d-0.13.1 자세 보조: 손에만 매달린 채 뻗는 팔이 턱에 걸리면(0.12초 넘게) 거부될 때까지 기다리지 않고 바로 몸을 빼 달라고 청한다(위의 OLDHANGOUT 힘이 듣는다). 몸이 물러나는 0.6초 동안은 거부까지의 시간을 세지 않는다
-    if (poseAssistOn(S) && !globalThis.OLDHANGOUT && K.on && H.edge && !H.outTried && (H.blockT || 0) > 0.12 && !K.feet.some(f => f.st === 'plant' && (f.load || 0) > 0.1)) { const room = Math.min(outRoom(S), CL.OUT_HAND); if (room >= 0.03) { H.outTried = true; H.outT0 = 0; H.needOut = (K.wout || 0) + room; H.hangOut = 0.6; } }
-    if (H.hangOut > 0) H.hangOut -= dt;
-    if ((H.w.clone().sub(sh).distanceTo(rel0) < 0.0015 || H.stall > 0.25) && !H.swivel && !yielding && !H.auto && !(H.hangOut > 0)) H.wait += dt;
+    if ((H.w.clone().sub(sh).distanceTo(rel0) < 0.0015 || H.stall > 0.25) && !H.swivel && !yielding && !H.auto) H.wait += dt;
     // 까닭의 순서(p3d-0.8.6): 팔이 턱에 걸림 → 팔을 다 펴도 닿지 않는 거리(몸·다른 팔에 스쳤더라도 거리가 까닭이다) → 제 몸에 가림 → 다른 팔에 가림
     // p3d-0.11.2: 떠 있는 채 내려가는 중이고 목표가 어깨보다 위인데 팔 길이로 모자라면 더 기다려도 멀어지기만 한다 → 그 자리에서 까닭(정점이 지남)을 알린다.
     //   0.11.1까지는 손이 그대로 기다리다가 착지한 뒤 0.3초에야 "닿지 않음(40cm 모자람)"(땅에서 잰 거리)으로 거부돼 왜 못 잡았는지 알기 어려웠다
@@ -1366,10 +1364,6 @@ export function stepClimb(S, inp, dt) {
   Fs.forEach((f, i) => { acc.addScaledVector(f, 1 / m); who[i].load = who[i].act = f.length() / BW; who[i].pas = 0; who[i].cap = C[i].cap / BW; who[i].F = f; if (!C[i].arm) who[i].ok = f.lengthSq() > 1; });
   // 흔들기: 손으로만 매달렸을 때 A/D는 벽과 나란한 쪽으로 몸을 미는 힘(엉덩이·다리를 차서 흔드는 것을 질점 몸에 옮긴 근사. 팔 길이 구속이 진자 운동으로 바꾼다)
   if (hanging && side && !K.push) acc.addScaledVector(left, side * CL.SWING_A);
-  // p3d-0.13.1 자세 보조: 손에만 매달린 몸도 청한 만큼(K.wout, OUT_HANG까지) 벽에서 물러난다 — 매달린 진자를 그만큼 벗어난 자리에 두는 힘(g·d/L, L = 손에서 무게중심까지 약 1.1m. 6cm면 몸무게의 5%).
-  //   0.12.0에서는 "매달린 몸의 앞뒤 자리는 손 밑으로 정해져 몸 빼기가 듣지 않는다"로 두었다. 그래서 턱 B 밑에 매달려 그 위의 턱 D로 손을 옮길 때, 어깨가 턱 B의 앞면보다 2cm 안쪽에 있어 뻗는 팔뚝이 턱 B의 모서리에 걸렸다(경로 13단계: "팔이 턱에 걸려").
-  //   사람은 팔을 턱 모서리에 대고 윗몸을 조금 뒤로 뺀다. OLDHANGOUT = 끔
-  if (hanging && !K.push && poseAssistOn(S) && (K.wout || 0) > 0 && !globalThis.OLDHANGOUT) acc.addScaledVector(outDir(S), PHY.G * Math.min(K.wout, CL.OUT_HANG) / 1.1);
   b.vel.addScaledVector(acc, dt); if (who.length && !K.push) b.vel.multiplyScalar(1 - (hanging ? CL.HANG_DAMP : CL.DAMP) * dt);
   b.pos.addScaledVector(b.vel, dt);
   // 곧게 편 팔은 줄처럼 버틴다(더 늘어나지 않는다). 이때 받은 충격을 손이 나눠 받는다. 몸통·머리는 벽·턱 속으로 들어가지 않는다(가장 얕은 쪽으로만 민다)

@@ -1,6 +1,7 @@
 // 쉬운 조작(예약·자동 몸 맞추기)의 한 가지 흔들기를 걸음마다 따라가 본다(route_tolerance.mjs와 같은 조준 방식).
 // 사용: [MODE=clip] [EASY=1] [AIMSNAP=1] SI=3 GI=3 CI=0 OFF=0.15,0 [EVERY=20] node test/easy_trace.mjs
 //   SEGN=gi:n = 그 단계의 gi번째 구간의 걸음 수를 n으로(몸 입력 길이를 흔들 때). TP=x,y,z = 겨눈 자리 없이 미리보기를 볼 점. 손마다 잡은 팔의 걸림(jam)도 적는다
+import './provenance.mjs';
 import fs from 'fs'; import path from 'path'; import { fileURLToPath, pathToFileURL } from 'url';
 const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pathToFileURL(path.join(HERE, '../src', f)).href);
 const { buildCharacter } = await imp('rig.js'), { makeWorld, rayHit } = await imp('world.js'), { makeSim } = await imp('sim.js'), { limbState, aimGrip, probeHand } = await imp('climb.js'), THREE = await import('three'), { ROUTE, ROUTE_START } = await import('./route_steps.mjs');
@@ -10,7 +11,7 @@ const sim = makeSim(rig, makeWorld(), CLIPS); sim.reset({ pos: ROUTE_START, yaw:
 const SEGN = process.env.SEGN ? process.env.SEGN.split(':').map(Number) : null; if (SEGN) ROUTE[SI][1][SEGN[0]][0] = SEGN[1];
 let look = null, tp = process.env.TP ? process.env.TP.split(',').map(Number) : null, ti = +(process.env.TI || 0);
 for (let si = 0; si <= SI; si++) for (let gi = 0; gi < ROUTE[si][1].length; gi++) { const [n, inp = {}, cmd = []] = ROUTE[si][1][gi];
-  const cmd1 = cmd.map((c, ci) => { if (!(si === SI && gi === GI && ci === CI) || !c.p) return c; const b = sim.body.pos, o = V3(b.x + 0.88, b.y + 1.73, b.z + 3.46), q = V3(c.p[0] + OFF[0], c.p[1] + OFF[1], c.p[2]), d = q.clone().sub(o).normalize(), far = o.clone().addScaledVector(d, 40), t = rayHit(sim.world, o, far), hit = t < 1 ? o.clone().lerp(far, t) : null, g = SNAP ? aimGrip(sim.world, o, d, hit) : null, p = g ? g.p : hit; tp = p ? p.toArray() : [0, -99, 0]; ti = c.i; console.log(`겨눈 자리 ${tp.map(v => v.toFixed(3))} (원래 ${c.p})`); return { ...c, p: tp }; });
+  const cmd1 = cmd.map((c, ci) => { if (!(si === SI && gi === GI && ci === CI) || !c.p) return c; const b = sim.body.pos, o = V3(b.x + 0.88, b.y + 1.73, b.z + 3.46), q = V3(c.p[0] + OFF[0], c.p[1] + OFF[1], c.p[2]), d = q.clone().sub(o).normalize(), far = o.clone().addScaledVector(d, 40), t = rayHit(sim.world, o, far), hit = t < 1 ? o.clone().lerp(far, t) : null, g = SNAP ? aimGrip(sim.world, o, d, hit, sim.climb.hands.filter(h => h.st === 'hold').map(h => h.grip)) : null, p = g ? g.p : hit; tp = p ? p.toArray() : [0, -99, 0]; ti = c.i; console.log(`겨눈 자리 ${tp.map(v => v.toFixed(3))} (원래 ${c.p})`); return { ...c, p: tp }; });
   for (const c of cmd1) if (c.p) look = c.p;
   if (si === SI && gi === GI && tp) { const was = globalThis.OLDPROBE, f = o => { globalThis.OLDPROBE = o; const r = probeHand(sim, ti, V3(...tp)); return r.ok ? '됨' : r.why; }; console.log(`누르기 직전의 미리보기: 전 = ${f(true)} / 새 = ${f(false)}`); globalThis.OLDPROBE = was; }
   for (let i = 0; i < n; i++) { sim.step({ mx: 0, mz: 0, cxSign: 1, ...(look ? { look } : {}), ...inp, cmd: i ? [] : cmd1 });

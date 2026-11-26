@@ -14,7 +14,7 @@ const [shI, shN] = (process.env.SHARD || '0/1').split('/').map(Number), clone = 
 // AIMSNAP=1이면 화면과 같이 조준 맞춤(aimGrip)을 거친다. 카메라는 한 가지 자리뿐이다(시점을 돌리며 겨누는 것은 재지 않는다)
 const SNAP = process.env.AIMSNAP === '1', V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 function viaRay(sim, c) { const b = sim.body.pos, o = V3(b.x + 0.88, b.y + 1.73, b.z + 3.46), q = V3(c.p[0] + c.aimOff[0], c.p[1] + c.aimOff[1], c.p[2]), d = q.clone().sub(o).normalize(), far = o.clone().addScaledVector(d, 40), t = rayHit(sim.world, o, far), hit = t < 1 ? o.clone().lerp(far, t) : null;
-  const g = SNAP ? aimGrip(sim.world, o, d, hit) : null, p = g ? g.p : hit; return { ...c, p: p ? p.toArray() : [0, -99, 0] }; }
+  const g = SNAP ? aimGrip(sim.world, o, d, hit, sim.climb.hands.filter(h => h.st === 'hold').map(h => h.grip)) : null, p = g ? g.p : hit; return { ...c, p: p ? p.toArray() : [0, -99, 0] }; }
 function run(R, upto, uptoSeg = 99, limb = null, who = '', from = 0) { const sim = makeSim(rig, makeWorld(), CLIPS); sim.reset({ pos: ROUTE_START, yaw: Math.PI }); Object.assign(sim.opt, { wallRest: false, footAssist: true, grabAssist: true, poseAssist: true, posture: 'fb', easy: process.env.EASY === '1' });
   let look = null, fell = false, moved = false, pr = null; const why = [];
   for (let si = 0; si <= upto; si++) for (let gi = 0; gi < R[si][1].length && (si < upto || gi <= uptoSeg); gi++) { const [n, inp, cmd] = R[si][1][gi]; for (const c of cmd) if (c.p) look = c.p; const cmd1 = cmd.map(c => (c.aimOff ? viaRay(sim, c) : c)); for (const c of cmd1) if (c.p) look = c.p;
