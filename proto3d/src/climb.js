@@ -1117,10 +1117,10 @@ function heldPole(S, s, sh, goal, yaw, sx, qC, nG) {
   const e1 = u.clone().cross(e0), prev = S.pw && S.poleS && S.poleS['el' + s], pa = prev ? Math.atan2(prev.dot(e1), prev.dot(e0)) : 0; let best = null;
   // p3d-0.15.1(완등 홀드에 두 손 모으기의 실패를 따라가다 찾음 — 초록 11을 잡은 왼팔): 몸이 손 가까이 올라와 팔이 깊게 접히면(어깨–손 24cm) 둘레의 모든 방향이 지형·제 몸·어깨 범위 가운데 하나에 걸리는데,
   //   이 값에는 지형이 "팔꿈치가 상자 안이면 0.05"로만 들어 있어 어깨 범위를 21° 넘는 방향(0.044) 대신 **팔뚝이 벽 속으로 71mm 든 방향**이 골라졌다. 그 팔꿈치가 방금 잡았던 홀드 밑에 끼어, 손을 놓고 위로 보내면 "팔이 턱에 걸려"로 거부됐다.
-  //   지형에 든 깊이도 값에 넣는다(뻗는 팔의 고르기와 같은 1m = 10 — 단단한 조건이 부드러운 조건(관절 범위)에 가려지지 않게). 자세 보조 켬(새 자세 방식)에서만. OLDHELDTERR = 전처럼
+  //   지형에 든 깊이(3.5cm보다 깊은 몫만 — 얕게 스치는 겹침까지 세면 후보가 걸음마다 오가 붙은 팔이 초속 300°를 넘는 걸음이 596 → 2,153번이 됐다. 2cm 문턱은 foot2·foot8에 남았다. HELD_DB)도 값에 넣는다(뻗는 팔의 고르기와 같은 1m = 10 — 단단한 조건이 부드러운 조건(관절 범위)에 가려지지 않게). 자세 보조 켬(새 자세 방식)에서만. OLDHELDTERR = 전처럼
   const HT = poseAssistOn(S) && DIM.boxCollide && !globalThis.OLDHELDTERR, tbH = HT ? (() => { const Hh = S.climb.hands[s === 'L' ? 0 : 1]; return Hh && Hh.edge ? Hh.edge.box : null; })() : null;
   const WH = HT ? (() => { const r = DIM.upperArm + DIM.foreArm + 0.08; return { boxes: S.world.boxes.filter(x => x.kind !== 'floor' && sh.x > x.min.x - r && sh.x < x.max.x + r && sh.y > x.min.y - r && sh.y < x.max.y + r && sh.z > x.min.z - r && sh.z < x.max.z + r) }; })() : null;
-  const terr = ik => { if (!HT) return 0; const h = armHit(WH, sh, ik, tbH); return h ? 10 * Math.max(0, h.d - (globalThis.HELD_DB ?? 0.02)) : 0; };
+  const terr = ik => { if (!HT) return 0; const h = armHit(WH, sh, ik, tbH); return h ? 10 * Math.max(0, h.d - (globalThis.HELD_DB ?? 0.035)) : 0; };
   for (let j = 0; j < 24; j++) { const a = j * Math.PI / 12, an = a > Math.PI ? a - 2 * Math.PI : a, pl = e0.clone().multiplyScalar(Math.cos(a)).addScaledVector(e1, Math.sin(a)), ik = twoBone(sh, goal, DIM.upperArm, DIM.foreArm, pl), sf = armSelf(B, ik, sh), sm = XA ? armSelf(B, ik, sh, 0, XA) : sf;
     let dp = Math.abs(an - pa); if (dp > Math.PI) dp = 2 * Math.PI - dp;
     // 실제 겹침(머리·몸통, 여유 밖의 다른 팔)이 먼저다. 다른 팔과의 여유(6cm 안)는 가볍게만 본다 — 여유를 벌리려고 팔꿈치를 머리 쪽으로 돌리면 머리에 닿는다(0.8.6 작업 중에, 그것을 윗몸이 비키느라 엇갈려 잡은 몸이 36cm 옆으로 밀려갔다)
