@@ -8,7 +8,7 @@ import { groundAt, pushOut, rayHit } from './world.js';
 import { PHY } from './controller.js';
 import { aimBone, setWorldQuat, twoBone, worldPos } from './ik.js';
 import { featOf, lookup } from './refpose.js';
-import { fk as fbFK, makeFB, stepFB, FBI, FBW } from './fbik.js';
+import { fk as fbFK, makeFB, stepFB, solveStep as fbSolve, FBI, FBW } from './fbik.js';
 import { legExcess, kneeExcess, clampKnee, legMin, armExcess, clampElbow, fitPole, fitPoleLow } from './anat.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z), Q = () => new THREE.Quaternion(), clamp = THREE.MathUtils.clamp, lerp = THREE.MathUtils.lerp, UP = V(0, 1, 0), X = V(1, 0, 0), deg = Math.PI / 180;
@@ -566,10 +566,19 @@ function groundBelow(world, p) { let y = 0; for (const x of world.boxes) if (p.x
 function sidePull(S, i, sh, goal, n) { const K = S.climb; if (!K.on || globalThis.OLDSIDEPULL || !K.hands.some((o, j) => j !== i && o.st === 'hold') || S.body.vel.length() > 0.6 || sh.distanceTo(goal) < 0.85 * CL.ARM || K.feet.some(f => f.st === 'plant' && (f.load || 0) > 0.15)) return '';
   const pull = sh.clone().sub(goal).normalize(), down = -pull.y, out = Math.max(0, pull.dot(n)), lat = pull.clone().addScaledVector(n, -pull.dot(n)).setY(0).length();
   return down > 0.05 && Math.hypot(out, lat) / down > Math.tan(CL.GRIP_ANG + 3 * deg) ? '팔이 옆으로 당겨져 버틸 수 없음' : ''; }
+// 손 i가 지금 잡은 자리를 놓고 goal로 뻗을 때 어깨가 옮겨 가는 만큼(전신 자세 풀이에서만. 그 밖에는 0). 같은 계산 걸음·같은 목표는 다시 풀지 않는다
+function reachShift(S, i, goal) { const K = S.climb, fb = K.fb, c = fb && fb.ctx; if (globalThis.OLDPROBE || !K.on || !fbOn(K) || !c || K.hands[i].st !== 'hold') return V();
+  const key = `${K.tick}|${i}|${goal.x.toFixed(3)},${goal.y.toFixed(3)},${goal.z.toFixed(3)}`; if (K.rsKey && K.rsKey[i] === key) return K.rsVal[i].clone();
+  const yaw = S.body.yaw, left = V(Math.cos(yaw), 0, -Math.sin(yaw)), fwd = V(Math.sin(yaw), 0, Math.cos(yaw)), A = fbAims(S, K.hands.filter(h => h.st === 'hold' && h.i !== i), left, fwd);
+  const c2 = { ...c, axis: [A.ax.x, A.ax.y, A.ax.z], yawT: A.yawT + (K.aim ? K.aim.y : 0), arms: c.arms.map((a, j) => (j === i ? { st: 2, goal: [goal.x, goal.y, goal.z], w: 1 } : a)), shr: c.shr.map((v, j) => (j === i ? (goal.y > S.body.pos.y + 1.4 ? 0.40 : 0) : c.arms[j].st === 1 ? 0 : v)) };
+  const xs = Float64Array.from(fb.xs); fbSolve(xs, c2, 6); const a = fbFK(fb.xs, c.pos, c.yaw).sh[i], b2 = fbFK(xs, c.pos, c.yaw).sh[i], v = V(b2[0] - a[0], b2[1] - a[1], b2[2] - a[2]);
+  (K.rsKey = K.rsKey || [])[i] = key; (K.rsVal = K.rsVal || [])[i] = v.clone(); return v; }
 export function probeHand(S, i, pt) {
   const g = resolveGrip(S.world, pt), H = S.climb.hands[i];
   if (!g) return { ok: false, why: '잡을 수 있는 턱이 아님', sure: true };
-  const goal = anchorOf(g), sh = joints(S).sh[i], d = sh.distanceTo(goal), sure = S.body.vel.length() < 0.3, base = { grip: g.p.toArray(), name: g.edge.box.name, sure };
+  // p3d-0.13.1: 잡고 있는 손을 옮길 때의 닿는 거리는 **손을 놓고 뻗은 자세의 어깨**로 잰다(reachShift — 전신 자세 풀이를 "이 손이 그 턱으로 뻗는 중"으로 바꿔 풀어 본 어깨의 옮겨 감).
+  //   0.13.0까지는 잡은 채의 어깨로 재서, 눌러 보면 잡히는 자리를 18~34cm "모자람"으로 보였다(윗몸이 뻗는 쪽으로 돌고 기우는 몫을 몰랐다). OLDPROBE = 전처럼
+  const goal = anchorOf(g), sh = joints(S).sh[i].clone().add(reachShift(S, i, goal)), d = sh.distanceTo(goal), sure = S.body.vel.length() < 0.3, base = { grip: g.p.toArray(), name: g.edge.box.name, sure };
   if (handPathBlocked(S.world, H, goal, g)) return { ...base, ok: false, why: '손이 가는 길이 막힘' };
   // p3d-0.11.5: 미리보기도 잡기 보정과 같은 판정(정지 ASSIST_S + 목표 쪽으로 움직이는 빠르기만큼). 0.11.4는 미리보기가 보정을 몰라 잡히는 거리에서도 "조금 더 가까이"라고 보였다
   const u = goal.clone().sub(sh).normalize(), A = assistOn(S) ? Math.min(CL.ASSIST_MAX, CL.ASSIST_S + CL.ASSIST_D * Math.min(Math.max(0, S.body.vel.dot(u)), 2)) : 0, far = d - CL.ARM;
@@ -1082,6 +1091,12 @@ function heldPole(S, s, sh, goal, yaw, sx, qC, nG) {
 // ── 벽 문맥의 한 걸음 ──
 // 전신 자세 풀이의 한 걸음(p3d-0.11.0): 붙은 손발·가는 손발·하중·지형을 모아 풀이에 넘긴다(src/fbik.js). 풀이 값은 torso()를 거쳐 물리와 그림에 함께 들어간다
 const boxArr = x => x._a || (x._a = { min: [x.min.x, x.min.y, x.min.z], max: [x.max.x, x.max.y, x.max.z] });
+// 몸통의 축과 가슴이 향하려는 쪽(잡은 손들로 정한다). fbUpdate와 미리보기(reachShift)가 같은 식을 쓴다
+function fbAims(S, held, left, fwd) { const b = S.body, fb = S.climb.fb;
+  const lean = held.length ? 0.05 + 0.15 * fb.sup : 0, ax = V(0, 1, 0).addScaledVector(fwd, -lean).normalize();
+  if (held.length) { const c = V(); for (const h of held) c.add(h.goal); c.multiplyScalar(1 / held.length).sub(V(b.pos.x, b.pos.y + DIM.hipY + 0.15, b.pos.z)); if (c.lengthSq() > 1e-4) ax.multiplyScalar(1 - fb.hang).addScaledVector(c.normalize(), fb.hang).normalize(); }
+  let yawT = 0; if (held.length) { const cH = V(); for (const h of held) cH.add(h.goal); cH.multiplyScalar(1 / held.length).sub(V(b.pos.x, b.pos.y, b.pos.z)); yawT = clamp(Math.atan2(cH.dot(left), Math.max(0.15, cH.dot(fwd))) * 0.6, -0.5, 0.5); }
+  return { ax, yawT }; }
 function fbUpdate(S, inp, dt, held, planted, left, fwd) {
   const b = S.body, K = S.climb, fb = K.fb, BW = CL.MASS * PHY.G, pos = [b.pos.x, b.pos.y, b.pos.z], a3 = v => [v.x, v.y, v.z];
   const boxes = []; for (const x of S.world.boxes) { if (x.kind === 'floor' || x.max.x < pos[0] - 1.3 || x.min.x > pos[0] + 1.3 || x.max.z < pos[2] - 1.3 || x.min.z > pos[2] + 1.3 || x.max.y < pos[1] - 0.3 || x.min.y > pos[1] + 2.5) continue; boxes.push(Object.assign(boxArr(x), { src: x })); }
@@ -1090,13 +1105,12 @@ function fbUpdate(S, inp, dt, held, planted, left, fwd) {
   const hangT = held.length ? (planted.length ? hl / (hl + fl + 1e-3) : 1) : 0, supT = held.length && planted.some(f => f.load > 0.1 && f.box.kind !== 'floor') ? 1 : 0, kS = 1 - Math.exp(-7 * dt);
   fb.hang += (hangT - fb.hang) * kS; fb.sup += (supT - fb.sup) * kS;
   // 몸통의 축이 향할 쪽: 발로 서면 위(발판 위에서는 벽에서 조금 뒤로), 손에 매달리면 무게중심 → 잡은 손들의 가운데
-  const lean = held.length ? 0.05 + 0.15 * fb.sup : 0, ax = V(0, 1, 0).addScaledVector(fwd, -lean).normalize();
-  if (held.length) { const c = V(); for (const h of held) c.add(h.goal); c.multiplyScalar(1 / held.length).sub(V(b.pos.x, b.pos.y + DIM.hipY + 0.15, b.pos.z)); if (c.lengthSq() > 1e-4) ax.multiplyScalar(1 - fb.hang).addScaledVector(c.normalize(), fb.hang).normalize(); }
+  const AY = fbAims(S, held, left, fwd), ax = AY.ax;
   // 팔을 엇갈려 잡을 때(나중에 건너간 팔의 어깨가 벽 쪽) 가슴이 돌아 있으려는 쪽 — 두 팔이 서로를 지나가지 않게(p3d-0.8.5의 규칙을 풀이의 바람으로)
   const gOf = h => (h.st === 'hold' || (h.st === 'reach' && h.edge) ? h.goal : null), g0 = gOf(K.hands[0]), g1 = gOf(K.hands[1]), isX = !!g0 && !!g1 && g0.clone().sub(g1).dot(left) < -0.02, rch = K.hands.find(h => h.st === 'reach');
   const twist = isX ? (((rch ? rch.i : (K.lastReach ?? 1)) ? 1 : -1) * 0.45 * (globalThis.XTW ?? (globalThis.CROSSOVER ? -1 : 1))) : 0, up = (inp.cy || 0) > 0;
   // 가슴이 향하려는 쪽: 잡은 손들의 가운데(몸이 보는 쪽에서 옆으로 치우친 만큼, 끝 ±0.5rad). 두 손을 나란히 잡으면 0 — 가슴이 까닭 없이 한쪽으로 틀어지지 않게
-  let yawT = 0; if (held.length) { const cH = V(); for (const h of held) cH.add(h.goal); cH.multiplyScalar(1 / held.length).sub(V(b.pos.x, b.pos.y, b.pos.z)); yawT = clamp(Math.atan2(cH.dot(left), Math.max(0.15, cH.dot(fwd))) * 0.6, -0.5, 0.5); }
+  let yawT = AY.yawT;
   // p3d-0.11.9: 다리를 거의 다 편(93%) 채 발판에 서서 손을 잡고 있는데 몸이 처지기 시작하면(0.2초 넘게 아래로) 그때부터 잡은 팔이 옆으로 비스듬히 당기지 않게 어깨를 손 아래 쪽에 둔다(fbik의 stand).
   //   처지기 전에 늘 걸면 다 편 다리로 서서 손을 엇갈려 보내는 교차가 턱에 걸렸다(교차 네 가지 중 둘). 손을 뻗거나 발을 옮기거나 W·A·D를 누르거나 다리를 굽히면 풀린다. OLDGRIPLAT = 옛 방식
   { const tall = planted.some(f => f.kind === 'top' && (f.load || 0) > 0.4 && K.T && f.ank && K.T.hj[f.i].distanceTo(f.ank) > 0.93 * CL.LEG), busy = up || (inp.cx || 0) || K.hands.some(h => h.st === 'reach') || K.feet.some(f => f.st === 'move');
