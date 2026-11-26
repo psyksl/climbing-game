@@ -877,7 +877,9 @@ function limbsStep(S, dt) {
     const blkNear = (H.selfBlock > 0.1 || H.armCross > 0.1) && miss <= CL.ASSIST_S + 0.02 && !globalThis.OLDASSISTX;
     if (H.edge && (far > 0.002 || blkNear) && S.opt && S.opt.grabAssist && !globalThis.NOASSIST && miss <= Math.max(far, 0) + 0.03 + (blkNear ? CL.ASSIST_S : 0) && !(H.blockT > 0) && (blkNear || (!(H.selfBlock > 0) && !(H.armCross > 0)))) {
       const u = H.goal.clone().sub(sh).normalize(), vT = Math.max(0, S.body.vel.dot(u)), A = Math.min(CL.ASSIST_MAX, CL.ASSIST_S + CL.ASSIST_D * Math.min(vT, 2));
-      if (far <= A && (H.wait > 0.03 || vT > 0.3 || blkNear)) { const shV = sh.clone().addScaledVector(u, Math.max(far, 0)), c = armCheck(S, H.i, shV, H.goal, H.n); if (!c) { H.slack = Math.max(far, 0) + 0.002; H.assisted = far; grab(S, H); note(S, 'assist', 'hand', H.i, `잡기 보정 ${blkNear ? '막힌 손 ' + short(miss) : short(far)}${vT > 0.3 ? ' · 반동' : ''}`); continue; } } }
+      // p3d-0.15.1: 다른 손이 같은 턱을 잡고 있을 때(손 모으기)는, 모자란 만큼 몸이 끌려가면 그 손의 팔이 길이를 넘는 경우에 보정으로 잡지 않는다(잡았다가 0.03초 뒤에 거두지 않게 — 아래 끌려감의 같은 턱 규칙과 짝)
+      const oM = K.hands[1 - H.i], matchOk = globalThis.OLDMATCHREL || !(oM.st === 'hold' && oM.edge && oM.edge.box === H.edge.box) || (K.T ? K.T.sh[oM.i] : joints(S).sh[oM.i]).clone().addScaledVector(u, Math.max(far, 0)).distanceTo(oM.goal) <= CL.ARM + 0.01;
+      if (far <= A && matchOk && (H.wait > 0.03 || vT > 0.3 || blkNear)) { const shV = sh.clone().addScaledVector(u, Math.max(far, 0)), c = armCheck(S, H.i, shV, H.goal, H.n); if (!c) { H.slack = Math.max(far, 0) + 0.002; H.assisted = far; grab(S, H); note(S, 'assist', 'hand', H.i, `잡기 보정 ${blkNear ? '막힌 손 ' + short(miss) : short(far)}${vT > 0.3 ? ' · 반동' : ''}`); continue; } } }
     const yielding = (H.stopA && ((S.poleS && S.poleS['el' + (H.i ? 'L' : 'R') + 'w']) || 0) > 0.5) || ((H.stopA || H.stopB) && ((S.poleS && S.poleS['el' + H.s + 'w']) || 0) > 0.5);
     // p3d-0.10.1: 몸이 흔들려 손이 조금씩 움직이면 "멈춰 있음"이 쌓이지 않아, 막힌 손이 거부되지 않고 2.5초 한도까지 턱 앞에서 머뭇거렸다(새 몸의 되돌려 잡기, 다른 팔에 막힘).
     //   목표에 3mm 넘게 더 가까워지지 않은 채 0.25초가 지나면 그때부터도 센다
@@ -1439,7 +1441,10 @@ export function stepClimb(S, inp, dt) {
   for (let it = 0; it < 4; it++) for (const h of held) { const d = h.goal.clone().sub(T.sh[h.i].clone().add(b.pos).sub(p0)), L = d.length(), AL = CL.ARM + (h.slack || 0); if (L > AL) b.pos.addScaledVector(d.multiplyScalar(1 / L), L - AL); }
   // 잡기 보정의 끌려감(p3d-0.11.4): 여유를 ASSIST_V로 줄인다. 다른 손 때문에 끌려가지 못하면(줄인 여유보다 1cm 넘게 멀다) 그 손을 놓는다 — 원했던 턱을 잡은 손이 먼저다(사용자 결정)
   for (const h of held) if (h.slack > 0) { h.slack = Math.max(0, h.slack - CL.ASSIST_V * dt); const L = h.goal.distanceTo(T.sh[h.i].clone().add(b.pos).sub(p0));
-    if (L > CL.ARM + h.slack + 0.01) for (const o of held) if (o !== h && !(o.slack > 0) && o.st === 'hold') releaseHand(S, o.i, '잡으려고 놓음(잡기 보정)'); }
+    // p3d-0.15.1(GPT의 0.15.0 검토 — 완등 홀드에 두 손을 모을 때 먼저 잡은 손이 풀림): 다른 손이 **같은 턱**을 잡고 있으면 그 손을 놓지 않는다. 두 손 모두 "원했던 턱"에 있으므로
+    //   끌려가지 못한 새 손의 잡기를 거둔다(먼저 잡은 손·발은 그대로). 다른 턱을 잡은 손은 전처럼 놓는다(0.11.4의 사용자 결정). OLDMATCHREL = 전처럼
+    if (L > CL.ARM + h.slack + 0.01) { const same = !globalThis.OLDMATCHREL && h.edge && held.some(o => o !== h && !(o.slack > 0) && o.st === 'hold' && o.edge && o.edge.box === h.edge.box);
+      if (same) releaseHand(S, h.i, '닿지 않음(몸을 더 끌어오지 못함 — 다른 손이 같은 턱을 잡고 있음)', 'reject'); else for (const o of held) if (o !== h && !(o.slack > 0) && o.st === 'hold') releaseHand(S, o.i, '잡으려고 놓음(잡기 보정)'); } }
   const shock = lim.length ? armDv / lim.length : 0;
   // 손의 하중 = 근육이 당기는 힘(act. 한계 cap 안) + 다 편 팔이 줄처럼 버티는 몫(pas. 뼈대가 받는 것이라 당기는 한계와 무관하다. 충격도 여기 든다)
   for (const h of lim) { h.pas = shock * m / dt / BW; h.load += h.pas; }
