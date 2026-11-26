@@ -27,7 +27,7 @@ const SCENES = [
 fs.mkdirSync(out, { recursive: true });
 const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const ctx = await b.newContext({ viewport: { width: 1120, height: 630 }, recordVideo: { dir: out, size: { width: 1120, height: 630 } } }), pg = await ctx.newPage(), errs = [], info = [];
-pg.on('pageerror', e => errs.push(e.message)); await pg.goto('file://' + path.join(HERE, '..', build) + '?noshadow'); await pg.waitForTimeout(1200);
+pg.on('pageerror', e => errs.push(e.message)); await pg.goto('file://' + path.join(HERE, '..', build) + '?noshadow&world=old'); await pg.waitForTimeout(1200);
 await pg.evaluate(m => { if (m) __p3.setMode(m); document.getElementById('help').style.display = 'none'; __p3.opt({ handMode: 1, footAssist: true, wallRest: true, diag: false, helpAll: false }); }, clip ? 'clip' : '');
 for (const [view, yaw, dist] of [['뒤에서', 0.0, 3.9], ['옆에서', Math.PI * 1.5, 3.9]]) for (const [title0, pos, fn] of SCENES) {
   const inputs = make(pos, fn), title = title0 + ' · ' + view;

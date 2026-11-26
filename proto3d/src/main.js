@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { buildCharacter, BODY } from './rig.js';
 import { buildHuman, makeRetarget } from './human.js';
-import { makeWorld, makeFixtureWorld, buildWorldMeshes, rayHit } from './world.js';
+import { makeWorld, makeFixtureWorld, makeGym, buildWorldMeshes, rayHit } from './world.js';
 import { PHY } from './controller.js';
 import { makeSim } from './sim.js';
 import { BIND, conflicts, keyName, makeInput, setKeys, resetKeys, loadKeys, TAP } from './input.js';
@@ -24,7 +24,10 @@ const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.05, 1
 scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f80, 1.6));
 const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(4, 8, 5); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); Object.assign(sun.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8 }); scene.add(sun);
 
-const world = params.get('world') === 'corner' ? makeFixtureWorld() : makeWorld(); buildWorldMeshes(world, scene); // ?world=corner = 다른 벽으로 옮겨 가기 시험용 지형(p3d-0.10.4)
+// 지형(p3d-0.14.0): 화면 기본 = 클라이밍장. ?world=old = 옛 작은 벽(시험의 기준 장면 — ?test·?manual로 여는 브라우저 시험은 따로 정하지 않으면 이것), ?world=corner = 다른 벽으로 옮겨 가기 시험용(p3d-0.10.4)
+const WNAME = params.get('world') || (params.has('test') || params.has('manual') ? 'old' : 'gym');
+const world = WNAME === 'corner' ? makeFixtureWorld() : WNAME === 'old' ? makeWorld() : makeGym(); buildWorldMeshes(world, scene);
+if (world.gym) { Object.assign(sun.shadow.camera, { left: -11, right: 11, top: 9, bottom: -9 }); sun.shadow.mapSize.set(2048, 2048); sun.position.set(2, 10, 6); }
 const rig = buildCharacter(); scene.add(rig.root);
 const skel = new THREE.SkeletonHelper(rig.mesh); skel.visible = false; scene.add(skel);
 // 사람형 몸(p3d-0.10.0, 기본): 제어 뼈대(rig)는 계산에만 쓰고 숨긴다. 그릴 때마다 제어 뼈대의 확정된 자세를 새 몸에 옮긴다(human.js — 계산 상태를 바꾸지 않는다). 옛 몸: 주소에 ?body=old
@@ -122,7 +125,11 @@ function readCommands() {
   for (const [id, i] of [['relL', 0], ['relR', 1]]) if (input.wasPressed(id)) pending.push({ type: 'release', limb: input.pressedWith(id, ground ? 'footGround' : 'footMod') ? 'foot' : 'hand', i });
 }
 // 작은 벽 앞에서 시작(턱 A 아래, 벽을 보고 선다. 시점은 등 뒤)
-function wallStart() { if (gal.on) galOpen(false); reset({ pos: world.fixture ? [-0.45, 0, -2.58] : [-0.9, 0, -2.58], yaw: Math.PI }); cam.yaw = 0.25; cam.pitch = 0.12; cam.dist = cam.eff = 3.6; cam.follow = null; cam.dirEff = null; cam.target.set(-0.9, 1.3, -2.58); }
+// 클라이밍장에서는 코스의 시작 자리로(누를 때마다 다음 코스). 시점은 등 뒤에서 벽을 본다(옛 벽과 같은 0.25rad 비스듬히)
+let courseI = -1;
+function wallStart() { if (gal.on) galOpen(false);
+  if (world.gym) { courseI = (courseI + 1) % world.courses.length; const C = world.courses[courseI], n = C.frame.n; reset({ pos: C.startPos, yaw: C.startYaw }); cam.yaw = Math.atan2(n[0], n[2]) + 0.25; cam.pitch = 0.12; cam.dist = cam.eff = 3.6; cam.follow = null; cam.dirEff = null; cam.target.set(C.startPos[0], 1.3, C.startPos[2]); gym.course = C; gym.done = false; gym.t0 = sim.tick; return; }
+  reset({ pos: world.fixture ? [-0.45, 0, -2.58] : [-0.9, 0, -2.58], yaw: Math.PI }); cam.yaw = 0.25; cam.pitch = 0.12; cam.dist = cam.eff = 3.6; cam.follow = null; cam.dirEff = null; cam.target.set(-0.9, 1.3, -2.58); }
 // 누르는 동안 뻗던 손을 거둔다(B2): 시점 보기 전환·손 조작 방식 바꾸기·창이 가려지거나 포커스를 잃음. 새로 잡지 않고 다른 접촉은 그대로 둔다
 // p3d-0.8.3(GPT P1-A): 아직 읽지 않은 누름도 버린다. 단추를 누른 뒤 첫 화면 프레임이 오기 전에 마우스가 화면을 벗어나면, 취소할 때는 아직 뻗기(aim.held)가 없어 아무것도 하지 않고
 // 바로 뒤의 readCommands가 그 누름으로 새 뻗기 명령을 만들었다. 손발 단추의 누름 자체를 버려(input.kill) 이번 프레임에도, 누른 채 돌아온 뒤에도 명령이 되지 않게 한다. 이미 붙은 손발은 건드리지 않는다
@@ -134,7 +141,7 @@ addEventListener('blur', () => { lostFocus = 'blur'; }); document.addEventListen
 // 마우스가 화면 밖으로 나간 채 단추를 떼면 그 뗌을 듣지 못할 수 있다 → 나가는 순간에 거둔다(밖에서 떼어도 잡으러 가지 않는다)
 document.documentElement.addEventListener('mouseleave', () => { lostFocus = 'mouseleave'; });
 function physStep(inp) { const c = pending.splice(0); sim.step(c.length ? { ...inp, cmd: (inp.cmd || []).concat(c) } : inp); }
-function reset(o) { sim.reset(o); sim.opt.footAssist = OPT.footAssist; sim.opt.grabAssist = OPT.grabAssist; sim.opt.poseAssist = OPT.poseAssist; sim.opt.easy = OPT.easy; sim.opt.wallRest = OPT.wallRest; sim.climb.oldPose = OPT.oldPose; body = sim.body; pending.length = 0; aim.held[0] = aim.held[1] = null; }
+function reset(o) { sim.reset(o || world.spawn); gym.done = false; gym.topT = 0; gym.t0 = sim.tick; sim.opt.footAssist = OPT.footAssist; sim.opt.grabAssist = OPT.grabAssist; sim.opt.poseAssist = OPT.poseAssist; sim.opt.easy = OPT.easy; sim.opt.wallRest = OPT.wallRest; sim.climb.oldPose = OPT.oldPose; body = sim.body; pending.length = 0; aim.held[0] = aim.held[1] = null; }
 
 const CAM = { AIR_BOX: 0.9, WALL_DEAD: 0.12, WALL_RATE: 2.5, LAND_T: 0.8 }, lerpN = (a, b, t) => a + (b - a) * t;
 function updateCamera(dt) {
@@ -164,6 +171,14 @@ function updateCamera(dt) {
   camera.lookAt(cam.target);
 }
 
+// 클라이밍장의 코스 상태(p3d-0.14.0, 화면만 — 물리는 모른다): 가까운 코스, 완등(두 손이 그 코스의 완등 홀드를 함께 잡고 0.5초). 문구는 임시
+const gym = { course: null, done: false, t0: 0, topT: 0 };
+function gymStep(dt) { if (!world.gym) return; const K = sim.climb, held = K.hands.filter(h => h.st === 'hold' && h.edge);
+  const c = held.find(h => h.edge.box.course) ? world.courses.find(C => C.id === held.find(h => h.edge.box.course).edge.box.course) : null;
+  if (c) gym.course = c; else if (!K.on) { let best = null; for (const C of world.courses) { const d = Math.hypot(body.pos.x - C.startPos[0], body.pos.z - C.startPos[2]); if (!best || d < best.d) best = { d, C }; } if (best && best.d < 2.5) gym.course = best.C; }
+  const top = held.length === 2 && held.every(h => h.edge.box.role === 'top' && h.edge.box.course === held[0].edge.box.course);
+  gym.topT = top ? gym.topT + dt : 0; if (gym.topT > 0.5 && !gym.done) { gym.done = true; gym.doneT = (sim.tick - gym.t0) / 120; } }
+const gymLine = () => !world.gym ? '' : `<div><b>코스</b> ${gym.course ? `<span style="color:${gym.course.color === '#2a2a2e' ? '#000' : gym.course.color}">■</span> ${gym.course.name} · ${gym.course.grade}${gym.done ? ` &nbsp; <b>완등!</b>${gym.doneT > 0 ? ` (${gym.doneT.toFixed(1)}초)` : ''}` : ''}` : '-'} <span class=dim>· T = 코스 시작 자리로(누를 때마다 다음 코스)</span></div>`;
 // 화면 안내(임시. 모양·문구는 GPT 검토 대상)
 const hud = document.createElement('div'); hud.id = 'hud'; document.body.appendChild(hud);
 const banner = document.createElement('div'); banner.id = 'banner'; document.body.appendChild(banner); // 영상용 장면 이름(시험이 정한다)
@@ -230,7 +245,7 @@ function drawHud(fps) {
   const C = sim.clip, cap = C && C.w > 0.5, footName = (L, i) => cap ? (C.feet[i].step ? '고쳐 디딤' : C.feet[i].lock ? (C.feet[i].kind === 'heel' ? '디딤(뒤꿈치)' : '디딤(발끝)') : '옮기는 중') : L.mode === 'plant' ? (L.heel > 0 ? '디딤(뒤꿈치 듦)' : '디딤') : L.mode === 'swing' ? '옮기는 중' : '공중';
   hud.innerHTML = `<div class=ver>3D 모션 시제품 ${VERSION}${OLDRISE_URL ? ' · W 옛 빠르기(?oldrise)' : ''} · ${BODY === 'old' ? '옛 몸(자작)' : '사람형 몸(Quaternius 마네킹, CC0) · 자세 ' + ({ fb: '전신 자세 풀이(O = 옛 규칙과 바꾸기)', rule: '옛 규칙 0.10.4(O = 전신 자세 풀이)', base: '0.10.0', solve: '함께 고르기(실험)', ref: '참고 자세(실험)' })[POSTURE] + (globalThis.GRIP_FRAME ? ' · 손 접촉 틀(실험)' : '')}</div>`
     + (K.on ? `<div><b>동작</b> 벽 등반(IK) <span class=dim>· 지상 동작: ${sim.clipSet && sim.useClip ? '캡처' : '자작'}</span></div>` : `<div><b>모션</b> ${!sim.clipSet ? '자작(코드로 만든 동작)' : sim.useClip ? `캡처 동작${cap ? '' : ' → 지금은 자작(웅크림·점프·착지)'}` : '자작(코드로 만든 동작)'}</div>`)
-    + `<div><b>문맥</b> <span class=ctx>${viewMode ? '시점 보기 · 조작 멈춤' : K.on ? '벽 등반' : '지상 조작'}</span> &nbsp; <b>상태</b> ${stateName()}${OPT.diag ? ` &nbsp; <b>속도</b> ${(K.on ? body.vel.length() : v).toFixed(2)} m/s` : ''}</div>`
+    + gymLine() + `<div><b>문맥</b> <span class=ctx>${viewMode ? '시점 보기 · 조작 멈춤' : K.on ? '벽 등반' : '지상 조작'}</span> &nbsp; <b>상태</b> ${stateName()}${OPT.diag ? ` &nbsp; <b>속도</b> ${(K.on ? body.vel.length() : v).toFixed(2)} m/s` : ''}</div>`
     + `<div class=dim>손 조작 ${OPT.handMode === 2 ? '2 · 누르는 동안 뻗고 떼면 잡기' : '1 · 눌러 보내기'} &nbsp; 발 보조 ${OPT.footAssist ? '켬' : '끔'} &nbsp; 잡기 보정 ${OPT.grabAssist ? '켬' : '끔'} &nbsp; 자세 보조 ${OPT.poseAssist ? '켬' : '끔'} &nbsp; 쉬운 조작 ${OPT.easy ? '켬' : '끔'}${OPT.wallRest ? ' &nbsp; <b>실험: 벽 딛기 켬</b>' : ''}${OPT.oldPose ? ' &nbsp; <b>비교: 옛 몸 자세(0.8.8)</b>' : ''}${FOOTX ? ' &nbsp; <b>발 선택 = X(시범 프로필)</b>' : ''}${MANUAL ? ' &nbsp; <b>수동 발 프로필</b>(저장하지 않음)' : ''}</div>`
     + (K.on ? `<div><b>손</b> ${K.hands.map((h, i) => `${i ? '오른손' : '왼손'} ${h.st === 'hold' ? `잡음(${h.edge.box.name}${OPT.diag ? `, 몸무게의 ${(h.loadS || 0).toFixed(1)}배` : ''})` : h.st === 'reach' ? '보내는 중' : '놓음'}`).join(' · ')}</div><div><b>발</b> ${K.feet.map((f, i) => `${i ? '오른발' : '왼발'} ${f.st === 'plant' ? ((f.loadS || 0) > 0.05 ? `디딤(${f.box.name}${OPT.diag ? `, ${(f.loadS || 0).toFixed(1)}배` : ''})` : `닿아만 있음(${f.box.name})`) : f.st === 'move' ? '보내는 중' : '떠 있음'}`).join(' · ')}</div>`
       : `<div><b>발</b> ${sim.motion.legs.map((L, i) => `${L.s === 'L' ? '왼발' : '오른발'} ${footName(L, i)}`).join(' · ')}</div>`)
@@ -248,7 +263,7 @@ let fpsS = 60, tickInput = null; // tickInput = 시험이 계산 걸음마다 �
 function frameCore(dtR, inp, onTick) {
   if (gal.on) { gal.t += dtR * (slow ? 0.25 : 1); if (gal.t > galClip().dur + 0.5) gal.t = 0; galPose(); updateCamera(dtR); draw(); drawHud(fpsS); return; } // 동작 보기: 게임 계산을 하지 않는다
   acc += dtR * (slow ? 0.25 : 1); const p0 = performance.now(); let nStep = 0;
-  while (acc >= PHY.DT) { physStep(tickInput ? tickInput(sim.tick) : inp); acc -= PHY.DT; nStep++; if (onTick) onTick(); }
+  while (acc >= PHY.DT) { physStep(tickInput ? tickInput(sim.tick) : inp); acc -= PHY.DT; nStep++; gymStep(PHY.DT); if (onTick) onTick(); }
   if (body.pos.y < -8) reset(); // 바닥 밖으로 떨어지면 처음 자리로
   const p1 = performance.now();
   updateCamera(dtR); draw(); drawHud(fpsS); // 그리기는 계산 상태를 바꾸지 않는다
@@ -332,7 +347,7 @@ window.__p3 = {
   cmd: c => { pending.push(c); },
   // 영상·시연용: 계산 걸음마다의 입력 목록을 지금부터 차례로 넣는다(실제 화면 루프로 돈다). 끝나면 저절로 풀린다. 스크립트 입력이며 사람 손이 아니다
   script(inputs) { const k0 = sim.tick; tickInput = k => { const i = k - k0; if (i >= inputs.length - 1) tickInput = null; return inputs[Math.min(i, inputs.length - 1)]; }; }, scripting: () => !!tickInput, pending: () => pending.length, probe: (limb, i, p) => (limb === 'foot' ? probeFoot : probeHand)(sim, i, new THREE.Vector3(...p)),
-  screenOf: p => screenOf(p), aim: () => { const a = aimPoint(); return a ? a.toArray() : null; }, aimGrip: () => (aim.grip ? aim.grip.toArray() : null), wallStart,
+  screenOf: p => screenOf(p), aim: () => { const a = aimPoint(); return a ? a.toArray() : null; }, aimGrip: () => (aim.grip ? aim.grip.toArray() : null), wallStart, gym: () => ({ course: gym.course && gym.course.id, done: gym.done, world: WNAME }),
   opt: o => { if (o) { if (('footAssist' in o && o.footAssist !== OPT.footAssist) || ('wallRest' in o && o.wallRest !== OPT.wallRest)) pending.push({ type: 'assistResume' }); if ('handMode' in o && o.handMode !== OPT.handMode) cancelHolds('handMode'); Object.assign(OPT, o); sim.opt.footAssist = OPT.footAssist; sim.opt.grabAssist = OPT.grabAssist; sim.opt.poseAssist = OPT.poseAssist; sim.opt.easy = OPT.easy; sim.opt.wallRest = OPT.wallRest; sim.climb.oldPose = OPT.oldPose; helpFor = ''; } return { ...OPT, viewMode, cxSign }; }, setView: v => { viewMode = !!v; }, aimSet: p => { aim.world = p ? new THREE.Vector3(...p) : null; },
   input: () => ({ mode: input.st.mode, view: viewMode, cxSign, down: [...input.down.keys()], read: (() => { const o = override; override = null; const r = readInput(); override = o; return r; })() }),
   setKeys: (id, keys) => { cancelHolds('setKeys'); const r = setKeys(id, keys); helpFor = ''; return r; }, resetKeys: () => { resetKeys(); helpFor = ''; }, tagsText: () => tags.map(d => (d.style.display === 'none' ? '' : d.innerText)),

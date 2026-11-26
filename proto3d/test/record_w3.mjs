@@ -26,7 +26,7 @@ const SCENES = [
 fs.mkdirSync(out, { recursive: true });
 const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const ctx = await b.newContext({ viewport: { width: 1120, height: 630 }, recordVideo: { dir: out, size: { width: 1120, height: 630 } } }), pg = await ctx.newPage(), errs = [], info = [];
-pg.on('pageerror', e => errs.push(e.message)); await pg.goto('file://' + path.join(HERE, '..', build) + '?noshadow'); await pg.waitForTimeout(1200);
+pg.on('pageerror', e => errs.push(e.message)); await pg.goto('file://' + path.join(HERE, '..', build) + '?noshadow&world=old'); await pg.waitForTimeout(1200);
 await pg.evaluate(m => { if (m) __p3.setMode(m); document.getElementById('help').style.display = 'none'; __p3.opt({ handMode: 1, footAssist: false, diag: false, helpAll: false }); }, clip ? 'clip' : '');
 for (const [title, pos, fn] of SCENES) {
   const inputs = make(pos, fn);
