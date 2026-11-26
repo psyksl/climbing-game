@@ -150,7 +150,7 @@ export function buildWorldMeshes(world, scene) {
   if (typeof document === 'undefined') return;
   for (const C of world.courses) { const W = C.frame, n = new THREE.Vector3(...W.n), o = new THREE.Vector3(...W.o), t = new THREE.Vector3(...W.t);
     for (const h of C.holds) if (h.role === 'start') tape(h, '#ffffff', 0.06); else if (h.role === 'top') { tape(h, '#ffffff', 0.06); tape(h, '#111111', 0.17); }
-    sign(C.name, C.grade, C.color, o.clone().addScaledVector(t, C.at).addScaledVector(n, 0.01).setY(0.55), n); }
+    sign(C.name, C.grade, C.color, o.clone().addScaledVector(t, C.at).addScaledVector(n, 0.01).setY(3.98), n); }
 }
 
 // 선분(a → b)이 처음 닿는 상자까지의 비율(0~1). 닿지 않으면 1. 카메라가 벽을 지나가지 않게 쓴다

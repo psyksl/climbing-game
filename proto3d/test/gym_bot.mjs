@@ -30,7 +30,8 @@ function climbCourse(courseId, seed) {
   // 화면에서 겨누기: q(세계 자리)를 옆(t)·위로 흔들어 시선을 쏘고 처음 닿은 곳(쉬운 조작이면 조준 맞춤). 겨눈 곳(look)은 맞추기 전의 닿은 점
   const aimAt = (q, hand) => { const nx = (rnd() * 2 - 1) * NOISE, ny = (rnd() * 2 - 1) * NOISE, c0 = cam(), q2 = q.clone().addScaledVector(t, nx).add(V3(0, ny, 0)), d = q2.clone().sub(c0).normalize(), far = c0.clone().addScaledVector(d, 40), k = rayHit(world, c0, far), hit = k < 1 ? c0.clone().lerp(far, k) : null;
     if (hit) look = hit.toArray(); const g = hand && EASY && hit ? aimGrip(world, c0, d, hit, sim.climb.hands.filter(h => h.st === 'hold').map(h => h.grip)) : null; return (g ? g.p : hit) || q; };
-  const step = (k, cmd = []) => { for (let i = 0; i < k; i++) { sim.step({ mx: 0, mz: 0, cxSign: 1, ...(look ? { look } : {}), ...inp, cmd: i ? [] : cmd });
+  const rec = E.REC ? [] : null;
+  const step = (k, cmd = []) => { for (let i = 0; i < k; i++) { const x = { mx: 0, mz: 0, cxSign: 1, ...(look ? { look } : {}), ...inp, cmd: i ? [] : cmd }; if (rec) rec.push(JSON.parse(JSON.stringify(x))); sim.step(x);
       for (const e of sim.climb.events) { ev.push(e); if (e.type === 'reject') res.rejects++; if (e.type === 'slip') res.slips++; if (TRACE && !/^(try|bump|lift)$/.test(e.type)) say(`${e.type} ${e.name || ''} ${e.why || ''}`); if (e.type === 'exit') { fell = onWall; } }
       if (sim.climb.on) onWall = true; const L = limbState(sim.climb), top = L.hands.every(h => h.st === 'hold' && /완등/.test(h.box) && h.box.startsWith(C.name)); topT = top ? topT + 1 / 120 : 0; if (topT > 0.5) return 'top'; if (fell && !sim.climb.on) return 'fell'; }
     return ''; };
@@ -83,7 +84,7 @@ function climbCourse(courseId, seed) {
     z = sendHand(i, h, 0, !!h.jump); if (z === 'top') break; if (z !== 'ok') { res.why = z; res.at = h.name; return fin(); } }
   res.ok = z === 'top' || L().hands.every(x => x.st === 'hold' && /완등/.test(x.box)); if (!res.ok) { res.why = z || '두 손이 완등 홀드에 없음'; res.at = '완등'; }
   return fin();
-  function fin() { res.t = +(sim.tick / 120).toFixed(2); res.hands = held(); res.feet = L().feet.map(f => (f.st === 'plant' ? f.box : '')); res.y = +sim.body.pos.y.toFixed(2); if (!TRACE && !res.ok) res.log = log.slice(-8); return res; }
+  function fin() { if (rec) fs.writeFileSync(E.REC, JSON.stringify({ course: courseId, startPos: C.startPos, startYaw: C.startYaw, easy: EASY, res: { ok: res.ok }, inputs: rec, log })); res.t = +(sim.tick / 120).toFixed(2); res.hands = held(); res.feet = L().feet.map(f => (f.st === 'plant' ? f.box : '')); res.y = +sim.body.pos.y.toFixed(2); if (!TRACE && !res.ok) res.log = log.slice(-8); return res; }
 }
 
 const courses = E.COURSE ? E.COURSE.split(',') : makeGym(GYMOPT).courses.map(c => c.id);
