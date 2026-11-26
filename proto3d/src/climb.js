@@ -98,15 +98,17 @@ export function aimGrip(world, o, d, hit) {
   //   턱의 옆 끝 모서리(길이 = 턱의 깊이 14cm, 벽을 따라 옆을 향함)도 잡는 선이라, 턱 끝에서 14cm 안의 벽면(턱 위로 스쳐 지나간 시선도 벽에 닿는다)을 누르면 3차원 거리로는 앞 모서리(깊이 14cm 앞)보다 끝 모서리가 가까워 그쪽으로 갔다 — 매달린 팔로는 닿지 않는 자리다.
   //   옆을 향한 모서리는 시선으로 찾는 아래의 후보들과 견주고(벌점 AIM_SIDE), 향한 모서리가 가까이 없을 때만 고른다. OLDAIMSIDE = 전처럼 누른 자리의 결과를 그대로
   const facing = e => e.n.dot(d) < -0.3, g0 = hit ? resolveGrip(world, hit) : null;
-  if (g0 && (facing(g0.edge) || globalThis.OLDAIMSIDE)) return { p: g0.p, edge: g0.edge, d: 0, exact: true };
-  const sHit = hit ? hit.clone().sub(o).dot(d) : Infinity; let best = g0 ? { p: g0.p, edge: g0.edge, d: 0, cost: CL.AIM_SIDE, exact: true } : null;
+  //   그리고 누른 점이 **그 턱의 겉 위**일 때만 그대로 쓴다: 벽면을 누른 점이 위 턱의 밑 3cm 안이면 resolveGrip은 그 턱의 "겉"으로 보고 30cm까지 너그럽게 잡아 주어, 화면에서는 아래 턱의 모서리(5cm)가 더 가까운데 위 턱(11cm)으로 갔다(11단계: 턱 B의 5cm 위를 눌렀는데 턱 D). OLDAIMON = 전처럼
+  const onBox = (x, q) => q.x > x.min.x - 0.002 && q.x < x.max.x + 0.002 && q.y > x.min.y - 0.002 && q.y < x.max.y + 0.002 && q.z > x.min.z - 0.002 && q.z < x.max.z + 0.002;
+  if (g0 && ((facing(g0.edge) && (globalThis.OLDAIMON || onBox(g0.edge.box, hit))) || globalThis.OLDAIMSIDE)) return { p: g0.p, edge: g0.edge, d: 0, exact: true };
+  const sHit = hit ? hit.clone().sub(o).dot(d) : Infinity; let best = g0 && !facing(g0.edge) ? { p: g0.p, edge: g0.edge, d: 0, cost: CL.AIM_SIDE, exact: true } : null, fall = g0;
   for (const e of gripEdges(world)) { const ab = e.b.clone().sub(e.a), len = ab.length(); if (len < 0.12) continue;
     // 시선(반직선)과 모서리(선분, 끝 5cm는 뺀다)의 가장 가까운 두 점
     const u = ab.clone().multiplyScalar(1 / len), w0 = o.clone().sub(e.a), b = d.dot(u), dd = d.dot(w0), e2 = u.dot(w0), den = 1 - b * b; let t = den < 1e-6 ? e2 : (e2 - b * dd) / den; t = clamp(t, 0.05, len - 0.05);
     const p = e.a.clone().addScaledVector(u, t), s = Math.max(0, p.clone().sub(o).dot(d)), dist = p.distanceTo(o.clone().addScaledVector(d, s));
     if (dist > CL.AIM_SNAP || s > sHit + 0.40) continue; const cost = dist + (globalThis.OLDAIMSIDE ? (e.n.dot(d) < -0.5 ? 0 : 0.06) : facing(e) ? 0 : CL.AIM_SIDE);
     if ((!best || cost < best.cost) && openAt(world, e, p) && handFits(world, { p, n: e.n, edge: e })) best = { p, edge: e, d: dist, cost }; }
-  return best;
+  return best || (fall ? { p: fall.p, edge: fall.edge, d: 0, exact: true } : null);
 }
 // 손목이 가야 할 자리: 손바닥(손목에서 8cm)이 모서리에 걸리도록 모서리 아래·조금 앞
 // 잡을 때의 손목 자리: 모서리에서 턱 바깥으로 GRIP_OUT, 손바닥 길이만큼 아래. p3d-0.8.3: 바깥으로 2cm → 4cm(팔뚝 끝의 실제 반지름 3.6cm가 턱 앞면에 들어가지 않게. 2cm일 때는 잡고 있는 자세에서 팔뚝 끝 표면이 턱 안 1.5cm였다)
