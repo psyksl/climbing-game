@@ -87,8 +87,8 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   await still(); await wait(800); await at(FAR); await wait(300); await at(FAR); await wait(200); const pvFar = (await P(() => __p3.tagsText()))[4], aimFar = await P(() => __p3.aim()); await shot('5_미리보기_먼_턱');
   await at(A.R); await wait(300); await at(A.R); await wait(200);
   const near = await P(() => { const a = __p3.aim(); return { text: __p3.tagsText()[4], pr: a ? [0, 1].map(i => __p3.probe('hand', i, a)) : null }; }), pvNear = near.text;
-  const said = x => (x.ok ? '닿음' : /닿지 않음/.test(x.why) ? '조금 더 가까이' : x.why), nearOk = !!near.pr && near.pr.every((x, i) => pvNear.includes(`${i ? '오른손' : '왼손'} ${said(x)}`));
-  check('미리보기: 먼 턱(턱 B)은 두 손 모두 닿지 않는다고, 가까운 턱은 손마다 그 순간의 판정 결과와 같은 문구로 보인다', /턱 B/.test(pvFar) && (pvFar.match(/조금 더 가까이/g) || []).length === 2 && /턱 A/.test(pvNear) && nearOk, `먼 턱(겨눈 점 ${aimFar ? aimFar.map(v => v.toFixed(2)).join(',') : '없음'}): ${pvFar.replace(/\n/g, ' / ')} ‖ 가까운 턱: ${pvNear.replace(/\n/g, ' / ')}`);
+  const said = x => (x.ok ? '뻗어 보기' : x.short !== undefined ? '몸 위치를 바꿔 시도' : '현재 자세에서 막힘'), nearOk = !!near.pr && near.pr.every((x, i) => pvNear.includes(`${i ? '오른손' : '왼손'} ${said(x)}`));
+  check('미리보기: 먼 턱(턱 B)은 두 손 모두 닿지 않는다고, 가까운 턱은 손마다 그 순간의 판정 결과와 같은 문구로 보인다', /턱 B/.test(pvFar) && (pvFar.match(/몸 위치를 바꿔 시도/g) || []).length === 2 && /턱 A/.test(pvNear) && nearOk, `먼 턱(겨눈 점 ${aimFar ? aimFar.map(v => v.toFixed(2)).join(',') : '없음'}): ${pvFar.replace(/\n/g, ' / ')} ‖ 가까운 턱: ${pvNear.replace(/\n/g, ' / ')}`);
   await click(A.R, 'right'); await handIs(1, 'hold');
   { const s = await st(); check('우클릭으로 오른손을 다시 잡는다', s.c.hands.every(h => h.st === 'hold')); }
   // 겨눈 자리 고정: 마우스를 움직이지 않으면 화면이 저절로 움직여도 겨눈 자리는 그대로다

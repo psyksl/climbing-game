@@ -161,6 +161,10 @@ export function makeClimb() {
   return { on: false, hands: [hand('L', 0), hand('R', 1)], feet: [foot('L', 0), foot('R', 1)], ref: V(), lean: { x: 0, z: 0 }, shrug: [0, 0], pz: { twist: 0, hipRoll: 0, lookY: 0, lookP: 0, tuck: 0, breath: 0 }, po: { x: 0, z: 0, yaw: 0 }, sideIn: 0, accS: V(), bumpT: -9, blend: null, out: null, T: null, events: [], log: [], tick: 0, exited: false,
     stats: { palmErr: 0, footErr: 0, pen: 0, penWhat: '', selfPen: 0, dvMax: 0, dvAt: -1, wallHit: 0 } };
 }
+// 손이 풀린 까닭의 갈래(p3d-0.15.2, GPT의 0.15.1 재검토: "왜 어떤 손을 놓았는가를 모든 경로에서 기록한다"). 손을 놓는 모든 경로는 releaseHand 하나를 거치고, 기록에 cause로 남는다
+//   'command' = 플레이어가 시킨 것(놓기·그 손을 다른 곳으로 보냄) · 'assist' = 보조가 다른 손을 놓음(잡기 보정) · 'cancel' = 새 잡기를 거둠(먼저 잡은 손은 그대로)
+//   'body' = 잡은 채로는 팔이 제 몸·지형을 지나가야 해서 놓침 · 'physics' = 버틸 수 없는 방향·충격·몸이 손을 지나 올라감
+export const relCause = why => (/^놓음$|^뻗으려고 놓음|^옮기려고 놓음/.test(why) ? 'command' : /놓음\(잡기 보정\)$/.test(why) ? 'assist' : /^새 잡기를 취소/.test(why) ? 'cancel' : /→ 놓침$/.test(why) ? 'body' : 'physics');
 function note(S, type, limb, i, why = '', extra = {}) {
   const K = S.climb, e = { k: K.tick, t: +(K.tick / 120).toFixed(3), type, limb, i, name: limb ? KO[limb][i] : '', why, ...extra };
   K.events.push(e); K.log.push(e); if (K.log.length > 300) K.log.shift();
@@ -619,6 +623,11 @@ export function probeFoot(S, i, pt) {
 //   전에는 ① 곧게 선 어깨가 가장 낮은 손보다 16cm 아래에서 오르기를 멈췄고(FOLD_GAP) ② 그 위로 가면 "몸이 손을 지나 올라가 놓음" ③ 전신 자세 풀이가 어깨를 손 아래에 두려고 가슴을 젖혔다 — 그래서 번갈아 오르는 손 사이가 약 32cm를 넘으면 닿지 않았다(클라이밍장의 빨강·하양).
 //   하는 것: 디딘 발이 있을 때만. 어깨가 손보다 위로 올라가면 그 팔은 손에서 어깨 쪽으로 **미는** 힘을 낸다(PRESS_F까지, 미는 방향이 위에서 GRIP_ANG 안일 때만 버틴다). 어깨가 손 높이 둘레를 지나는 동안에는 당기는 힘도 미는 힘도 줄어든다(다리가 받친다).
 //   하지 않는 것: 발 없이 손으로만 눌러 올라서기(맨틀), 손바닥을 윗면에 올려놓는 손 모양(손목 자리는 잡을 때 그대로다 — 그림은 다음 일). NOPRESS = 끔
+// 지지 손 전환의 비교 후보(p3d-0.15.2, GPT의 0.15.1 재검토 — **규칙 개정 후보이며 기본은 끔**. 0.11.4의 사용자 결정 "필요하면 다른 쪽을 놓고 원했던 턱을 잡게"가 지금의 규칙이다):
+//   S.opt.keepHold가 켜져 있으면 잡기 보정이 먼저 잡은 손을 놓는 세 경로(끌려가지 못함 / 넓힌 각에서 옆으로 당겨짐 / 막 잡은 손이 버티지 못함)에서 그 손을 놓지 않는다.
+//   끌려가지 못한 새 손은 잡기를 거두고(같은 턱 규칙과 같은 처리), 버티지 못하는 방향으로 당겨지는 새 손은 보조 없는 규칙대로 미끄러진다. 놓기·뛰기를 시킨 것과 실제로 버티지 못해 미끄러지는 것은 그대로다
+const keepHoldOn = S => !!(S.opt && S.opt.keepHold) && !globalThis.NOKEEPHOLD;
+const CANCEL_WHY = '새 잡기를 취소했어요. 몸 위치를 바꿔 다시 시도하세요.';
 const pressOn = S => !!(S.opt && S.opt.press) && !globalThis.NOPRESS && fbOn(S.climb);
 // p3d-0.15.1(GPT의 0.15.0 검토): 자동 몸 맞추기(③)를 조준 맞춤·예약(①②)과 따로 켜고 끈다 — S.opt.autoBody(없으면 켬 = 0.13.0~0.15.0과 같다). 쉬운 조작이 꺼져 있으면 함께 꺼진다
 const armOn = S => !!(S.opt && S.opt.easy) && !globalThis.NOARMREACH, autoBodyOn = S => !!(S.opt && S.opt.easy) && S.opt.autoBody !== false && !globalThis.NOAUTOBODY && !globalThis.NOARMREACH;
@@ -711,7 +720,7 @@ function aimHand(S, H, pt) {
 function deny(S, L, limb, why) { L.why = why; note(S, 'reject', limb, L.i, why, { kept: L.st }); }
 // 실패: 옮기기 시작한 손발이 닿지 못했다(그 손발은 놓인 채 남는다. 전 자리로 되돌려 붙이지 않는다)
 function reject(S, L, limb, why) { const J = joints(S), K = S.climb; L.why = why; if (limb === 'hand') { L.rel.copy(L.w).sub(J.sh[L.i]); L.st = 'free'; L.drag = false; L.swivel = false; L.selfBlock = 0; L.armCross = 0; L.pass = 0; L.hn = null; L.ret = K.on ? { from: L.rel.clone(), t: 0 } : null; } else { L.rel.copy(L.a).sub(J.hj[L.i]); L.st = 'free'; L.cool = 0.3; if (L.byAssist) K.assistBad = { p: L.p.clone(), k: K.tick }; } note(S, 'reject', limb, L.i, why, L.byAssist && limb === 'foot' ? { auto: true } : {}); }
-function releaseHand(S, i, why, type = 'release') { const K = S.climb, H = K.hands[i]; if (H.st === 'free') return; const was = H.st; H.st = 'free'; H.slack = 0; H.swivel = false; H.selfBlock = 0; H.armCross = 0; H.pass = 0; H.over = false; H.hn = null; H.F = null; H.rel.copy(H.w).sub(joints(S).sh[i]); H.ret = K.on ? { from: H.rel.clone(), t: 0 } : null; H.load = 0; H.bad = 0; H.why = why; if (was === 'hold') note(S, type, 'hand', i, why, { vel: S.body.vel.toArray() }); }
+function releaseHand(S, i, why, type = 'release') { const K = S.climb, H = K.hands[i]; if (H.st === 'free') return; const was = H.st; H.st = 'free'; H.slack = 0; H.swivel = false; H.selfBlock = 0; H.armCross = 0; H.pass = 0; H.over = false; H.hn = null; H.F = null; H.rel.copy(H.w).sub(joints(S).sh[i]); H.ret = K.on ? { from: H.rel.clone(), t: 0 } : null; H.load = 0; H.bad = 0; H.why = why; if (was === 'hold') note(S, type, 'hand', i, why, { vel: S.body.vel.toArray(), cause: relCause(why), hold: H.edge ? H.edge.box.name : '' }); }
 function liftFoot(S, i, why, type = 'lift') { const K = S.climb, F = K.feet[i]; if (F.st === 'free') return; const was = F.st; F.offTick = K.tick; F.st = 'free'; F.F = null; F.cool = 0.22; if (why === '뗌') { F.userOff = true; F.offBox = F.box; } F.rel.copy(F.a).sub(joints(S).hj[i]); F.lmax = DIM.boxCollide ? F.rel.length() : 0; F.load = 0; F.ok = false; F.why = why; if (was === 'plant') note(S, type, 'foot', i, why); } // p3d-0.10.2(사람형 몸): 뗄 때의 다리 길이에서 늘어진 발의 길이 한계로 천천히 줄인다(F.lmax) — 다 펴진 다리가 떨어지는 걸음에 한계(98.5%)로 13mm 줄며 무릎이 79mm 튀었다(m3, 초속 802°)
 
 // 보내는 손발을 한 걸음 옮긴다. 어깨·고관절에서 닿는 데까지만 간다(늘어나지 않는다). 다 가서 닿았으면 잡고, 닿지 않으면 잠깐 더 뻗어 보다가 거부한다
@@ -878,7 +887,7 @@ function limbsStep(S, dt) {
     if (H.edge && (far > 0.002 || blkNear) && S.opt && S.opt.grabAssist && !globalThis.NOASSIST && miss <= Math.max(far, 0) + 0.03 + (blkNear ? CL.ASSIST_S : 0) && !(H.blockT > 0) && (blkNear || (!(H.selfBlock > 0) && !(H.armCross > 0)))) {
       const u = H.goal.clone().sub(sh).normalize(), vT = Math.max(0, S.body.vel.dot(u)), A = Math.min(CL.ASSIST_MAX, CL.ASSIST_S + CL.ASSIST_D * Math.min(vT, 2));
       // p3d-0.15.1: 다른 손이 같은 턱을 잡고 있을 때(손 모으기)는, 모자란 만큼 몸이 끌려가면 그 손의 팔이 길이를 넘는 경우에 보정으로 잡지 않는다(잡았다가 0.03초 뒤에 거두지 않게 — 아래 끌려감의 같은 턱 규칙과 짝)
-      const oM = K.hands[1 - H.i], matchOk = globalThis.OLDMATCHREL || !(oM.st === 'hold' && oM.edge && oM.edge.box === H.edge.box) || (K.T ? K.T.sh[oM.i] : joints(S).sh[oM.i]).clone().addScaledVector(u, Math.max(far, 0)).distanceTo(oM.goal) <= CL.ARM + 0.01;
+      const oM = K.hands[1 - H.i], matchOk = globalThis.OLDMATCHREL || !(oM.st === 'hold' && oM.edge && (oM.edge.box === H.edge.box || keepHoldOn(S))) || (K.T ? K.T.sh[oM.i] : joints(S).sh[oM.i]).clone().addScaledVector(u, Math.max(far, 0)).distanceTo(oM.goal) <= CL.ARM + 0.01;
       if (far <= A && matchOk && (H.wait > 0.03 || vT > 0.3 || blkNear)) { const shV = sh.clone().addScaledVector(u, Math.max(far, 0)), c = armCheck(S, H.i, shV, H.goal, H.n); if (!c) { H.slack = Math.max(far, 0) + 0.002; H.assisted = far; grab(S, H); note(S, 'assist', 'hand', H.i, `잡기 보정 ${blkNear ? '막힌 손 ' + short(miss) : short(far)}${vT > 0.3 ? ' · 반동' : ''}`); continue; } } }
     const yielding = (H.stopA && ((S.poleS && S.poleS['el' + (H.i ? 'L' : 'R') + 'w']) || 0) > 0.5) || ((H.stopA || H.stopB) && ((S.poleS && S.poleS['el' + H.s + 'w']) || 0) > 0.5);
     // p3d-0.10.1: 몸이 흔들려 손이 조금씩 움직이면 "멈춰 있음"이 쌓이지 않아, 막힌 손이 거부되지 않고 2.5초 한도까지 턱 앞에서 머뭇거렸다(새 몸의 되돌려 잡기, 다른 팔에 막힘).
@@ -1444,7 +1453,9 @@ export function stepClimb(S, inp, dt) {
     // p3d-0.15.1(GPT의 0.15.0 검토 — 완등 홀드에 두 손을 모을 때 먼저 잡은 손이 풀림): 다른 손이 **같은 턱**을 잡고 있으면 그 손을 놓지 않는다. 두 손 모두 "원했던 턱"에 있으므로
     //   끌려가지 못한 새 손의 잡기를 거둔다(먼저 잡은 손·발은 그대로). 다른 턱을 잡은 손은 전처럼 놓는다(0.11.4의 사용자 결정). OLDMATCHREL = 전처럼
     if (L > CL.ARM + h.slack + 0.01) { const same = !globalThis.OLDMATCHREL && h.edge && held.some(o => o !== h && !(o.slack > 0) && o.st === 'hold' && o.edge && o.edge.box === h.edge.box);
-      if (same) releaseHand(S, h.i, '닿지 않음(몸을 더 끌어오지 못함 — 다른 손이 같은 턱을 잡고 있음)', 'reject'); else for (const o of held) if (o !== h && !(o.slack > 0) && o.st === 'hold') releaseHand(S, o.i, '잡으려고 놓음(잡기 보정)'); } }
+      // 문구(GPT의 0.15.1 재검토, 임시): 새 잡기를 거둘 때는 CANCEL_WHY. 먼저 잡은 접촉이 실제로 남아 있는지는 기록의 kept에 적고 화면이 그때만 "현재 잡기를 유지했어요"를 덧붙인다
+      if (same || (keepHoldOn(S) && held.some(o => o !== h && !(o.slack > 0) && o.st === 'hold'))) { releaseHand(S, h.i, CANCEL_WHY, 'reject'); const e = K.log[K.log.length - 1]; if (e && e.why === CANCEL_WHY) { e.kept = K.hands.some(o => o !== h && o.st === 'hold'); e.same = !!same; } }
+      else for (const o of held) if (o !== h && !(o.slack > 0) && o.st === 'hold') releaseHand(S, o.i, '잡으려고 놓음(잡기 보정)'); } }
   const shock = lim.length ? armDv / lim.length : 0;
   // 손의 하중 = 근육이 당기는 힘(act. 한계 cap 안) + 다 편 팔이 줄처럼 버티는 몫(pas. 뼈대가 받는 것이라 당기는 한계와 무관하다. 충격도 여기 든다)
   for (const h of lim) { h.pas = shock * m / dt / BW; h.load += h.pas; }
@@ -1459,7 +1470,7 @@ export function stepClimb(S, inp, dt) {
     const bad = h.load < CL.GRIP_MIN ? '' : h.pressK > 0 ? (Math.hypot(pull.x, pull.z) / Math.max(pull.y, 1e-3) > Math.tan(CL.GRIP_ANG) ? '누르는 방향이 턱에서 벗어남' : '') : down <= 0.05 ? '위로는 당길 수 없음(어깨가 턱보다 위)' : Math.hypot(out, lat) / down > Math.tan(gAng) ? '당기는 방향이 턱에서 벗어남' : '';
     //   넓힌 한계 안이지만 원래 한계(GRIP_ANG) 밖이고 먼저 잡던 다른 손이 있으면 그 손을 놓아 몸이 새 손 아래로 오게 한다(두 손이 함께 버티면 몸이 그 자리에 머물러 넓힌 시간이 끝나는 순간 새 손이 놓쳤다)
     const sideBad = !bad && gAng !== CL.GRIP_ANG && h.load >= CL.GRIP_MIN && down > 0.05 && Math.hypot(out, lat) / down > Math.tan(CL.GRIP_ANG); h.sideT = sideBad ? (h.sideT || 0) + dt : 0; // 원래 놓치던 때와 같이 SLIP_T 동안 이어질 때만(잠깐 튄 하중으로 다른 손을 놓지 않게)
-    if (h.sideT > CL.SLIP_T) { const o = held.find(x => x !== h && x.st === 'hold' && (x.grabTick ?? -1e9) < (h.grabTick ?? -1e9)); if (o) releaseHand(S, o.i, '옮겨 잡으려고 놓음(잡기 보정)'); h.sideT = 0; }
+    if (h.sideT > CL.SLIP_T) { const o = held.find(x => x !== h && x.st === 'hold' && (x.grabTick ?? -1e9) < (h.grabTick ?? -1e9)); if (o && !keepHoldOn(S)) releaseHand(S, o.i, '옮겨 잡으려고 놓음(잡기 보정)'); h.sideT = 0; }
     h.bad = bad ? h.bad + dt : 0;
     // 잡은 채 몸이 움직여 팔이 제 몸을 지나가야 하는 자세가 되면(접힌 팔이 몸통에 걸림, 손이 등 뒤로 감) 그 손은 놓친다
     // 뛰어서 몸이 손을 지나 올라가면(팔이 다 접힌 채 위로 가는 중) 그 손은 놓인다(누르기로 바꾸는 동작 = 맨틀은 아직 없다)
@@ -1469,7 +1480,7 @@ export function stepClimb(S, inp, dt) {
     if (lim.includes(h) && shock > (assistOn(S) && K.tick - (h.grabTick ?? -1e9) < CL.NEW_T / dt ? CL.ASSIST_SHOCK_V : CL.SHOCK_V)) releaseHand(S, h.i, `충격이 커서 놓침(${shock.toFixed(1)}m/s)`, 'slip'); // 잡기 보정: 막 잡은 손(뛰어 잡기·흔들어 잡기)은 ASSIST_SHOCK_V까지 버틴다
     else if (h.bad > CL.SLIP_T) {
       // 잡기 보정(p3d-0.11.4): 막 잡은 손(NEW_T 안)이 버티지 못하는 방향으로 당겨지면, 다른 손이 잡고 있으면 그 손을 놓는다 — 몸이 새 손 아래로 흔들려 가고 원했던 턱은 그대로 잡혀 있다(사용자 결정: "필요하면 다른 쪽을 놓고 원했던 턱을 잡게")
-      const o = held.find(x => x !== h && x.st === 'hold'); if (assistOn(S) && o && K.tick - (h.grabTick ?? -1e9) < CL.NEW_T / dt && (o.grabTick ?? -1e9) < (h.grabTick ?? -1e9)) { releaseHand(S, o.i, '옮겨 잡으려고 놓음(잡기 보정)'); h.bad = 0; }
+      const o = held.find(x => x !== h && x.st === 'hold'); if (assistOn(S) && !keepHoldOn(S) && o && K.tick - (h.grabTick ?? -1e9) < CL.NEW_T / dt && (o.grabTick ?? -1e9) < (h.grabTick ?? -1e9)) { releaseHand(S, o.i, '옮겨 잡으려고 놓음(잡기 보정)'); h.bad = 0; }
       else releaseHand(S, h.i, bad, 'slip'); }
   }
   // 발: 다리가 닿는 범위를 벗어나면 떨어진다(끌려가지 않는다)
