@@ -20,19 +20,24 @@ export function courseSelect(G, course, tick) { endTry(G, tick, '그만둠'); G.
 export function courseReset(G, tick) { endTry(G, tick, '다시 시작'); G.last = null; }
 function endTry(G, tick, why) { const T = G.try; if (!T) return; T.end = why; T.endTick = tick; G.last = T; G.try = null; G.topT = 0; }
 
-// 계산 걸음마다 한 번. st = { tick, on(벽에 붙어 있음), pos([x,y,z] 몸 자리), hands: [{ st, box }] (box = 잡은 홀드의 상자 또는 null) }
+// 계산 걸음마다 한 번. st = { tick, on(벽에 붙어 있음 = climb.on), onGround(발이 실제로 땅·윗면을 딛고 선 지상 상태 = body.onGround), pos([x,y,z] 몸 자리), hands: [{ st, box }] (box = 잡은 홀드의 상자 또는 null) }
+// p3d-0.15.2(GPT의 0.15.1 재검토): 0.15.1은 "벽에 붙어 있지 않고 잡은 손이 없음"을 곧 "땅에 내려옴"으로 보았다. 벽에서 뛰어 손을 다 뗀 **공중**도 그 조건이라
+//   아직 내려서지 않았는데 시도가 끝났고(다시 잡으면 새 시도·새 시간·색 지킴 꺼짐), 공중에서 다른 코스의 시작 자리 위를 지나면 선택 코스까지 바뀌었다.
+//   이제 셋으로 나눈다: 지상 대기(onGround이고 벽에 붙지 않았고 잡은 손이 없음) / 벽(붙어 있거나 손이 잡고 있음 — 손 없이 발판에 선 것도 벽이다) / 공중(그 밖).
+//   시도는 **실제로 땅을 디뎠을 때**와 다시 시작·코스 고르기에서만 끝난다. 공중에서는 시도 번호·시작 시각·잡은 홀드의 이력·선택 코스가 그대로다. 시작 자리의 자동 선택은 지상 대기에서만 한다.
 export function courseStep(G, st, dt) {
-  const held = st.hands.filter(h => h.st === 'hold' && h.box).map(h => h.box);
-  if (!st.on && !held.length) {
-    // 땅: 하던 시도가 있으면 끝낸다(완등했으면 '완등 뒤 내려옴', 아니면 '내려옴'). 시작 자리 가까이 가면 그 코스를 고른다
+  const held = st.hands.filter(h => h.st === 'hold' && h.box).map(h => h.box), wall = st.on || held.length > 0, ground = !wall && !!st.onGround, air = !wall && !ground;
+  if (ground) {
+    // 지상 대기: 하던 시도가 있으면 끝낸다(완등했으면 '완등 뒤 내려옴', 아니면 '내려옴'). 시작 자리 가까이 가면 그 코스를 고른다
     if (G.try) endTry(G, st.tick, G.try.done ? '완등 뒤 내려옴' : '내려옴');
     let best = null; for (const C of G.courses) { const d = Math.hypot(st.pos[0] - C.startPos[0], st.pos[2] - C.startPos[2]); if (!best || d < best.d) best = { d, C }; }
     if (best && best.d < NEAR_START && best.C !== G.sel) { G.sel = best.C; G.last = null; }
     return; }
+  if (air) { if (G.try) { G.try.air = true; G.try.airT = (G.try.airT || 0) + dt; G.topT = 0; } return; }
   if (!G.try && held.length) {
     // 벽에 붙음(첫 홀드를 잡음) = 새 시도. 코스는 이때의 선택으로 굳는다(없으면 코스 없는 자유 등반)
-    const C = G.sel; G.try = { id: ++G.nTry, course: C, t0: st.tick, clean: !!C, cleanWhy: '', first: null, used: new Set(), done: false, doneT: 0, doneClean: false }; G.topT = 0; G.last = null; if (C) recOf(G, C.id).tries++; }
-  const T = G.try; if (!T) return;
+    const C = G.sel; G.try = { id: ++G.nTry, course: C, t0: st.tick, clean: !!C, cleanWhy: '', first: null, used: new Set(), done: false, doneT: 0, doneClean: false, air: false, airT: 0 }; G.topT = 0; G.last = null; if (C) recOf(G, C.id).tries++; }
+  const T = G.try; if (!T) return; T.air = false;
   for (const b of held) { if (T.used.has(b)) continue; T.used.add(b);
     if (!T.first) { T.first = b; if (T.clean && !(b.course === T.course.id && b.role === 'start')) { T.clean = false; T.cleanWhy = '시작 홀드가 아닌 곳에서 시작'; } }
     if (T.clean && b.course !== T.course.id) { T.clean = false; T.cleanWhy = `${b.name || '다른 홀드'}을(를) 잡음`; } }
@@ -43,4 +48,5 @@ export function courseStep(G, st, dt) {
     if (R.free === null || T.doneT < R.free) R.free = T.doneT; if (T.clean && (R.clean === null || T.doneT < R.clean)) R.clean = T.doneT; }
 }
 // 화면에 보일 것(문구는 main.js가 만든다): 선택 코스, 지금 시도(없으면 방금 끝난 시도), 그 코스의 기록
-export function courseView(G) { const T = G.try || G.last, C = G.sel; return { course: C, try: T && (!C || T.course === C) ? T : null, live: !!G.try, rec: C ? recOf(G, C.id) : null }; }
+// phase = 'wait'(시도 없음) | 'climb'(오르는 중) | 'air'(시도 중 공중) | 'done'(완등함 — 아직 벽이거나 내려온 뒤) | 'ended'(완등 없이 끝난 지난 시도)
+export function courseView(G) { const T = G.try || G.last, C = G.sel, t = T && (!C || T.course === C) ? T : null; return { course: C, try: t, live: !!G.try, phase: !t ? 'wait' : t.done ? 'done' : !G.try ? 'ended' : t.air ? 'air' : 'climb', rec: C ? recOf(G, C.id) : null }; }

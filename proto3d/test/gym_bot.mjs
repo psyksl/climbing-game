@@ -36,7 +36,7 @@ function climbCourse(courseId, seed) {
     if (hit) look = hit.toArray(); const g = hand && EASY && hit ? aimGrip(world, c0, d, hit, sim.climb.hands.filter(h => h.st === 'hold').map(h => h.grip)) : null; return (g ? g.p : hit) || q; };
   const rec = E.REC ? [] : null;
   const step = (k, cmd = []) => { for (let i = 0; i < k; i++) { const x = { mx: 0, mz: 0, cxSign: 1, ...(look ? { look } : {}), ...inp, cmd: i ? [] : cmd }; if (rec) rec.push(JSON.parse(JSON.stringify(x))); sim.step(x);
-      courseStep(CG, { tick: sim.tick, on: sim.climb.on, pos: sim.body.pos.toArray(), hands: sim.climb.hands.map(h => ({ st: h.st, box: h.st === 'hold' && h.edge ? h.edge.box : null })) }, 1 / 120);
+      courseStep(CG, { tick: sim.tick, on: sim.climb.on, onGround: !!sim.body.onGround, pos: sim.body.pos.toArray(), hands: sim.climb.hands.map(h => ({ st: h.st, box: h.st === 'hold' && h.edge ? h.edge.box : null })) }, 1 / 120);
       for (const e of sim.climb.events) { ev.push(e); if (e.type === 'reject') res.rejects++; if (e.type === 'slip') res.slips++; if (TRACE && !/^(try|bump|lift)$/.test(e.type)) say(`${e.type} ${e.name || ''} ${e.why || ''}`); if (e.type === 'exit') { fell = onWall && sim.body.pos.y > 0.25; } }
       if (sim.climb.on) onWall = true; const L = limbState(sim.climb), top = L.hands.every(h => h.st === 'hold' && /완등/.test(h.box) && h.box.startsWith(C.name)); topT = top ? topT + 1 / 120 : 0; if (topT > 0.5) return 'top'; if (fell && !sim.climb.on) return 'fell'; }
     return ''; };
