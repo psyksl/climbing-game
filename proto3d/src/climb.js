@@ -577,7 +577,7 @@ function reachShift(S, i, goal) { const K = S.climb, fb = K.fb, c = fb && fb.ctx
   const xs = Float64Array.from(fb.xs); fbSolve(xs, c2, 6); const a = fbFK(fb.xs, c.pos, c.yaw).sh[i], b2 = fbFK(xs, c.pos, c.yaw).sh[i], v = V(b2[0] - a[0], b2[1] - a[1], b2[2] - a[2]);
   (K.rsKey = K.rsKey || [])[i] = key; (K.rsVal = K.rsVal || [])[i] = v.clone(); return v; }
 export function probeHand(S, i, pt) {
-  const g = resolveGrip(S.world, pt), H = S.climb.hands[i];
+  const g = resolveGrip(S.worldAll || S.world, pt), H = S.climb.hands[i];
   if (!g) return { ok: false, why: '잡을 수 있는 턱이 아님', sure: true };
   // p3d-0.13.1: 잡고 있는 손을 옮길 때의 닿는 거리는 **손을 놓고 뻗은 자세의 어깨**로 잰다(reachShift — 전신 자세 풀이를 "이 손이 그 턱으로 뻗는 중"으로 바꿔 풀어 본 어깨의 옮겨 감).
   //   0.13.0까지는 잡은 채의 어깨로 재서, 눌러 보면 잡히는 자리를 18~34cm "모자람"으로 보였다(윗몸이 뻗는 쪽으로 돌고 기우는 몫을 몰랐다). OLDPROBE = 전처럼
@@ -590,7 +590,7 @@ export function probeHand(S, i, pt) {
   return c ? { ...base, ok: false, why: c } : { ...base, ok: true, why: '', assist: far > 0 ? far : 0 };
 }
 export function probeFoot(S, i, pt) {
-  const K = S.climb, g = resolveFoot(S.world, pt, S.body.yaw);
+  const K = S.climb, g = resolveFoot(S.worldAll || S.world, pt, S.body.yaw);
   if (!K.on && !S.body.onGround) return { ok: false, why: '공중에서는 발을 보낼 수 없음', sure: true };
   if (!g) return { ok: false, why: '디딜 수 있는 면이 아님', sure: true };
   const G = footGeom(g.p, g.n, g.q), hj = joints(S).hj[i], d = hj.distanceTo(G.ank), sure = S.body.vel.length() < 0.3, base = { grip: g.p.toArray(), name: g.box.name, kind: g.kind, sure };
@@ -609,7 +609,7 @@ export function command(S, c) {
   if (c.type === 'assistResume') { for (const F of K.feet) { F.userOff = false; F.offBox = null; } return; }
   if (c.type === 'release') { if (c.limb === 'hand') { K.hands[c.i].arm = null; releaseHand(S, c.i, '놓음'); } else liftFoot(S, c.i, '뗌'); return; }
   if (c.type === 'hand') {
-    const H = K.hands[c.i], g = resolveGrip(S.world, pt); H.arm = null;
+    const H = K.hands[c.i], g = resolveGrip(S.worldAll || S.world, pt); H.arm = null;
     if (!c.armed) note(S, 'try', 'hand', c.i, '', { p: c.p, hold: !!c.hold });
     if (!K.on && H.st === 'free' && !(H.ov > 0)) seedBend(S, 'el' + H.s, `upperArm.${H.s}`, `foreArm.${H.s}`, `hand.${H.s}`);
     if (c.hold) {
@@ -646,7 +646,7 @@ export function command(S, c) {
   if (c.type === 'foot') {
     const F = K.feet[c.i];
     if (!c.auto) { if (!c.shifted) note(S, 'try', 'foot', c.i, '', { p: c.p }); F.userOff = false; F.offBox = null; } // shifted = 체중을 옮긴 뒤 같은 명령을 이어서 하는 것(기록은 한 번만)
-    const g = resolveFoot(S.world, pt, S.body.yaw);
+    const g = resolveFoot(S.worldAll || S.world, pt, S.body.yaw);
     if (!g) { deny(S, F, 'foot', '디딜 수 있는 면이 아님'); return; }
     if (!K.on && !S.body.onGround) { deny(S, F, 'foot', '공중에서는 발을 보낼 수 없음'); return; }
     const G = footGeom(g.p, g.n, g.q), far = joints(S).hj[c.i].distanceTo(G.ank) - DIM.leg * 0.995;

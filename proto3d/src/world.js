@@ -26,55 +26,85 @@ export function makeWorld() {
   return { boxes };
 }
 
-// ── 클라이밍장(p3d-0.14.0, 사용자: "실제 클라이밍 연습장처럼 크게 만들어서 색별로 코스를 여러 개. 기존 연습장은 이제 안 쓴다") ──
+// ── 클라이밍장(p3d-0.14.0, 사용자: "실제 클라이밍 연습장처럼 크게 만들어서 색별로 코스를 여러 개. 기존 연습장은 이제 안 쓴다" → 실제 암장 사진 3장 "이런 느낌으로") ──
 // 화면의 기본 지형이다. 옛 작은 벽(makeWorld)은 화면에서 쓰지 않고(?world=old) 회귀 시험의 기준 장면으로만 남긴다.
-// 벽은 정면(z = −7, 앞 = +z, 폭 17m·높이 4.2m)과 왼쪽 옆 벽(x = −8.5, 앞 = +x). 지형은 여전히 축에 나란한 상자뿐이다(기운 벽·오버행 없음).
-// 코스 = 같은 색의 손 홀드(턱, kind 'ledge')와 발 홀드(발판, kind 'foothold'). 손 홀드는 grip 높이 y(윗면)·폭 w로, 발 홀드는 윗면 높이로 적는다.
-//   역할: start(시작 — 두 손을 여기에 두고 시작), hand, top(완등 — 두 손이 함께 잡으면 완등), foot. 손 홀드의 순서 = 그 코스를 오르는 손의 차례(베타. 시험 봇이 쓴다)
-//   u = 코스 가운데에서 벽을 보고 오른쪽으로 잰 거리. jump = 그 손은 뛰며 잡는다(다이노)
-// 코스의 모양·색·이름·난이도는 임시(개발이 먼저 놓은 것. 그래픽·기획은 GPT·사용자 결정). 값은 시험 봇으로 오를 수 있는지 보며 고친 실험값이다
+// 벽: 볼더링 벽(높이 4.5m, 가운데가 0.6m 튀어나온 기둥 — 바깥 모서리 둘, 안쪽 모서리 둘)과 리드 벽(높이 12m, 0.8m 튀어나온 기둥), 왼쪽 옆 벽(볼더링).
+//   지형은 여전히 축에 나란한 상자뿐이다 — 기운 벽(슬랩·오버행)과 기운 면의 볼륨은 만들 수 없다(엔진 쪽 일). 벽의 큰 색 띠(삼각형)는 그림만이다(칠이라 물리에 없다).
+// 코스 = 같은 색의 손 홀드(턱, kind 'ledge')와 발 홀드(발판, kind 'foothold'). 코스끼리 섞여 있다(실제 암장처럼 — 겨눈 곳 둘레의 다른 색 홀드도 잡힌다. 색은 규칙일 뿐).
+//   손 홀드 = [u, grip 높이 y(윗면), 폭 w, 역할(start | hand | top), 'jump'(뛰어 잡기)], 발 홀드 = [u, 윗면 높이, 폭]. u = 그 면을 보고 오른쪽으로 잰 거리(면 가운데 기준).
+//   손 홀드의 순서 = 오르는 손의 차례(베타. 시험 봇이 쓴다). 사다리꼴 코스는 gen(만드는 규칙)으로 만든다 — 같은 씨앗이면 늘 같은 자리.
+//   볼륨(kind 'block', 색 있음): 벽에 붙은 큰 상자. 윗면은 디딜 수 있고 윗모서리는 잡힌다(어느 코스에도 속하지 않는다).
+// 코스의 모양·색·이름·난이도는 임시(그래픽·기획은 GPT·사용자 결정). 간격은 시험 봇으로 재어 정한 실험값이다(지금 몸이 오를 수 있는 손 사이 ≈ 32cm — 쉬운 코스는 그 안, 어려운 코스는 그 밖)
+export const GYM_FACES = {
+  main: { o: [0, 0, -7], t: [1, 0, 0], n: [0, 0, 1], u: [-8.5, 8.5], h: 12 },          // 정면(볼더링 x −8.5~−1 높이 4.5 · 리드 x −1~8.5 높이 12)
+  bPillar: { o: [-4.3, 0, -6.4], t: [1, 0, 0], n: [0, 0, 1], u: [-0.7, 0.7], h: 4.5 },  // 볼더링 기둥의 앞면
+  bPillarR: { o: [-3.6, 0, -6.7], t: [0, 0, -1], n: [1, 0, 0], u: [-0.3, 0.3], h: 4.5 }, // 볼더링 기둥의 오른쪽 옆면(폭 0.6m)
+  lPillar: { o: [3.2, 0, -6.2], t: [1, 0, 0], n: [0, 0, 1], u: [-1.2, 1.2], h: 12 },     // 리드 기둥의 앞면
+  lPillarR: { o: [4.4, 0, -6.6], t: [0, 0, -1], n: [1, 0, 0], u: [-0.4, 0.4], h: 12 },   // 리드 기둥의 오른쪽 옆면(폭 0.8m)
+  left: { o: [-8.5, 0, -2.5], t: [0, 0, -1], n: [1, 0, 0], u: [-4.5, 4.5], h: 4.5 },     // 왼쪽 옆 벽
+};
+// gen = { y0: 시작 높이, top: 완등 높이, step: 손 사이 높이, side: 번갈아 옆으로, drift: 위로 가며 옆으로 흐르는 정도, w: 홀드 폭, start2: 시작 홀드 둘, fstep: 발 사이 높이, foot: 발의 옆 자리 }
 export const GYM_COURSES = [
-  { id: 'green', name: '초록', grade: '입문', color: '#3fa34d', wall: 'main', at: -6.6,
-    hands: [[-0.16, 1.50, 0.26, 'start'], [0.16, 1.50, 0.26, 'start'], [-0.16, 1.80, 0.26], [0.16, 2.10, 0.26], [-0.16, 2.40, 0.26], [0.16, 2.70, 0.26], [-0.16, 3.00, 0.26], [0.16, 3.30, 0.26], [0.0, 3.60, 0.60, 'top']],
-    feet: [[-0.44, 0.30, 0.20], [0.44, 0.30, 0.20], [-0.44, 0.60, 0.20], [0.44, 0.90, 0.20], [-0.44, 1.20, 0.20], [0.44, 1.50, 0.20], [-0.44, 1.80, 0.20]] },
-  { id: 'yellow', name: '노랑', grade: '쉬움', color: '#e2c233', wall: 'main', at: -3.4,
-    hands: [[0.0, 1.55, 0.50, 'start'], [-0.28, 1.87, 0.26], [0.26, 2.19, 0.26], [-0.24, 2.51, 0.26], [0.28, 2.83, 0.26], [-0.20, 3.15, 0.26], [0.05, 3.47, 0.50, 'top']],
-    feet: [[-0.32, 0.35, 0.20], [0.36, 0.55, 0.20], [-0.48, 0.85, 0.20], [0.50, 1.15, 0.20], [-0.50, 1.45, 0.20]] },
-  { id: 'blue', name: '파랑', grade: '보통 · 옆으로', color: '#2f6fd0', wall: 'main', at: -0.6,
-    hands: [[-1.20, 1.70, 0.40, 'start'], [-0.78, 1.82, 0.30], [-0.36, 1.74, 0.30], [0.06, 1.86, 0.30], [0.48, 1.78, 0.30], [0.90, 2.05, 0.30], [0.62, 2.38, 0.30], [0.98, 2.70, 0.30], [0.66, 3.02, 0.30], [0.85, 3.34, 0.45, 'top']],
-    feet: [[-1.30, 0.40, 0.20], [-0.95, 0.35, 0.20], [-0.55, 0.45, 0.20], [-0.12, 0.40, 0.20], [0.30, 0.50, 0.20], [0.72, 0.45, 0.20], [1.20, 0.80, 0.20], [0.40, 1.10, 0.20], [1.25, 1.40, 0.20]] },
-  { id: 'red', name: '빨강', grade: '어려움', color: '#d23a32', wall: 'main', at: 3.2,
-    hands: [[0.0, 1.60, 0.45, 'start'], [-0.32, 2.02, 0.22], [0.30, 2.44, 0.22], [-0.26, 2.86, 0.22], [0.24, 3.28, 0.22], [0.0, 3.70, 0.40, 'top']],
-    feet: [[-0.38, 0.45, 0.16], [0.40, 0.80, 0.16], [-0.44, 1.20, 0.16], [0.44, 1.60, 0.16]] },
-  { id: 'black', name: '검정', grade: '매우 어려움 · 뛰어 잡기', color: '#2a2a2e', wall: 'main', at: 6.6,
-    hands: [[-0.15, 1.70, 0.40, 'start'], [0.22, 2.00, 0.22], [-0.05, 2.30, 0.45], [0.05, 2.80, 0.50, 'hand', 'jump'], [0.30, 3.12, 0.22], [0.0, 3.44, 0.40, 'top']],
-    feet: [[-0.38, 0.50, 0.16], [0.40, 0.80, 0.16], [-0.42, 1.10, 0.16], [0.44, 1.40, 0.16]] },
-  { id: 'purple', name: '보라', grade: '쉬움 · 옆 벽', color: '#8a4fc4', wall: 'left', at: 2.0,
-    hands: [[0.0, 1.55, 0.50, 'start'], [-0.22, 1.87, 0.26], [0.22, 2.19, 0.26], [-0.22, 2.51, 0.26], [0.22, 2.83, 0.26], [-0.18, 3.15, 0.26], [0.0, 3.47, 0.50, 'top']],
-    feet: [[-0.38, 0.35, 0.20], [0.38, 0.65, 0.20], [-0.40, 0.95, 0.20], [0.40, 1.25, 0.20], [-0.42, 1.55, 0.20]] },
+  { id: 'green', name: '초록', grade: '입문', color: '#3fa34d', face: 'main', at: -7.3, gen: { y0: 1.50, top: 3.90, step: 0.28, side: 0.16, w: 0.26, start2: true, fstep: 0.30, foot: 0.42 } },
+  { id: 'yellow', name: '노랑', grade: '쉬움 · 기둥', color: '#e8c21e', face: 'bPillar', at: 0.0, gen: { y0: 1.55, top: 4.05, step: 0.31, side: 0.24, w: 0.24, fstep: 0.30, foot: 0.44 } },
+  { id: 'pink', name: '분홍', grade: '쉬움 · 모서리', color: '#e36fa8', face: 'bPillarR', at: 0.0, gen: { y0: 1.55, top: 3.95, step: 0.30, side: 0.10, w: 0.20, fstep: 0.30, foot: 0.20, fw: 0.16 } },
+  { id: 'blue', name: '파랑', grade: '보통 · 옆으로', color: '#2f6fd0', face: 'main', at: -2.3,
+    hands: [[-1.10, 1.70, 0.40, 'start'], [-0.68, 1.82, 0.30], [-0.26, 1.74, 0.30], [0.16, 1.86, 0.30], [0.58, 1.78, 0.30], [0.98, 2.05, 0.30], [0.70, 2.36, 0.30], [1.02, 2.66, 0.30], [0.72, 2.96, 0.30], [0.96, 3.26, 0.30], [0.80, 3.56, 0.45, 'top']],
+    feet: [[-1.20, 0.40, 0.20], [-0.85, 0.35, 0.20], [-0.45, 0.45, 0.20], [-0.02, 0.40, 0.20], [0.40, 0.50, 0.20], [0.82, 0.45, 0.20], [1.20, 0.80, 0.20], [0.46, 1.10, 0.20], [1.24, 1.40, 0.20], [0.50, 1.70, 0.20]] },
+  { id: 'purple', name: '보라', grade: '쉬움 · 옆 벽', color: '#8a4fc4', face: 'left', at: 0.5, gen: { y0: 1.55, top: 3.95, step: 0.31, side: 0.22, w: 0.26, fstep: 0.30, foot: 0.40 } },
+  { id: 'red', name: '빨강', grade: '어려움', color: '#d23a32', face: 'main', at: -6.0, gen: { y0: 1.60, top: 4.10, step: 0.42, side: 0.30, w: 0.20, fstep: 0.40, foot: 0.44, fw: 0.15, seed: 7 } },
+  { id: 'orange', name: '주황', grade: '쉬움 · 리드 12m', color: '#ee7d21', face: 'main', at: 0.2, gen: { y0: 1.50, top: 11.2, step: 0.28, side: 0.17, w: 0.26, start2: true, fstep: 0.30, foot: 0.42, drift: 0.05 } },
+  { id: 'sky', name: '하늘', grade: '보통 · 리드 기둥', color: '#45b8e0', face: 'lPillar', at: -0.3, gen: { y0: 1.55, top: 11.0, step: 0.31, side: 0.26, w: 0.24, fstep: 0.31, foot: 0.46, drift: 0.04 } },
+  { id: 'black', name: '검정', grade: '매우 어려움 · 뛰어 잡기', color: '#2a2a2e', face: 'main', at: 6.4,
+    hands: [[-0.15, 1.70, 0.40, 'start'], [0.22, 2.00, 0.22], [-0.05, 2.30, 0.45], [0.05, 2.80, 0.50, 'hand', 'jump'], [0.30, 3.12, 0.22], [-0.10, 3.44, 0.22], [0.25, 3.76, 0.22], [0.0, 4.08, 0.40, 'top']],
+    feet: [[-0.38, 0.50, 0.16], [0.40, 0.80, 0.16], [-0.42, 1.10, 0.16], [0.44, 1.40, 0.16], [-0.40, 1.75, 0.16], [0.42, 2.05, 0.16]] },
+  { id: 'white', name: '하양', grade: '어려움 · 리드 옆면', color: '#f4f2ea', face: 'lPillarR', at: 0.0, gen: { y0: 1.60, top: 10.8, step: 0.40, side: 0.14, w: 0.18, fstep: 0.38, foot: 0.26, fw: 0.14, seed: 3 } },
 ];
-// 벽의 틀: o = 벽면 위의 기준점(바닥 높이), t = 벽을 보고 오른쪽, n = 벽이 보는 쪽(벽에서 나오는 쪽)
-export const GYM_WALLS = { main: { o: [0, 0, -7], t: [1, 0, 0], n: [0, 0, 1] }, left: { o: [-8.5, 0, 0], t: [0, 0, -1], n: [1, 0, 0] } };
+// 볼륨(어느 코스에도 속하지 않는 큰 상자): [면, u, 아래 높이, 폭, 높이, 깊이, 색]
+export const GYM_VOLUMES = [['main', -2.6, 3.9, 0.5, 0.4, 0.24, '#e8c21e'], ['main', 1.6, 3.4, 0.6, 0.5, 0.26, '#2f6fd0'], ['main', -0.8, 6.0, 0.7, 0.5, 0.28, '#e8c21e'], ['main', 1.4, 8.3, 0.6, 0.55, 0.26, '#2f6fd0'],
+  ['lPillar', 0.75, 4.6, 0.5, 0.45, 0.24, '#e8c21e'], ['lPillar', -0.85, 7.2, 0.55, 0.45, 0.24, '#d23a32'], ['main', 7.4, 5.0, 0.6, 0.5, 0.26, '#2f6fd0'], ['main', 6.0, 9.4, 0.55, 0.45, 0.24, '#e8c21e']];
 export function makeGym(opt = {}) { const COURSES = opt.courses || GYM_COURSES; // opt.courses = 시험이 넣는 코스(같은 틀·같은 벽)
   const V3 = (x, y, z) => new THREE.Vector3(x, y, z), boxes = [], courses = [];
   const B = (name, min, max, kind = 'block', extra = {}) => { const b = { name, min: V3(...min), max: V3(...max), kind, ...extra }; boxes.push(b); return b; };
-  // 벽 틀에서의 상자: u = 옆(오른쪽 +), y = 높이, d = 벽면에서 나온 깊이
-  const onWall = (W, name, u0, u1, y0, y1, d0, d1, kind, extra) => { const o = V3(...W.o), t = V3(...W.t), n = V3(...W.n), pts = [];
+  // 면 틀에서의 상자: u = 옆(오른쪽 +), y = 높이, d = 면에서 나온 깊이
+  const boxOn = (F, u0, u1, y0, y1, d0, d1) => { const o = V3(...F.o), t = V3(...F.t), n = V3(...F.n), pts = [];
     for (const u of [u0, u1]) for (const d of [d0, d1]) pts.push(o.clone().addScaledVector(t, u).addScaledVector(n, d));
-    const mn = V3(Math.min(...pts.map(p => p.x)), y0, Math.min(...pts.map(p => p.z))), mx = V3(Math.max(...pts.map(p => p.x)), y1, Math.max(...pts.map(p => p.z)));
-    return B(name, mn.toArray(), mx.toArray(), kind, extra); };
+    return [V3(Math.min(...pts.map(p => p.x)), y0, Math.min(...pts.map(p => p.z))), V3(Math.max(...pts.map(p => p.x)), y1, Math.max(...pts.map(p => p.z)))]; };
+  const hit = (mn, mx, gap) => boxes.some(b => b.kind !== 'floor' && b.kind !== 'wall' && mn.x < b.max.x + gap && b.min.x < mx.x + gap && mn.y < b.max.y + gap && b.min.y < mx.y + gap && mn.z < b.max.z + gap && b.min.z < mx.z + gap);
   B('바닥', [-30, -1, -30], [30, 0, 30], 'floor');
-  B('정면 벽', [-8.5, 0, -8.0], [8.5, 4.2, -7.0], 'wall');
-  B('왼쪽 벽', [-9.5, 0, -8.0], [-8.5, 4.2, 2.0], 'wall');
-  B('오른쪽 벽', [8.5, 0, -8.0], [9.5, 4.2, 2.0], 'wall');
-  for (const C of COURSES) { const W = GYM_WALLS[C.wall], cs = { ...C, holds: [], footholds: [], frame: W }; courses.push(cs);
-    C.hands.forEach(([u, y, w, role = 'hand', how], i) => { const nm = role === 'start' ? `${C.name} 시작${C.hands.filter(h => h[3] === 'start').length > 1 ? i + 1 : ''}` : role === 'top' ? `${C.name} 완등` : `${C.name} ${i + 1}`;
-      cs.holds.push(onWall(W, nm, C.at + u - w / 2, C.at + u + w / 2, y - 0.07, y, 0, 0.14, 'ledge', { course: C.id, role, seq: i, color: C.color, jump: how === 'jump' })); });
-    C.feet.forEach(([u, y, w], i) => cs.footholds.push(onWall(W, `${C.name} 발${i + 1}`, C.at + u - w / 2, C.at + u + w / 2, y - 0.05, y, 0, 0.14, 'foothold', { course: C.id, role: 'foot', seq: i, color: C.color }))); }
-  // 코스마다 시작 자리: 시작 홀드들의 가운데 아래, 벽에서 0.42m 앞, 벽을 본다(main.js의 T, 시험 봇)
-  for (const cs of courses) { const W = cs.frame, st = cs.holds.filter(h => h.role === 'start'), c = st.reduce((a, h) => a.add(h.min.clone().add(h.max).multiplyScalar(0.5)), V3(0, 0, 0)).multiplyScalar(1 / st.length), n = V3(...W.n);
-    const p = c.clone().addScaledVector(n, -c.clone().sub(V3(...W.o)).dot(n) + 0.42); p.y = 0; cs.startPos = p.toArray(); cs.startYaw = Math.atan2(-n.x, -n.z); }
-  return { boxes, courses, gym: true, spawn: { pos: [0, 0, 1.0], yaw: Math.PI } };
+  B('볼더링 벽', [-8.5, 0, -8.0], [-1.0, 4.5, -7.0], 'wall'); B('리드 벽', [-1.0, 0, -8.0], [8.5, 12.0, -7.0], 'wall');
+  B('볼더링 기둥', [-5.0, 0, -7.0], [-3.6, 4.5, -6.4], 'wall'); B('리드 기둥', [2.0, 0, -7.0], [4.4, 12.0, -6.2], 'wall');
+  B('왼쪽 벽', [-9.5, 0, -8.0], [-8.5, 4.5, 2.0], 'wall'); B('오른쪽 벽', [8.5, 0, -8.0], [9.5, 12.0, 2.0], 'wall');
+  for (const [f, u, y, w, h, d, color] of GYM_VOLUMES) { const [mn, mx] = boxOn(GYM_FACES[f], u - w / 2, u + w / 2, y, y + h, 0, d); B(`볼륨 ${boxes.length}`, mn.toArray(), mx.toArray(), 'block', { color, volume: true, face: V3(...GYM_FACES[f].n) }); }
+  // 사다리꼴 코스 만들기: 손은 번갈아 옆으로(±side), 위로 step씩(±6% 흔들림), 다른 홀드·볼륨과 4cm 넘게 떨어진 자리를 옆·위로 옮겨 가며 찾는다. 발은 fstep씩 번갈아(±foot)
+  const genCourse = C => { const G = C.gen, F = GYM_FACES[C.face]; let a = (G.seed || 1) * 9301 + C.id.length * 49297; const r = () => ((a = (a * 233280 + 49297) % 2147483647) / 2147483647);
+    const fit = (u, y, w, th, d) => { const lim = (F.u[1] - F.u[0]) / 2 - w / 2 - 0.02; for (const du of [0, 0.06, -0.06, 0.12, -0.12, 0.18, -0.18]) for (const dy of [0, 0.03, -0.03, 0.06]) { const uu = Math.max(-lim, Math.min(lim, C.at + u + du)) - C.at, [mn, mx] = boxOn(F, C.at + uu - w / 2, C.at + uu + w / 2, y + dy - th, y + dy, 0, d); if (!hit(mn, mx, 0.04)) return [uu, +(y + dy).toFixed(3)]; } return null; };
+    const hands = [], feet = []; const put = (u, y, w, role, th = 0.07) => { const q = fit(u, y, w, th, 0.14); if (!q) return false; const [mn, mx] = boxOn(F, C.at + q[0] - w / 2, C.at + q[0] + w / 2, q[1] - th, q[1], 0, 0.14); boxes.push({ name: '_', min: mn, max: mx, kind: 'tmp' }); hands.push([q[0], q[1], w, role]); return true; };
+    if (G.start2) { put(-G.side, G.y0, G.w, 'start'); put(G.side, G.y0, G.w, 'start'); } else put(0, G.y0, Math.max(0.40, G.w), 'start');
+    let y = G.y0, k = 0, drift = 0; while (y + G.step < G.top - 0.05) { y += G.step * (1 + (r() - 0.5) * 0.12); drift += (G.drift || 0) * (r() - 0.3); put((k % 2 ? G.side : -G.side) * (0.85 + r() * 0.3) + drift, +y.toFixed(3), G.w, 'hand'); k++; }
+    put(drift * 0.5, +Math.min(G.top, y + G.step).toFixed(3), 0.45, 'top');
+    for (let fy = 0.30, j = 0; fy < y - 1.25; fy += G.fstep * (1 + (r() - 0.5) * 0.1), j++) { const w = G.fw || 0.20, q = fit((j % 2 ? G.foot : -G.foot) + drift * Math.min(1, fy / Math.max(y, 1)), +fy.toFixed(3), w, 0.05, 0.14); if (!q) continue; const [mn, mx] = boxOn(F, C.at + q[0] - w / 2, C.at + q[0] + w / 2, q[1] - 0.05, q[1], 0, 0.14); boxes.push({ name: '_', min: mn, max: mx, kind: 'tmp' }); feet.push([q[0], q[1], w]); }
+    return { hands, feet }; };
+  const specs = COURSES.map(C => (C.gen ? { ...C, ...genCourse(C) } : C));
+  for (let k = boxes.length - 1; k >= 0; k--) if (boxes[k].kind === 'tmp') boxes.splice(k, 1);
+  for (const C of specs) { const F = GYM_FACES[C.face || C.wall === 'left' ? C.face || 'left' : 'main'] || GYM_FACES.main, cs = { ...C, holds: [], footholds: [], frame: F }; courses.push(cs); const nF = V3(...F.n);
+    const nStart = C.hands.filter(h => h[3] === 'start').length;
+    C.hands.forEach(([u, y, w, role = 'hand', how], i) => { const nm = role === 'start' ? `${C.name} 시작${nStart > 1 ? i + 1 : ''}` : role === 'top' ? `${C.name} 완등` : `${C.name} ${i + 1}`, [mn, mx] = boxOn(F, C.at + u - w / 2, C.at + u + w / 2, y - 0.07, y, 0, 0.14);
+      cs.holds.push(B(nm, mn.toArray(), mx.toArray(), 'ledge', { course: C.id, role, seq: i, color: C.color, jump: how === 'jump', face: nF })); });
+    C.feet.forEach(([u, y, w], i) => { const [mn, mx] = boxOn(F, C.at + u - w / 2, C.at + u + w / 2, y - 0.05, y, 0, 0.14); cs.footholds.push(B(`${C.name} 발${i + 1}`, mn.toArray(), mx.toArray(), 'foothold', { course: C.id, role: 'foot', seq: i, color: C.color, face: nF })); }); }
+  // 코스에 속하지 않은 홀드(실제 암장처럼 벽에 홀드가 빼곡하게 — 색은 여러 가지, 어느 코스의 규칙에도 들지 않는다. 잡을 수는 있다): 면마다 1㎡에 약 1.6개, 코스 홀드·볼륨과 10cm 넘게 떨어진 자리만.
+  //   opt.free === false면 넣지 않는다(시험이 코스만으로 잴 때). 같은 씨앗이면 늘 같은 자리
+  if (opt.free !== false) { let a = 777; const r = () => ((a = (a * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff), PAL = ['#d23a32', '#2f6fd0', '#e8c21e', '#3fa34d', '#8a4fc4', '#ee7d21', '#e36fa8', '#45b8e0', '#2a2a2e', '#f4f2ea', '#8b5a2b'];
+    const area = { main: [[-8.4, -1.1, 0.2, 4.3], [-0.9, 1.9, 0.2, 11.8], [4.5, 8.4, 0.2, 11.8]], bPillar: [[-0.6, 0.6, 0.2, 4.3]], lPillar: [[-1.1, 1.1, 0.2, 11.8]], left: [[-4.4, 4.4, 0.2, 4.3]], bPillarR: [[-0.22, 0.22, 0.2, 4.3]], lPillarR: [[-0.3, 0.3, 0.2, 11.8]] };
+    let k = 0; for (const [f, rects] of Object.entries(area)) { const F = GYM_FACES[f]; for (const [u0, u1, y0, y1] of rects) { const n = Math.round((u1 - u0) * (y1 - y0) * 1.6);
+      for (let j = 0; j < n; j++) { const w = 0.10 + r() * 0.12, th = 0.05 + r() * 0.04, u = u0 + w / 2 + r() * (u1 - u0 - w), y = y0 + th + r() * (y1 - y0 - th), d = 0.08 + r() * 0.05, [mn, mx] = boxOn(F, u - w / 2, u + w / 2, y - th, y, 0, d);
+        if (!hit(mn, mx, 0.10)) B(`홀드 ${++k}`, mn.toArray(), mx.toArray(), 'ledge', { color: PAL[Math.floor(r() * PAL.length)], free: true, face: V3(...F.n) }); } } } }
+  // 코스마다 시작 자리: 시작 홀드들의 가운데 아래, 그 면에서 0.42m 앞, 면을 본다(main.js의 T, 시험 봇)
+  for (const cs of courses) { const F = cs.frame, st = cs.holds.filter(h => h.role === 'start'), c = st.reduce((a, h) => a.add(h.min.clone().add(h.max).multiplyScalar(0.5)), V3(0, 0, 0)).multiplyScalar(1 / st.length), n = V3(...F.n);
+    const p = c.clone().addScaledVector(n, -c.clone().sub(V3(...F.o)).dot(n) + 0.42); p.y = 0; cs.startPos = p.toArray(); cs.startYaw = Math.atan2(-n.x, -n.z); }
+  // opt.filler = 재기용: 정면 벽 오른쪽(x 0.5~8)에 작은 홀드 n개를 흩어 둔다(상자 수에 따른 계산 빠르기 재기)
+  if (opt.filler) { let a = 12345; const r = () => ((a = (a * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff); for (let k = 0; k < opt.filler; k++) { const x = 0.5 + r() * 7.5, y = 0.3 + r() * 3.7; B(`채움 ${k}`, [x, y - 0.05, -7], [x + 0.14, y, -6.88], 'ledge'); } }
+  return { boxes, courses, gym: true, faces: GYM_FACES, spawn: { pos: [-2.0, 0, 0.5], yaw: Math.PI } };
 }
 
 // 다른 벽으로 옮겨 가기 시험용 지형(p3d-0.10.4, GPT의 0.10.3 검토 "다른 벽으로 이동하는 시험용 조각은 바로 만든다 — 기존 코스는 그대로").
@@ -138,19 +168,28 @@ export function buildWorldMeshes(world, scene) {
     m.position.copy(c); m.receiveShadow = true; m.castShadow = b.kind !== 'floor'; scene.add(m);
   }
   if (!world.gym) { const grid = new THREE.GridHelper(60, 120, 0x6f7766, 0x86907c); grid.position.y = 0.002; scene.add(grid); return; }
-  // 클라이밍장의 그림만 하는 것(물리에 없다 — 상자 목록에 넣지 않는다): 매트, 시작·완등 테이프, 코스 이름판. 모양은 임시(GPT 디자인 요청)
-  const flat = (w, d, color, x, y, z, ry = 0) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshStandardMaterial({ color, roughness: 1 })); m.rotation.x = -Math.PI / 2; m.rotation.z = ry; m.position.set(x, y, z); m.receiveShadow = true; scene.add(m); };
-  flat(17.0, 2.4, '#2c3e63', 0, 0.004, -5.8); flat(2.4, 8.6, '#2c3e63', -7.3, 0.005, -2.3);
-  const tape = (h, color, below) => { const W = new THREE.Vector3(0, 0, 0), n = h.max.z - h.min.z < h.max.x - h.min.x ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0, 0), c = h.min.clone().add(h.max).multiplyScalar(0.5);
-    const along = n.z ? h.max.x - h.min.x : h.max.z - h.min.z, m = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(0.10, along * 0.4), 0.10), new THREE.MeshStandardMaterial({ color, roughness: 1 }));
-    const face = n.z ? h.min.z + 0.002 : h.min.x + 0.002; m.position.set(n.z ? c.x : face, h.min.y - below, n.z ? face : c.z); if (!n.z) m.rotation.y = Math.PI / 2; scene.add(m); return W; };
-  const sign = (text, sub, color, pos, n) => { const cv = document.createElement('canvas'); cv.width = 256; cv.height = 96; const g = cv.getContext('2d'); g.fillStyle = color; g.fillRect(0, 0, 256, 96); g.fillStyle = color === '#2a2a2e' || color === '#2f6fd0' || color === '#8a4fc4' || color === '#d23a32' || color === '#3fa34d' ? '#fff' : '#222';
-    g.font = 'bold 44px sans-serif'; g.textAlign = 'center'; g.fillText(text, 128, 46); g.font = '24px sans-serif'; g.fillText(sub, 128, 82);
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.3), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv) })); m.position.copy(pos); m.lookAt(pos.clone().add(n)); scene.add(m); };
+  // 클라이밍장의 그림만 하는 것(물리에 없다 — 상자 목록에 넣지 않는다): 매트, 벽의 색 띠(삼각형 칠), 시작·완등 테이프, 코스 이름표. 모양은 임시(GPT 디자인 요청)
+  const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+  const flat = (w, d, color, x, y, z) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshStandardMaterial({ color, roughness: 1 })); m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); m.receiveShadow = true; scene.add(m); };
+  flat(7.5, 2.6, '#2c3e63', -4.75, 0.004, -5.6); flat(2.6, 8.6, '#2c3e63', -7.2, 0.005, -2.3); flat(9.5, 1.6, '#4a4f58', 3.75, 0.004, -5.9);
+  // 면 위의 칠: 면 틀(o, t, n)에서 (u, y) 꼭짓점들을 면보다 3mm 앞에 칠한다
+  const paint = (F, pts, color, off = 0.003) => { const o = V3(...F.o), t = V3(...F.t), n = V3(...F.n), g = new THREE.BufferGeometry(), P = [];
+    for (let k = 1; k + 1 < pts.length; k++) for (const [u, y] of [pts[0], pts[k], pts[k + 1]]) { const p = o.clone().addScaledVector(t, u).addScaledVector(n, off).setY(y); P.push(p.x, p.y, p.z); }
+    g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.computeVertexNormals(); const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, roughness: 1, side: THREE.DoubleSide })); m.receiveShadow = true; scene.add(m); };
+  const FS = world.faces || {}, R = '#c8372d', Bl = '#2a64c4', Y = '#e8c21e', G = '#7b7f86';
+  if (FS.main) { const M = FS.main; paint(M, [[-1.0, 0], [1.2, 0], [0.2, 4.5]], Bl); paint(M, [[1.2, 0], [2.0, 0], [2.0, 6.5], [0.8, 9.0]], R); paint(M, [[-0.9, 4.6], [0.6, 7.2], [-0.9, 11.8]], Y); paint(M, [[4.4, 0], [6.2, 0], [4.4, 5.5]], Bl); paint(M, [[4.4, 6.0], [8.5, 3.0], [8.5, 8.0], [4.4, 11.5]], Bl);
+    paint(M, [[6.0, 0], [8.5, 0], [8.5, 2.6]], R); paint(M, [[-8.5, 0], [-7.6, 0], [-8.5, 3.0]], R); paint(M, [[-3.6, 0], [-2.6, 0], [-3.1, 4.5], [-3.6, 4.5]], G); paint(M, [[-6.2, 4.5], [-5.0, 2.4], [-5.0, 4.5]], Bl);
+    paint(M, [[-8.5, 4.42], [-1.0, 4.42], [-1.0, 4.5], [-8.5, 4.5]], '#55595f'); }
+  if (FS.lPillar) { const P = FS.lPillar; paint(P, [[-1.2, 0], [1.2, 2.0], [1.2, 3.8], [-1.2, 6.4]], R); paint(P, [[-1.2, 7.0], [1.2, 9.2], [-0.2, 12]], Bl); }
+  if (FS.bPillar) paint(FS.bPillar, [[-0.7, 0], [0.7, 0], [0.7, 1.4], [-0.7, 3.2]], Y);
   if (typeof document === 'undefined') return;
-  for (const C of world.courses) { const W = C.frame, n = new THREE.Vector3(...W.n), o = new THREE.Vector3(...W.o), t = new THREE.Vector3(...W.t);
-    for (const h of C.holds) if (h.role === 'start') tape(h, '#ffffff', 0.06); else if (h.role === 'top') { tape(h, '#ffffff', 0.06); tape(h, '#111111', 0.17); }
-    sign(C.name, C.grade, C.color, o.clone().addScaledVector(t, C.at).addScaledVector(n, 0.01).setY(3.98), n); }
+  const tape = (h, color, below) => { const n = h.face || V3(0, 0, 1), c = h.min.clone().add(h.max).multiplyScalar(0.5), back = c.clone().addScaledVector(n, -((n.x ? h.max.x - h.min.x : h.max.z - h.min.z) / 2 - 0.003));
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.10, 0.10), new THREE.MeshStandardMaterial({ color, roughness: 1 })); m.position.copy(back).setY(h.min.y - below); m.lookAt(m.position.clone().add(n)); scene.add(m); };
+  const tag = (C, h) => { const cv = document.createElement('canvas'); cv.width = 256; cv.height = 80; const g = cv.getContext('2d'); g.fillStyle = C.color; g.fillRect(0, 0, 256, 80); g.fillStyle = ['#e8c21e', '#f4f2ea', '#45b8e0', '#ee7d21', '#e36fa8'].includes(C.color) ? '#222' : '#fff';
+    g.font = 'bold 34px sans-serif'; g.textAlign = 'center'; g.fillText(C.name, 128, 36); g.font = '21px sans-serif'; g.fillText(C.grade, 128, 66);
+    const n = h.face || V3(0, 0, 1), c = h.min.clone().add(h.max).multiplyScalar(0.5), back = c.clone().addScaledVector(n, -((n.x ? h.max.x - h.min.x : h.max.z - h.min.z) / 2 - 0.004));
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.13), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv) })); m.position.copy(back).setY(h.min.y - 0.30); m.lookAt(m.position.clone().add(n)); scene.add(m); };
+  for (const C of world.courses) { const st = C.holds.filter(h => h.role === 'start'); for (const h of C.holds) if (h.role === 'start') tape(h, '#ffffff', 0.07); else if (h.role === 'top') { tape(h, '#ffffff', 0.07); tape(h, '#111111', 0.18); } tag(C, st[st.length - 1]); }
 }
 
 // 선분(a → b)이 처음 닿는 상자까지의 비율(0~1). 닿지 않으면 1. 카메라가 벽을 지나가지 않게 쓴다

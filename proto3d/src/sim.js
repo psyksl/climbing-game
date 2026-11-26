@@ -15,21 +15,27 @@ import { DIM } from './rig.js';
 // inp.cmd = 이 걸음에 한 번만 들어오는 명령 목록({ type: 'hand'|'foot'|'release', limb, i, p }). inp.cx·cy = 벽에서 몸 옮기기(좌우·위아래)
 export function makeSim(rig, world, clips = null) {
   // opt.footAssist = 발 보조(간편 조작). 시험의 기본값은 끔(직접 보낸 발만) — 화면 쪽이 켠다
-  const S = { rig, world, opt: { footAssist: false, wallRest: false, rockOver: true }, inp: null, body: null, motion: null, clip: null, climb: null, clipSet: clips ? makeClipSet(clips) : null, useClip: !!clips, tick: 0 };
-  const ground = () => { S.motion = makeMotion(rig, S.body); S.clip = S.clipSet ? makeClipState(S.clipSet, rig, S.body) : null; if (S.clip) S.clip.world = world; if (S.clip && S.useClip) { S.clip.w = 1; S.clip.on = true; S.clip.init = true; } };
+  // p3d-0.14.0: 상자가 많은 지형(클라이밍장)에서는 계산에 몸 둘레 4.5m 안의 상자만 넘긴다(S.world = 그 목록을 담은 같은 틀의 보기, S.worldAll = 모두).
+  //   계산이 지형을 보는 곳(팔·몸의 겹침, 길 막힘, 발 디딜 곳, 머리 여유 …)은 모두 몸에서 2m 안이라 결과는 같다 — 홀드 300개를 더한 벽에서 같은 오름이 3.4배 느려졌다(1배속 아래).
+  //   몸이 0.5m 움직일 때마다 고친다(그래서 늘 4.0m 안은 들어 있다). 손 명령이 겨눈 턱을 찾는 것과 미리보기는 모든 상자에서 찾는다(climb.js — 먼 턱도 "닿지 않음"으로 알리게). 상자 60개 이하(옛 벽)는 그대로. NOCULL = 끔
+  const big = world.boxes.length > 60 && !globalThis.NOCULL, view = big ? { ...world, boxes: [], edges: null, edgesN: -1, full: world } : world; let viewAt = null;
+  const cull = () => { if (!big) return; const p = S.body.pos; if (viewAt && viewAt.distanceTo(p) < 0.5) return; viewAt = p.clone(); const R2 = 4.5 * 4.5;
+    view.boxes = world.boxes.filter(b => b.kind === 'floor' || (Math.max(b.min.x - p.x, 0, p.x - b.max.x) ** 2 + Math.max(b.min.z - p.z, 0, p.z - b.max.z) ** 2 < R2 && b.min.y < p.y + 6 && b.max.y > p.y - 3)); view.edges = null; view.edgesN = -1; };
+  const S = { rig, world: view, worldAll: world, opt: { footAssist: false, wallRest: false, rockOver: true }, inp: null, body: null, motion: null, clip: null, climb: null, clipSet: clips ? makeClipSet(clips) : null, useClip: !!clips, tick: 0 };
+  const ground = () => { S.motion = makeMotion(rig, S.body); S.clip = S.clipSet ? makeClipState(S.clipSet, rig, S.body) : null; if (S.clip) S.clip.world = view; if (S.clip && S.useClip) { S.clip.w = 1; S.clip.on = true; S.clip.init = true; } };
   const pose = dt => {
     const K = S.climb;
     if (K.on) { poseClimb(S); if (S.tc) S.tc.a = 0; }
-    else { poseProc(S.motion, S.body); if (S.clip) { S.clip.reach = S.climb.hands.map(h => h.st === 'reach'); poseClip(S.clip, S.motion, S.body, world, groundAt, dt); } outBlend(S, dt); torsoClear(S, dt); groundHands(S, dt); measure(S.motion, S.body); }
+    else { poseProc(S.motion, S.body); if (S.clip) { S.clip.reach = S.climb.hands.map(h => h.st === 'reach'); poseClip(S.clip, S.motion, S.body, view, groundAt, dt); } outBlend(S, dt); torsoClear(S, dt); groundHands(S, dt); measure(S.motion, S.body); }
     afterPose(S);
   };
-  S.reset = o => { S.body = o ? makeBody(new THREE.Vector3(...o.pos), o.yaw ?? 0) : makeBody(); S.climb = makeClimb(); ground(); S.tick = 0; S.pw = null; S.poleS = null; S.tc = null; S.fing = [0.3, 0.3]; S.pron = [1, 1]; S.gw = [0, 0]; pose(0); };
+  S.reset = o => { S.body = o ? makeBody(new THREE.Vector3(...o.pos), o.yaw ?? 0) : makeBody(); viewAt = null; cull(); S.climb = makeClimb(); ground(); S.tick = 0; S.pw = null; S.poleS = null; S.tc = null; S.fing = [0.3, 0.3]; S.pron = [1, 1]; S.gw = [0, 0]; pose(0); };
   S.step = inp => {
-    const K = S.climb; K.events.length = 0; K.tick = S.tick; K.exited = false; S.inp = inp;
+    cull(); const K = S.climb; K.events.length = 0; K.tick = S.tick; K.exited = false; S.inp = inp;
     for (const c of inp.cmd || []) command(S, c);
     if (K.on) { stepClimb(S, inp, PHY.DT); if (K.exited) ground(); }
     // B3: 웅크린 채 점프도 0.08초에 뜬다. 자작 모션은 p3d-0.8.0, 캡처 모션은 p3d-0.8.2(엉덩이 오름을 늦추는 처리, clipmotion.js)에서 풀었다
-    else { stepBody(S.body, inp, world); stepMotion(S.motion, S.body, inp, world, groundAt, PHY.DT); if (S.clip) stepClip(S.clip, S.motion, S.body, inp, PHY.DT, S.useClip); }
+    else { stepBody(S.body, inp, view); stepMotion(S.motion, S.body, inp, view, groundAt, PHY.DT); if (S.clip) stepClip(S.clip, S.motion, S.body, inp, PHY.DT, S.useClip); }
     pose(PHY.DT); fingStep(PHY.DT); S.tick++;
   };
   // 손가락의 굽힘(0 = 편 손, 0.3 = 쉬는 손, 1 = 잡은 손). 제어 뼈대에는 손가락이 없어 그림(human.js)이 이 값을 읽는다. 계산 걸음에서만 바뀐다(그리기 빈도와 무관)
