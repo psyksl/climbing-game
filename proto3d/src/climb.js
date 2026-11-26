@@ -432,7 +432,9 @@ function armCheck(S, i, sh, goal, n) {
 }
 // 무릎의 기본 방향: 벽 쪽에서 30° 바깥, 많이 굽힐수록 옆으로(편한 기본값. 허용 판정이 아니다). 무릎이 벽·턱에 들어가면 들어가지 않을 때까지 더 옆으로 돌린다
 // 점에서 가장 가까운 상자 겉면까지의 거리(안에 들어가 있으면 음수, 바닥은 뺀다)
-const boxDist = (world, p) => { let m = 9; for (const x of world.boxes) { if (x.kind === 'floor') continue; const dx = Math.max(x.min.x - p.x, 0, p.x - x.max.x), dy = Math.max(x.min.y - p.y, 0, p.y - x.max.y), dz = Math.max(x.min.z - p.z, 0, p.z - x.max.z), out = Math.hypot(dx, dy, dz); m = Math.min(m, out > 0 ? out : -Math.min(p.x - x.min.x, x.max.x - p.x, p.y - x.min.y, x.max.y - p.y, p.z - x.min.z, x.max.z - p.z)); } return m; };
+// p3d-0.15.1(성능): 클라이밍장은 몸 둘레의 상자가 86개쯤이라 이 함수가 계산 시간의 37%였다(한 걸음 11.7ms — 120Hz의 한도 8.3ms를 넘는다). 한 축으로 이미 m보다 먼 상자는 거리를 재지 않고 넘긴다
+//   (세 축 거리의 합성은 가장 큰 축 거리보다 작을 수 없으므로 결과는 같다)
+const boxDist = (world, p) => { let m = 9; for (const x of world.boxes) { if (x.kind === 'floor') continue; const dx = Math.max(x.min.x - p.x, 0, p.x - x.max.x); if (dx >= m) continue; const dy = Math.max(x.min.y - p.y, 0, p.y - x.max.y); if (dy >= m) continue; const dz = Math.max(x.min.z - p.z, 0, p.z - x.max.z); if (dz >= m) continue; const out = Math.hypot(dx, dy, dz); m = Math.min(m, out > 0 ? out : -Math.min(p.x - x.min.x, x.max.x - p.x, p.y - x.min.y, x.max.y - p.y, p.z - x.min.z, x.max.z - p.z)); } return m; };
 const nearBox = (world, p, m) => world.boxes.some(x => p.x > x.min.x - m && p.x < x.max.x + m && p.y > x.min.y - m && p.y < x.max.y + m && p.z > x.min.z - m && p.z < x.max.z + m);
 // 무릎이 굽는 쪽(극 방향의 각 a: 0 = 벽 쪽, 90 = 옆 바깥). p3d-0.9.0: 발이 놓인 자리에서 정한다.
 //   0.8.8까지는 다리가 접힐수록 30° → 72°로 바깥을 향했다 — 발이 어디에 있든 같아서, 발이 몸 안쪽(엇갈림)이나 몸 아래에 있을 때 넓적다리가 옆으로 눕고 정강이가 안으로 꺾였다("제기차기").
@@ -446,8 +448,11 @@ function closestOnSeg(a, b, p) { const ab = b.clone().sub(a), t = clamp(p.clone(
 function legGap(hj, knee, ank, o) { const toe = null; let g = 9;
   for (const [p, q, r] of [[hj.clone().lerp(knee, 0.35), knee, LEG_R.th], [knee, ank, LEG_R.sh]]) for (const [p2, q2, r2] of [[o.hip.clone().lerp(o.knee, 0.35), o.knee, LEG_R.th], [o.knee, o.ank, LEG_R.sh], [o.ank, o.toe, LEG_R.ft]]) g = Math.min(g, segSeg(p, q, p2, q2).length() - r - r2);
   return g; }
-function kneeEval(S, hj, ank, sx, py, a) { const pl = V(sx * Math.sin(a * deg), 0.1, Math.cos(a * deg)).applyAxisAngle(UP, py).normalize(), k2 = twoBone(hj, ank, DIM.thigh, DIM.shin, pl);
-  const dist = DIM.boxCollide ? Math.min(...[0.45, 0.7, 1].map(t => boxDist(S.world, hj.clone().lerp(k2.mid, t))), boxDist(S.world, k2.mid.clone().lerp(k2.end, 0.25))) : boxDist(S.world, k2.mid); return { ik: k2, pole: pl, dist }; }
+// p3d-0.15.1(성능): 무릎 각을 고를 때(다리마다 걸음마다 50~80번) 재는 점은 모두 고관절에서 넓적다리 + 정강이의 1/4 안에 있고, 값에는 kneeClr보다 가까운 것만 들어간다(max(0, kneeClr − 거리)).
+//   그래서 고관절 둘레 그 거리 안의 상자만 추려 넘겨도 값이 같다(추린 것 밖의 상자는 kneeClr보다 멀다). 클라이밍장에서 한 걸음 7.4 → 약 5ms
+const kneeBoxes = (S, hj) => { const r = DIM.thigh + 0.25 * DIM.shin + DIM.kneeClr + 0.02; return { boxes: S.world.boxes.filter(x => x.kind !== 'floor' && hj.x > x.min.x - r && hj.x < x.max.x + r && hj.y > x.min.y - r && hj.y < x.max.y + r && hj.z > x.min.z - r && hj.z < x.max.z + r) }; };
+function kneeEval(S, hj, ank, sx, py, a, W = S.world) { const pl = V(sx * Math.sin(a * deg), 0.1, Math.cos(a * deg)).applyAxisAngle(UP, py).normalize(), k2 = twoBone(hj, ank, DIM.thigh, DIM.shin, pl);
+  const dist = DIM.boxCollide ? Math.min(...[0.45, 0.7, 1].map(t => boxDist(W, hj.clone().lerp(k2.mid, t))), boxDist(W, k2.mid.clone().lerp(k2.end, 0.25))) : boxDist(W, k2.mid); return { ik: k2, pole: pl, dist }; }
 // ㉮ 규칙의 바라는 무릎 각: 높이 디딘(디디러 가는) 발은 30~40°, 서 있는 낮은 발은 10°
 // 디딘·가는 다리가 바라는 무릎 각(도, 골반 틀: 0 = 앞, + = 바깥) — legIK0의 고르기와 전신 자세 풀이(fbik의 무릎 여유)가 같은 값을 쓴다(p3d-0.11.7)
 // 엇갈린 정도(0~1): 발목이 고관절에서 몸 안쪽으로 10cm 넘게 가면 늘기 시작해 22cm에서 1
@@ -495,7 +500,8 @@ function legIK0(S, hj, ank, yaw, sx, placed = true, fixed = false) {
     const qH = anatOn() ? qArr(pelvisQ(S)) : null, hjA = vArr(hj), anA = vArr(ank);
     // p3d-0.11.6(사용자 "오른발이 왼발을 관통하면서 빠져나온다"): 다른 다리(넓적다리·정강이·발)와의 틈이 LEGX_CLR보다 좁은 만큼도 값에 넣는다(1cm = 15°). 다른 다리의 자리는 그 다리의 지금 뼈(앞 걸음의 자세)
     const oL = DIM.boxCollide && !globalThis.OLDLEGX && !globalThis.NOLX_KNEE && K.feet[sx > 0 ? 0 : 1].st === 'move' ? otherLeg(S, sx > 0 ? 1 : 0) : null; // 가는 다리만(디딘 무릎까지 다른 다리를 보게 하면 가는 발이 돌아가는 동안 디딘 무릎이 22mm 오갔다 — motion_scan v2)
-    const evalA = a => { const c = kneeEval(S, hj, ank, sx, py, a), sc = Math.abs(a - a0) + 0.6 * Math.abs(a - aCur) + (K.post !== 'base' && DIM.boxCollide ? 2000 : 800) * Math.max(0, DIM.kneeClr - c.dist) + (qH ? 4 * Math.max(0, kneeExcess(qH, hjA, vArr(c.ik.mid), anA, sx)) / deg : 0) + (oL ? 1500 * Math.max(0, CL.LEGX_CLR - legGap(hj, c.ik.mid, ank, oL)) : 0); return { ...c, sc, a }; };
+    const WK = globalThis.OLDKNEEBOX ? S.world : kneeBoxes(S, hj);
+    const evalA = a => { const c = kneeEval(S, hj, ank, sx, py, a, WK), sc = Math.abs(a - a0) + 0.6 * Math.abs(a - aCur) + (K.post !== 'base' && DIM.boxCollide ? 2000 : 800) * Math.max(0, DIM.kneeClr - c.dist) + (qH ? 4 * Math.max(0, kneeExcess(qH, hjA, vArr(c.ik.mid), anA, sx)) / deg : 0) + (oL ? 1500 * Math.max(0, CL.LEGX_CLR - legGap(hj, c.ik.mid, ank, oL)) : 0); return { ...c, sc, a }; };
     for (let a = -50; a <= 115; a += 5) { const c = evalA(a); if (globalThis.__KT) globalThis.__KT.push({ sx, a, sc: c.sc, dist: c.dist }); if (!best || c.sc < best.sc) best = c; }
     // p3d-0.10.2(GPT의 0.10.1 검토 1번 — h3의 디딘 무릎 흔들림): 5° 격자에서 고른 각을 그대로 쓰면, 골반의 틀이 돌 때(손이 턱의 옆면을 잡아 몸이 초속 172°로 돈다) 세계 좌표의 바람이 +1.5°·+1.5°·−3.5°의 톱니가 되어
     //   무릎이 3걸음마다 ±15mm 왕복했다(knee_trace). 고른 격자점 둘레 ±5°에서 값이 가장 낮은 각을 연속으로 찾아 쓴다(황금 분할 10번 → 0.1° 안). 새 규칙에만(0.10.0 규칙과 옛 몸은 그대로)
@@ -575,7 +581,12 @@ function reachShift(S, i, goal) { const K = S.climb, fb = K.fb, c = fb && fb.ctx
   const key = `${K.tick}|${i}|${goal.x.toFixed(3)},${goal.y.toFixed(3)},${goal.z.toFixed(3)}`; if (K.rsKey && K.rsKey[i] === key) return K.rsVal[i].clone();
   const yaw = S.body.yaw, left = V(Math.cos(yaw), 0, -Math.sin(yaw)), fwd = V(Math.sin(yaw), 0, Math.cos(yaw)), A = fbAims(S, K.hands.filter(h => h.st === 'hold' && h.i !== i), left, fwd);
   const c2 = { ...c, axis: [A.ax.x, A.ax.y, A.ax.z], yawT: A.yawT + (K.aim ? K.aim.y : 0), arms: c.arms.map((a, j) => (j === i ? { st: 2, goal: [goal.x, goal.y, goal.z], w: 1 } : a)), shr: c.shr.map((v, j) => (j === i ? (goal.y > S.body.pos.y + 1.4 ? 0.40 : 0) : c.arms[j].st === 1 ? 0 : v)) };
-  const xs = Float64Array.from(fb.xs); fbSolve(xs, c2, 6); const a = fbFK(fb.xs, c.pos, c.yaw).sh[i], b2 = fbFK(xs, c.pos, c.yaw).sh[i], v = V(b2[0] - a[0], b2[1] - a[1], b2[2] - a[2]);
+  // p3d-0.15.1(GPT 검토의 재현: 초록 3을 잡고 초록 4를 겨누면 "19cm 모자람"인데 눌러 보면 몸이 2mm도 움직이지 않고 0.26초 만에 잡았다): 6번만 풀어서는 자세가 다 바뀌지 않는다
+  //   (풀이 한 걸음이 옮기는 양이 FBW.step = 0.025로 묶여 있어, 어깨가 29cm 올라가는 자세까지 30번쯤 걸리는데 6번째의 6cm만 보았다).
+  //   뻗어 본 자세는 시간에 따라 움직이는 것이 아니므로 걸음을 크게(0.12) 주고, 어깨가 한 번에 1.5mm 아래로 움직일 때까지 푼다(16번까지. 재 본 사례: 9번에 끝 자세와 4mm, 걸린 시간은 6번 풀 때와 비슷). OLDPROBE6 = 6번만
+  const a = fbFK(fb.xs, c.pos, c.yaw).sh[i], xs = Float64Array.from(fb.xs); let b2 = a;
+  if (globalThis.OLDPROBE6) { fbSolve(xs, c2, 6); b2 = fbFK(xs, c.pos, c.yaw).sh[i]; } else for (let it = 0; it < 16; it++) { fbSolve(xs, c2, 1, 0.12); const q = fbFK(xs, c.pos, c.yaw).sh[i], m = Math.hypot(q[0] - b2[0], q[1] - b2[1], q[2] - b2[2]); b2 = q; if (m < 0.0015) break; }
+  const v = V(b2[0] - a[0], b2[1] - a[1], b2[2] - a[2]);
   (K.rsKey = K.rsKey || [])[i] = key; (K.rsVal = K.rsVal || [])[i] = v.clone(); return v; }
 export function probeHand(S, i, pt) {
   const g = resolveGrip(S.worldAll || S.world, pt), H = S.climb.hands[i];

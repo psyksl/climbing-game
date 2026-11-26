@@ -121,14 +121,15 @@ function solveSPD(A, b, n) { for (let i = 0; i < n; i++) { for (let j = 0; j <= 
 
 const R0 = new Float64Array(96), R1 = new Float64Array(96), JJ = new Float64Array(96 * NF), AA = new Float64Array(NF * NF), GG = new Float64Array(NF);
 // 풀이 한 걸음(감쇠 최소제곱, 수치 미분). xs를 그 자리에서 고친다. 돌려주는 값 = 값(비용)
-export function solveStep(xs, c, iters = 1) {
+// stepMax = 한 걸음에 옮기는 가장 큰 양(기본 FBW.step. 미리보기의 "뻗어 본 자세"는 시간에 따라 움직이는 것이 아니어서 크게 준다 — climb.js reachShift)
+export function solveStep(xs, c, iters = 1, stepMax = FBW.step) {
   let c0 = 0;
   for (let it = 0; it < iters; it++) {
     const n = resid(xs, c, R0); c0 = cost(R0, n); const h = 1e-4;
     for (let j = 0; j < NF; j++) { const keep = xs[j]; xs[j] = keep + h; resid(xs, c, R1); xs[j] = keep; for (let i = 0; i < n; i++) JJ[i * NF + j] = (R1[i] - R0[i]) / h; }
     for (let a = 0; a < NF; a++) { let gsum = 0; for (let i = 0; i < n; i++) gsum += JJ[i * NF + a] * R0[i]; GG[a] = -gsum; for (let b = 0; b <= a; b++) { let s = 0; for (let i = 0; i < n; i++) s += JJ[i * NF + a] * JJ[i * NF + b]; AA[a * NF + b] = s; AA[b * NF + a] = s; } }
     let tr = 0; for (let a = 0; a < NF; a++) tr += AA[a * NF + a]; const lam = FBW.lambda * (tr / NF + 1e-6); for (let a = 0; a < NF; a++) AA[a * NF + a] += lam;
-    const d = solveSPD(AA, GG, NF); let mx = 0; for (let a = 0; a < NF; a++) mx = Math.max(mx, Math.abs(d[a])); const sc = mx > FBW.step ? FBW.step / mx : 1;
+    const d = solveSPD(AA, GG, NF); let mx = 0; for (let a = 0; a < NF; a++) mx = Math.max(mx, Math.abs(d[a])); const sc = mx > stepMax ? stepMax / mx : 1;
     // 값이 줄지 않으면 걸음을 반으로(두 번까지)
     let k = sc; for (let tryN = 0; tryN < 3; tryN++) { const keep = Array.from(xs); for (let a = 0; a < NF; a++) xs[a] = Math.min(HI[a], Math.max(LO[a], keep[a] + d[a] * k)); const c1 = cost(R1, resid(xs, c, R1)); if (c1 <= c0 + 1e-12) { c0 = c1; break; } for (let a = 0; a < NF; a++) xs[a] = keep[a]; k *= 0.5; }
   }
