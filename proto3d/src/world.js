@@ -121,8 +121,9 @@ export function makeGym(opt = {}) { const COURSES = opt.courses || GYM_COURSES; 
   // 누르기 시험 조각(p3d-0.15.3, GPT의 0.15.2 검토 작업 D: "기존 초록 구간은 유지하고, 낮은 턱 하나의 별도 시험 조각을 추가하여 매달리기 → 손바닥 누르기 → 발로 올라서기를 확인한다").
   //   벽에서 떨어져 혼자 선 대(臺): 윗면 높이 1.55m(어깨보다 조금 위 — 낮은 턱), 깊이 0.9m(올라설 수 있는 윗면), 앞면(+z)에 발판 둘(0.45m·0.95m). 기존 벽·코스·홀드는 그대로다(맨 끝에 더해 앞의 상자 순서도 같다).
   //   모양·자리·이름은 임시. opt.press === false면 넣지 않는다
-  if (opt.press !== false) { B('누르기 대', [0.6, 0, -2.6], [2.4, 1.55, -1.7], 'block', { color: '#b9b2a2', piece: 'press' });
-    B('누르기 대 발판1', [1.25, 0.40, -1.7], [1.75, 0.45, -1.56], 'foothold', { color: '#6d6a62', piece: 'press', face: V3(0, 0, 1) }); B('누르기 대 발판2', [1.25, 0.90, -1.7], [1.75, 0.95, -1.56], 'foothold', { color: '#6d6a62', piece: 'press', face: V3(0, 0, 1) }); }
+  if (opt.press !== false) { // 색(p3d-0.15.4, GPT 시안 — 그림만. 치수·충돌은 그대로): 옆면 중간 회색·윗면 밝은 회색·윗모서리의 밝은 선, 발판은 청록 회색에 윗면만 밝게
+    B('누르기 대', [0.6, 0, -2.6], [2.4, 1.55, -1.7], 'block', { color: '#7E8583', colorTop: '#BFC6C2', edgeTop: '#E5EBE5', piece: 'press' });
+    B('누르기 대 발판1', [1.25, 0.40, -1.7], [1.75, 0.45, -1.56], 'foothold', { color: '#5F8584', colorTop: '#8FB0AE', piece: 'press', face: V3(0, 0, 1) }); B('누르기 대 발판2', [1.25, 0.90, -1.7], [1.75, 0.95, -1.56], 'foothold', { color: '#5F8584', colorTop: '#8FB0AE', piece: 'press', face: V3(0, 0, 1) }); }
   return { boxes, courses, gym: true, faces: GYM_FACES, spawn: { pos: [-2.0, 0, 0.5], yaw: Math.PI }, pressPiece: opt.press !== false ? { startPos: [1.5, 0, -1.28], startYaw: Math.PI } : null };
 }
 
@@ -183,8 +184,10 @@ export function buildWorldMeshes(world, scene) {
   const col = world.gym ? { floor: '#8d8a84', block: '#b9b2a2', wall: '#d8d2c4', ledge: '#c98a4a', foothold: '#c9a04a' } : { floor: '#9aa28f', block: '#b9b2a2', wall: '#a39a8a', ledge: '#c98a4a', foothold: '#c9a04a' };
   for (const b of world.boxes) { if (b.hidden) continue;
     const s = new THREE.Vector3().subVectors(b.max, b.min), c = new THREE.Vector3().addVectors(b.max, b.min).multiplyScalar(0.5);
-    const m = new THREE.Mesh(new THREE.BoxGeometry(s.x, s.y, s.z), new THREE.MeshStandardMaterial({ color: b.color || col[b.kind] || '#bbb', roughness: b.course ? 0.7 : 0.95 }));
+    // colorTop = 윗면만 다른 색(면 재질 여섯 가운데 +y), edgeTop = 윗면 둘레의 선 — 둘 다 그림만 한다(상자의 치수·충돌은 그대로)
+    const mat = color => new THREE.MeshStandardMaterial({ color, roughness: b.course ? 0.7 : 0.95 }), side = mat(b.color || col[b.kind] || '#bbb'), m = new THREE.Mesh(new THREE.BoxGeometry(s.x, s.y, s.z), b.colorTop ? [side, side, mat(b.colorTop), side, side, side] : side);
     m.position.copy(c); m.receiveShadow = true; m.castShadow = b.kind !== 'floor'; scene.add(m);
+    if (b.edgeTop) { const y = b.max.y + 0.001, P = [[b.min.x, b.min.z], [b.max.x, b.min.z], [b.max.x, b.max.z], [b.min.x, b.max.z], [b.min.x, b.min.z]].map(([x, z]) => new THREE.Vector3(x, y, z)); scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(P), new THREE.LineBasicMaterial({ color: b.edgeTop }))); }
   }
   if (!world.gym) { const grid = new THREE.GridHelper(60, 120, 0x6f7766, 0x86907c); grid.position.y = 0.002; scene.add(grid); return; }
   // 클라이밍장의 그림만 하는 것(물리에 없다 — 상자 목록에 넣지 않는다): 매트, 벽의 색 띠(삼각형 칠), 시작·완등 테이프, 코스 이름표. 모양은 임시(GPT 디자인 요청)

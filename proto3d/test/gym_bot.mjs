@@ -4,7 +4,7 @@
 //   jump 표시가 있는 홀드는 먼저 누르고 뛴다. 두 손이 완등 홀드를 0.5초 잡으면 완등. 떨어지면 실패.
 // 대충 겨누기: NOISE(m)만큼 겨눈 자리를 화면에서 옆·위아래로 흔든다(씨앗 SEED마다 같은 흔들림). 카메라는 기본 시점 한 자리(벽 뒤 3.6m, 0.25rad 비스듬히 — main.js의 T).
 // 사용: [MODE=clip] [EASY=0|1(기본 1 = 화면 기본)] [NOISE=0.08] [SEED=1] [COURSE=green] [TRACE=1] [OUT=결과.jsonl] node test/gym_bot.mjs
-import { prov, provLine } from './provenance.mjs';
+import { prov, provLine, provOptLine } from './provenance.mjs';
 import fs from 'fs'; import path from 'path'; import { fileURLToPath, pathToFileURL } from 'url';
 const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pathToFileURL(path.join(HERE, '../src', f)).href);
 const { makeCourseState, courseSelect, courseStep, courseView } = await imp('course.js');
@@ -22,7 +22,7 @@ console.log(provLine(prov()), `· 쉬운 조작 ${EASY ? '켬' : '끔'} · 누�
 
 function climbCourse(courseId, seed) {
   const world = makeGym(LAD ? { courses: GYMOPT.courses.filter(c => c.id === courseId), free: false } : { ...GYMOPT, free: E.FREE !== '0' }), C = world.courses.find(c => c.id === courseId), sim = makeSim(rig, world, CLIPS), rnd = mulberry(seed * 7919 + courseId.length);
-  sim.reset({ pos: C.startPos, yaw: C.startYaw }); Object.assign(sim.opt, { wallRest: false, footAssist: true, grabAssist: true, poseAssist: true, posture: 'fb', easy: EASY, press: E.PRESS === '1', autoBody: E.AUTOBODY !== '0', keepHold: E.KEEP === '1', linkPose: E.LINK === '1' });
+  sim.reset({ pos: C.startPos, yaw: C.startYaw }); Object.assign(sim.opt, { wallRest: false, footAssist: true, grabAssist: true, poseAssist: true, posture: 'fb', easy: EASY, press: E.PRESS === '1', autoBody: E.AUTOBODY !== '0', keepHold: E.KEEP === '1', linkPose: E.LINK === '1' }); if (!globalThis.__optLine) console.log(globalThis.__optLine = provOptLine(sim));
   const W = C.frame, t = V3(...W.t), n = V3(...W.n), o = V3(...W.o), uOf = p => p.clone().sub(o).dot(t);
   const log = [], ev = [], res = { course: courseId, seed, ok: false, t: 0, moves: 0, rejects: 0, slips: 0, why: '', at: '' };
   // 화면과 같은 코스 상태 모듈(p3d-0.15.1)을 걸음마다 불러, 봇의 완등 판정과 화면의 완등·색 지킴이 같은지 본다

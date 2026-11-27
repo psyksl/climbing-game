@@ -58,5 +58,5 @@ check('훈련 구간의 목표는 코스 완등으로 기록되지 않는다', !
 say(`수동으로 디딘 발이 그 자리에 있지 않게 된 것 ${changed.length}${changed.length ? ':\n   ' + changed.join('\n   ') : ''}`);
 say(`거부·풀림: ${steps.flatMap(s => s.ev).filter(e => / reject | deny | slip |\[(assist|cancel|body|physics)\]/.test(e)).join(' | ') || '없음'}`);
 check('페이지 오류 없음', !errs.length, errs.join(' / '));
-if (E.OUT) fs.writeFileSync(E.OUT, JSON.stringify({ version: ver, build: path.basename(build), sha256: crypto.createHash('sha256').update(fs.readFileSync(build)).digest('hex'), clip, route: RT, recover: E.RECOVER === '1', shadow: E.SHADOW !== '0', opts, startPos: C.startPos, startYaw: C.startYaw, ok, steps, changed, end: { h: end.h, f: end.f }, inputs: rec, log }));
+if (E.OUT) fs.writeFileSync(E.OUT, JSON.stringify({ version: ver, build: path.basename(build), sha256: crypto.createHash('sha256').update(fs.readFileSync(build)).digest('hex'), clip, route: RT, source: 'keymouse', recover: E.RECOVER === '1', shadow: E.SHADOW !== '0', opts, startPos: C.startPos, startYaw: C.startYaw, ok, steps, changed, end: { h: end.h, f: end.f }, inputs: rec, log }));
 await b.close(); say(`실패 ${fails} · 기록한 계산 걸음 ${rec.length}(${(rec.length / 120).toFixed(1)}초)`); process.exit(fails ? 1 : 0);

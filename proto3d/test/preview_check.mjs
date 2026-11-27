@@ -4,7 +4,7 @@
 // 실제 = 같은 상태를 처음부터 다시 만들어 그 손을 보내고 2초. "잡음" = 그 홀드를 잡고 있다. 몸 입력은 없다. 화면 기본 보조(잡기 보정·자세 보조·누르기·발 보조)는 켬.
 //   쉬운 조작은 끔(예약·자동 몸 맞추기가 끼면 "지금 자세에서 닿는가"가 아니게 된다). EASY=1이면 켬으로도 본다(그때의 "안 됨 → 잡음"은 몸을 옮겨 잡은 것일 수 있다).
 // 사용: [MODE=clip] [COURSES=green,yellow] [DEPTH=3] [R=1.15] [EASY=1] [OUT=파일.jsonl] node test/preview_check.mjs
-import { prov, provLine } from './provenance.mjs';
+import { prov, provLine, provOptLine } from './provenance.mjs';
 import fs from 'fs'; import path from 'path'; import { fileURLToPath, pathToFileURL } from 'url';
 const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pathToFileURL(path.join(HERE, '../src', f)).href);
 const { buildCharacter } = await imp('rig.js'), { makeGym } = await imp('world.js'), { makeSim } = await imp('sim.js'), { probeHand, limbState } = await imp('climb.js'), THREE = await import('three');
@@ -15,7 +15,7 @@ const IDS = (E.COURSES || world.courses.map(c => c.id).join(',')).split(',');
 const front = (b, n) => { const c = b.min.clone().add(b.max).multiplyScalar(0.5), half = Math.abs(n.x) * (b.max.x - b.min.x) / 2 + Math.abs(n.z) * (b.max.z - b.min.z) / 2; return c.addScaledVector(n, half).setY(b.max.y); };
 // 코스 C에서 손 홀드를 d개째까지 잡은 상태를 만든다(실패하면 null). 돌려주는 값 = { sim, step }
 function state(C, d) { const sim = makeSim(rig, world, CLIPS), n = new THREE.Vector3(...C.frame.n), holds = world.boxes.filter(b => b.course === C.id && b.role !== 'foot').sort((a, b) => a.seq - b.seq);
-  sim.reset({ pos: C.startPos, yaw: C.startYaw }); Object.assign(sim.opt, { posture: 'fb', grabAssist: true, poseAssist: true, easy: EASY, press: true, footAssist: true, wallRest: false, keepHold: E.KEEP === '1', linkPose: E.LINK === '1' });
+  sim.reset({ pos: C.startPos, yaw: C.startYaw }); Object.assign(sim.opt, { posture: 'fb', grabAssist: true, poseAssist: true, easy: EASY, press: true, footAssist: true, wallRest: false, keepHold: E.KEEP === '1', linkPose: E.LINK === '1' }); if (!globalThis.__optLine) console.log(globalThis.__optLine = provOptLine(sim) + ' — 화면 기본과 다른 것: 쉬운 조작' + (EASY ? ' 켬(같음)' : ' 끔(화면은 켬)'));
   let look = null; const step = (k, cmd = []) => { for (let i = 0; i < k; i++) sim.step({ mx: 0, mz: 0, cxSign: 1, ...(look ? { look } : {}), cmd: i ? [] : cmd }); }, setLook = p => { look = p.toArray(); };
   step(12); for (let j = 0; j < 2 + d; j++) { if (j >= holds.length) return null; const p = front(holds[j], n), i = j % 2; setLook(p); if (j >= 2) step(30); step(j < 2 ? 90 : 150, [{ type: 'hand', i, p: p.toArray() }]); const h = sim.climb.hands[i]; if (!(h.st === 'hold' && h.edge && h.edge.box === holds[j])) return null; }
   return { sim, step, setLook, n }; }

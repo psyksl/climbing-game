@@ -17,11 +17,13 @@ const ver = await pg.evaluate(([st, yaw, opts]) => { __p3.pause(true); for (cons
 if (ver !== R.version) console.log(`주의: 기록한 판(${R.version})과 지금 빌드(${ver})가 다르다`);
 const keys = x => [x.cy > 0 ? 'W(몸 위로)' : '', x.cy < 0 ? 'S' : '', x.cx > 0 ? 'D' : '', x.cx < 0 ? 'A' : '', x.jump ? 'Space' : ''].filter(Boolean).join(' + ') || '—';
 let n = 0, lastCmd = '', cmdK = -999, last = null; const I = R.inputs, K0 = Math.round(T0 * 120), K1 = Math.min(I.length, Math.round(T1 * 120));
-const optTxt = `발 보조 ${R.opts.footAssist ? '켬' : '끔'} · 잡기 보정 ${R.opts.grabAssist ? '켬' : '끔'} · 자세 보조 ${R.opts.poseAssist ? '켬' : '끔'} · 쉬운 조작 ${R.opts.easy ? '켬' : '끔'} · 자동 몸 맞추기 ${R.opts.autoBody ? '켬' : '끔'} · 누르기 ${R.opts.press ? '켬' : '끔'}${R.opts.keepHold ? ' · 비교: 잡은 손 유지' : ''} · 전신 연결 ${R.opts.linkPose ? '켬' : '끔'}${R.shadow === false || process.env.SHADOW === '0' ? ' · 그림자 끔(찍는 시간 때문)' : ''}`;
+const optTxt = `발 보조 ${R.opts.footAssist ? '켬' : '끔'} · 잡기 보정 ${R.opts.grabAssist ? '켬' : '끔'} · 자세 보조 ${R.opts.poseAssist ? '켬' : '끔'} · 쉬운 조작 ${R.opts.easy ? '켬' : '끔'} · 자동 몸 맞추기 ${R.opts.autoBody ? '켬' : '끔'} · 누르기 ${R.opts.press ? '켬' : R.opts.linkPose && R.opts.poseAssist ? '켬(전신 연결에 포함)' : '끔'}${R.opts.keepHold ? ' · 비교: 잡은 손 유지' : ''} · 전신 연결 ${R.opts.linkPose ? '켬' : '끔'}${R.shadow === false || process.env.SHADOW === '0' ? ' · 그림자 끔(찍는 시간 때문)' : ''}`;
+// 입력의 출처(p3d-0.15.4, GPT의 0.15.3 검토 M5): 기록에 source가 없으면 끝 접촉 기록(end)이 있는 것 = 브라우저에서 기록한 키·마우스, 없는 것 = 명령 수준. 둘 다 사람 손이 아니다
+const SRC = R.source || (R.end ? 'keymouse' : 'command'), srcTxt = SRC === 'keymouse' ? '스크립트가 넣은 키·마우스 이벤트의 기록을 다시 재생(사람 손 아님)' : '명령 입력 재생(키·마우스를 거치지 않음, 사람 손 아님)', title = R.title || (/^stand_|누르기/.test(R.route) ? `장면 ${R.route}` : `짧은 구간(초록 시작 → 6) 경로 ${R.route}`);
 for (let k = 0; k < K1; k += EVERY) {
   const part = I.slice(k, k + EVERY);
   for (const p of part) for (const c of p.cmd || []) { lastCmd = c.type === 'hand' ? (c.i ? '우클릭(오른손 보내기)' : '좌클릭(왼손 보내기)') : c.type === 'foot' ? (c.i ? 'Shift+우클릭(오른발)' : 'Shift+좌클릭(왼발)') : c.type === 'release' ? (c.limb === 'hand' ? (c.i ? 'E(오른손 놓기)' : 'Q(왼손 놓기)') : '발 떼기') : c.type; cmdK = k; }
-  const lbl = `${ver} · ${R.clip ? '캡처 동작' : '자작 동작'} · 짧은 구간(초록 시작 → 6) 경로 ${R.route}${R.recover ? ' + 실패·복구' : ''} · 1배속 · 게임 시간 ${((k + part.length) / 120).toFixed(1)}초\n${optTxt}\n실제 키·마우스 이벤트를 기록한 입력의 다시 틀기(사람 손 아님) · 입력: ${keys(part[part.length - 1])}${k - cmdK < 100 ? ' · ' + lastCmd : ''}`;
+  const lbl = `${ver} · ${R.clip ? '캡처 동작' : '자작 동작'} · ${title}${R.recover ? ' + 실패·복구' : ''} · 1배속 · 게임 시간 ${((k + part.length) / 120).toFixed(1)}초\n${optTxt}\n${srcTxt} · 입력: ${keys(part[part.length - 1])}${k - cmdK < 100 ? ' · ' + lastCmd : ''}`;
   last = await pg.evaluate(([xs, lbl]) => { for (const x of xs) { for (const c of x.cmd || []) __p3.cmd(c); __p3.run(1, { ...x, cmd: [] }); } document.getElementById('lbl').textContent = lbl;
     const L = __p3.climb(); return { h: L.hands.map(h => h.st + (h.st === 'hold' ? ':' + h.box : '')), f: L.feet.map(f => f.st + (f.st === 'plant' ? ':' + f.box : '')) }; }, [part, lbl]);
   if (k < K0) continue;

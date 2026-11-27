@@ -2,7 +2,7 @@
 // **스크립트 입력이다(사람 손 아님).** 명령을 계산에 바로 넣어 단계마다 무엇이 되고 어디서 막히는지 적는다. 지형은 src/world.js의 '누르기 대'(기존 벽·코스는 그대로).
 // 단계마다: 결과, 몸 높이, 어깨가 손보다 높은 정도(가장 낮은 어깨 − 가장 높은 손), 팔의 상태(당김/누름·힘), 접촉, 사건. 끝에 요약.
 // 사용: [MODE=clip] [LINK=1(전신 연결 켬)] [PRESS=0] [FOOT=0(발 보조 끔 — 기본 끔: 직접 넣는 발만)] [RECIN=파일.json(다시 틀 입력)] node test/press_piece.mjs
-import { prov, provLine } from './provenance.mjs';
+import { prov, provLine, provOptLine } from './provenance.mjs';
 import fs from 'fs'; import path from 'path'; import { fileURLToPath, pathToFileURL } from 'url';
 const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pathToFileURL(path.join(HERE, '../src', f)).href);
 const { buildCharacter } = await imp('rig.js'), { makeGym } = await imp('world.js'), { makeSim } = await imp('sim.js'), { CL } = await imp('climb.js'), THREE = await import('three');
@@ -22,11 +22,11 @@ export function run(o = {}) {
     else if (kind === 'rel') { step(1, {}, [{ type: 'release', limb: 'hand', i: a }]); step(40); res = K.hands[a].st === 'free' ? '놓음' : '-'; }
     else { let why = ''; for (let k = 0; k < Math.round(a * 120); k++) { step(1, { cy: 1 }); why = K.upWhy || why; } step(40); res = `몸 ${(y0).toFixed(2)} → ${b.pos.y.toFixed(2)}m${why ? ' · 멈춘 까닭 ' + why : ''}`; }
     const s = state(); out.push({ step: kind === 'W' ? `W ${a}초` : label, res, ...s, ev: ev.slice(e0) }); }
-  step(120); return { out, end: state(), rec, opts: { handMode: 1, ...sim.opt } };
+  step(120); return { out, end: state(), rec, optLine: provOptLine(sim), opts: { handMode: 1, ...sim.opt } };
 }
 if (import.meta.url === pathToFileURL(process.argv[1]).href) { console.log(provLine(prov()));
-  const R = run({ link: E.LINK === '1', press: E.PRESS !== '0', footAssist: E.FOOT === '1' }); console.log(`누르기 시험 조각 · 전신 연결 ${E.LINK === '1' ? '켬' : '끔'} · 누르기 ${E.PRESS !== '0' ? '켬' : '끔'} · 발 보조 ${E.FOOT === '1' ? '켬' : '끔'} · ${E.MODE === 'clip' ? '캡처' : '자작'} 동작 · 스크립트 입력(사람 손 아님)`);
+  const R = run({ link: E.LINK === '1', press: E.PRESS !== '0', footAssist: E.FOOT === '1' }); console.log(R.optLine); console.log(`누르기 시험 조각 · 전신 연결 ${E.LINK === '1' ? '켬' : '끔'} · 누르기 ${E.PRESS !== '0' ? '켬' : '끔'} · 발 보조 ${E.FOOT === '1' ? '켬' : '끔'} · ${E.MODE === 'clip' ? '캡처' : '자작'} 동작 · 스크립트 입력(사람 손 아님)`);
   for (const o of R.out) { console.log(`  ${o.step}: ${o.res} · 몸 ${o.y.toFixed(2)}m · 어깨−손 ${o.over === null ? '-' : (o.over * 100).toFixed(0) + 'cm'} · 손 ${o.hands.join(' / ')} · 발 ${o.feet.join(' / ')}${o.on ? '' : o.ground ? ' · 지상(서 있음)' : ' · 공중'}`); if (E.EV) for (const e of o.ev) console.log('      · ' + e); }
   const pressed = R.out.some(o => o.over !== null && o.over > 0.05), onTop = R.out.some(o => o.feet.some(f => f.startsWith('누르기 대('))), stood = R.end.ground && R.end.y > 1.4;
   console.log(`요약: 어깨가 손 위로 5cm 넘게 올라감 ${pressed ? '예' : '아니오'} · 윗면에 발을 디딤 ${onTop ? '예' : '아니오'} · 윗면에 섬(끝의 몸 높이 ${R.end.y.toFixed(2)}m, ${R.end.on ? '벽 문맥' : R.end.ground ? '지상' : '공중'}) ${stood ? '예' : '아니오'}`);
-  if (E.RECIN) { const ver = /VERSION = '([^']+)'/.exec(fs.readFileSync(path.join(HERE, '../src/main.js'), 'utf8'))[1]; fs.writeFileSync(E.RECIN, JSON.stringify({ version: ver, clip: E.MODE === 'clip', route: '누르기 조각', recover: false, shadow: false, opts: R.opts, startPos: P.startPos, startYaw: P.startYaw, inputs: R.rec, end: null })); } }
+  if (E.RECIN) { const ver = /VERSION = '([^']+)'/.exec(fs.readFileSync(path.join(HERE, '../src/main.js'), 'utf8'))[1]; fs.writeFileSync(E.RECIN, JSON.stringify({ version: ver, clip: E.MODE === 'clip', route: '누르기 조각', source: 'command', recover: false, shadow: false, opts: R.opts, startPos: P.startPos, startYaw: P.startYaw, inputs: R.rec, end: null })); } }

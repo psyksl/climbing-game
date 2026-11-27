@@ -373,7 +373,11 @@ const assistOn = S => !!(S.opt && S.opt.grabAssist) && !globalThis.NOASSIST;
 // p3d-0.12.0 자세 보조(S.opt.poseAssist — 화면 기본 켬, 시험 기본 끔. NOPOSEASSIST = 끔): 거부될 손발을 위해 몸을 벽에서 빼 본다
 // POSEASSIST = 시험용: 옵션을 켜지 않은 시험 묶음 전체를 자세 보조 켬으로 돌려 본다
 // 새 자세 방식(전신 자세 풀이)에서만 일한다: 옛 규칙 자세(O 키)에서는 몸이 턱을 피해 기울지 않아 턱 여유를 늘 가장 크게 청했고(선 채로 24cm), 옆 벽의 턱이 3cm 모자라 거부됐다(다른 벽 시험 4 → 6 실패)
-const poseAssistOn = S => (!!(S.opt && S.opt.poseAssist) || !!globalThis.POSEASSIST) && !globalThis.NOPOSEASSIST && fbOn(S.climb);
+// 설정이 실제로 켜는 것(p3d-0.15.4, GPT의 0.15.3 검토 M4): 전신 연결은 누르기를 포함한다 — 누르기 설정이 꺼져 있어도 켜진다. 화면 표시(main.js)와 시험 기록(provenance)이 계산과 같은 식을 쓰게 한곳에 둔다.
+//   새 자세 방식(fb)이 실제로 돌고 있는지(fbOn)는 걸음마다의 상태라 여기에 넣지 않는다 — 아래 세 판정이 따로 본다
+export const optEffect = opt => { const o = opt || {}, poseAssist = (!!o.poseAssist || !!globalThis.POSEASSIST) && !globalThis.NOPOSEASSIST, link = (!!o.linkPose || !!globalThis.LINKPOSE) && !globalThis.NOLINKPOSE && poseAssist, pressSet = (!!o.press || !!globalThis.PRESSON) && !globalThis.NOPRESS;
+  return { poseAssist, link, pressSet, press: pressSet || link, pressByLink: link && !pressSet }; };
+const poseAssistOn = S => optEffect(S.opt).poseAssist && fbOn(S.climb);
 const outDir = S => V(-Math.sin(S.body.yaw), 0, -Math.cos(S.body.yaw)); // 벽에서 멀어지는 쪽(몸이 보는 쪽의 반대)
 // 지금보다 더 뺄 수 있는 거리: OUT_MAX까지, 그리고 잡은 손마다 당기는 방향(어깨 → 손의 반대)이 아래에서 OUT_GRIP 안에 남고 팔이 다 펴지지 않는 만큼. 잡은 손이 없으면 0(기댈 데가 없다)
 // 벽에서 떨어진 정도는 두 어깨의 가운데로 잰다: 가슴이 틀어져 한 어깨만 물러나 있으면(발을 옆 발판에 디딘 뒤의 자세) 그 어깨로 재면 여유가 0이 되어, 몸을 빼야 풀리는 자세에서 몸을 뺄 수 없었다
@@ -628,10 +632,10 @@ export function probeFoot(S, i, pt) {
 //   끌려가지 못한 새 손은 잡기를 거두고(같은 턱 규칙과 같은 처리), 버티지 못하는 방향으로 당겨지는 새 손은 보조 없는 규칙대로 미끄러진다. 놓기·뛰기를 시킨 것과 실제로 버티지 못해 미끄러지는 것은 그대로다
 const keepHoldOn = S => !!(S.opt && S.opt.keepHold) && !globalThis.NOKEEPHOLD;
 const CANCEL_WHY = '새 잡기를 취소했어요. 몸 위치를 바꿔 다시 시도하세요.';
-const pressOn = S => (((!!(S.opt && S.opt.press) || !!globalThis.PRESSON) && !globalThis.NOPRESS) || ((!!(S.opt && S.opt.linkPose) || !!globalThis.LINKPOSE) && !globalThis.NOLINKPOSE && poseAssistOn(S))) && fbOn(S.climb);
+const pressOn = S => optEffect(S.opt).press && fbOn(S.climb);
 // 전신 연결(p3d-0.15.3, S.opt.linkPose — 화면 켬·시험 끔. NOLINKPOSE = 끔. 자세 보조가 켜진 새 자세 방식에서만): GPT의 0.15.2 검토 작업 A "발과 몸통과 팔을 한 번에 연결하기".
 // LINKPOSE = 시험용: 옵션을 켜지 않은 시험 묶음 전체를 전신 연결 켬으로 돌려 본다(POSEASSIST와 같은 쓰임)
-const linkOn = S => (!!(S.opt && S.opt.linkPose) || !!globalThis.LINKPOSE) && !globalThis.NOLINKPOSE && poseAssistOn(S);
+const linkOn = S => optEffect(S.opt).link && fbOn(S.climb);
 const FB0 = new Float64Array(11);
 // 잡은 손마다: 곧게 선 몸(몸의 기준 자리에 세운 어깨 — 지금 자세로 재지 않는다)의 어깨가 손에서 FOLD_KEEP보다 가까워지지 않으려면 기준 자리가 벽 쪽으로 더 갈 수 있는 거리(음수 = 그만큼 벽에서 물러나야 한다)
 function foldRoom(S, hands, left, fwd) { const K = S.climb, b = S.body, g = fbFK(FB0, [0, 0, 0], 0), D = globalThis.FOLD_KEEP ?? CL.FOLD_KEEP; let room = 9;

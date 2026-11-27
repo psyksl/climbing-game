@@ -7,7 +7,7 @@ import { groundAt } from './world.js';
 import { makeBody, stepBody, PHY } from './controller.js';
 import { makeMotion, stepMotion, poseProc, measure } from './motion.js';
 import { makeClipSet, makeClipState, stepClip, poseClip } from './clipmotion.js';
-import { makeClimb, command, stepClimb, poseClimb, groundHands, outBlend, afterPose, torsoClear } from './climb.js';
+import { makeClimb, command, stepClimb, poseClimb, groundHands, outBlend, afterPose, torsoClear, optEffect } from './climb.js';
 import { DIM } from './rig.js';
 
 // clips = 캡처 동작 자료(없으면 null → 자작 모션만). S.useClip으로 두 모션을 바꾼다(자료가 있을 때만).
@@ -47,6 +47,8 @@ export function makeSim(rig, world, clips = null) {
     // p3d-0.10.2(사람형 몸): 놓은 손도 턱에서 멀어질 때까지 세운 모양을 둔다(손바닥이 모서리를 쓸고 지나가 놓은 직후 손이 턱에 31mm 들었다 — grip_check). 뻗는 손은 45cm 안에서 미리 세운다(30cm로는 잡기 0.1초 전에 13%밖에 세워지지 않았다)
     const Hh = K.hands[i], hb = DIM.grip, d = Hh.edge ? Hh.w.distanceTo(Hh.goal) : 9, gwT = st === 'hold' ? 1 : st === 'reach' && Hh.edge ? Math.min(1, Math.max(0, 1 - (d - 0.03) / (hb ? 0.42 : 0.27))) : hb && st === 'free' && Hh.edge ? Math.min(1, Math.max(0, 1 - (d - 0.03) / 0.12)) : 0;
     S.gw[i] += (gwT - S.gw[i]) * (1 - Math.exp(-(gwT > S.gw[i] ? 12 : 20) * dt)); } };
+  // 설정이 실제로 켜는 것(계산과 같은 식 — climb.js optEffect). 화면 표시와 시험 기록이 읽는다
+  S.effect = () => ({ ...optEffect(S.opt), posture: S.climb ? S.climb.post : null });
   S.reset();
   return S;
 }
