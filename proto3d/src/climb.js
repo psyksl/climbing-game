@@ -722,20 +722,22 @@ function planTick(S, inp) { const K = S.climb, G = globalThis;
     if (w.t > (G.PLAN_WAIT_MAX ?? 42)) { H.planWait = null; deny(S, H, 'hand', '자세 확인이 끝나지 않아 취소됨'); continue; }
     if (!want) want = { i: H.i, goal: w.goal, cmd: true, H, w }; }
   // 겨눈 목표(누르기 전): 두 손 가운데 아직 답이 없는 쪽부터
-  if (!want && inp && inp.look) { const g = resolveGrip(S.worldAll || S.world, V(...inp.look)); if (g) { const goal = anchorOf(g);
-      //   어느 손으로 누를지 모른다 → 답이 없는(또는 더 오래된) 손부터 번갈아. 걸림이 없던 답은 느슨한 범위 안이면 다시 계산하지 않는다(겨눈 쪽으로 자세가 따라가는 동안 한 손만 되풀이해 다른 손의 답이 끝내 안 나왔다)
-      let best = null; for (const H of K.hands) { if (!planApplies(S, H) || !K.hands.some(h => h.i !== H.i && h.st === 'hold') || (H.st === 'hold' && g.p.distanceTo(H.grip) < 0.04)) continue; const r = P.res[H.i], v = planGet(S, H.i, goal); if (v || planClear(planGet(S, H.i, goal, G.PLAN_LOOSE ?? 4))) continue; const age = r && r.goal.distanceToSquared(goal) < 1e-6 ? r.tick : -1; if (!best || age < best.age) best = { i: H.i, age }; }
+  //   겨눈 점 = 손 명령이 쓸 점(inp.aimHand — 쉬운 조작의 조준 맞춤을 거친 자리. 화면이 넘긴다). 없으면 inp.look(스크립트 입력은 겨눈 점과 명령의 점이 같다). 처음에는 look만 봤는데 화면에서는 맞춘 자리와 달라 미리 계산한 답이 명령의 목표와 어긋났다
+  //   겨눈 점이 그대로면 턱을 다시 찾지 않는다(걸음마다 지형 전체에서 찾으면 평소 한 걸음이 4ms대 → 6ms대가 됐다)
+  if (!want && inp && (inp.aimHand || inp.look)) { const ap = inp.aimHand || inp.look, A = P.aim; let g; if (A && Math.abs(A.p[0] - ap[0]) + Math.abs(A.p[1] - ap[1]) + Math.abs(A.p[2] - ap[2]) < 1e-4) g = A.g; else { g = resolveGrip(S.worldAll || S.world, V(...ap)); P.aim = { p: ap.slice(), g }; } if (g) { const goal = anchorOf(g);
+      //   어느 손으로 누를지 모른다 → 답이 없는(또는 더 오래된) 손부터 번갈아. 답이 느슨한 범위(PLAN_LOOSE) 안에 있으면 다시 계산하지 않는다 — 좁은 범위로 보면 숨·가만히 있을 때의 작은 움직임만으로 답이 낡아 겨누는 내내 되풀이 계산했다(평소 한 걸음 4ms대 → 6.5ms). 문턱 근처의 답은 어차피 누른 순간에 다시 계산한다
+      let best = null; for (const H of K.hands) { if (!planApplies(S, H) || !K.hands.some(h => h.i !== H.i && h.st === 'hold') || (H.st === 'hold' && g.p.distanceTo(H.grip) < 0.04)) continue; const r = P.res[H.i]; if (planGet(S, H.i, goal, G.PLAN_LOOSE ?? 4)) continue; const age = r && r.goal.distanceToSquared(goal) < 1e-6 ? r.tick : -1; if (!best || age < best.age) best = { i: H.i, age }; }
       if (best) { const J = P.job; want = J && !J.cmd && J.goal.distanceToSquared(goal) < 1e-6 && J.sig.key === planKey(S, J.i, J.goal) ? { i: J.i, goal, cmd: false } : { i: best.i, goal, cmd: false }; } } }
   if (!want) { P.job = null; return; }
   let J = P.job; const sameJob = J && J.i === want.i && J.goal.distanceToSquared(want.goal) < 1e-6 && (want.cmd ? J.cmd : !J.cmd) && J.sig.key === planKey(S, J.i, J.goal);
   if (!sameJob) { const sn = planSnap(S, want.i, want.goal), sig = planSig(S, want.i, want.goal);
     if (!sn) { const val = { act: 'go', a: null }; P.res[want.i] = { sig, goal: want.goal.clone(), val, units: 0, tick: K.tick }; P.job = null; if (want.cmd) send(want.H, want.w, val); return; }
     J = P.job = { i: want.i, goal: want.goal.clone(), sig, cmd: want.cmd, gen: planDecideG(S, want.i, want.goal, sn), units: 0 }; }
-  for (let n = want.cmd ? (G.PLAN_BUD_CMD ?? 12) : (G.PLAN_BUD ?? 6); n > 0; n--) { const r = J.gen.next(); J.units++; if (r.done) { P.res[J.i] = { sig: J.sig, goal: J.goal, val: r.value, units: J.units, tick: K.tick }; P.job = null; if (want.cmd) send(want.H, want.w, r.value); break; } } }
+  for (let n = want.cmd ? (G.PLAN_BUD_CMD ?? 12) : (G.PLAN_BUD ?? 4); n > 0; n--) { const r = J.gen.next(); J.units++; if (r.done) { P.res[J.i] = { sig: J.sig, goal: J.goal, val: r.value, units: J.units, tick: K.tick }; P.job = null; if (want.cmd) send(want.H, want.w, r.value); break; } } }
 // 미리보기도 같은 검사를 거친다(옵션 켬에서만): 눌렀을 때 손을 떼지 않고 거부될 자리는 "현재 자세에서 막힘"으로 보인다(미리보기와 실제 판정은 같은 함수).
 //   p3d-0.15.6: 계산하지 않고 유효한 답만 읽는다. 답이 아직 없으면 planWait = true(화면이 "자세 확인 중"을 보일 수 있다)
 export function probeHand(S, i, pt) { const r = probeHand0(S, i, pt);
-  if (r.ok && planApplies(S, S.climb.hands[i])) { const g = resolveGrip(S.worldAll || S.world, pt), goal = g ? anchorOf(g) : null, pl = goal ? planGet(S, i, goal) : null; if (pl && pl.act === 'deny') { r.ok = false; r.why = pl.why; r.plan = pl.kind; } else if (goal && !pl && S.climb.hands.some(h => h.i !== i && h.st === 'hold')) r.planWait = true; }
+  if (r.ok && planApplies(S, S.climb.hands[i])) { const g = resolveGrip(S.worldAll || S.world, pt), goal = g ? anchorOf(g) : null, pl = goal ? planGet(S, i, goal, globalThis.OLDPLANCACHE ? 1 : (globalThis.PLAN_LOOSE ?? 4)) : null; if (pl && pl.act === 'deny') { r.ok = false; r.why = pl.why; r.plan = pl.kind; } else if (goal && !pl && S.climb.hands.some(h => h.i !== i && h.st === 'hold')) r.planWait = true; }
   r.verdict = r.ok ? 'reach' : r.short !== undefined ? 'near' : r.grip ? 'block' : 'none'; return r; }
 function probeHand0(S, i, pt) {
   const g = resolveGrip(S.worldAll || S.world, pt), H = S.climb.hands[i];
