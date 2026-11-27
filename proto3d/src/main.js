@@ -15,7 +15,7 @@ import GALLERY from 'gallery-data'; // 동작 보기용 자료(받은 동작 전
 import { poseRaw } from './clipmotion.js';
 import { buildProps, makeSwingRope, applyGrips } from './demo.js'; // 캡처 동작 자료(빌드할 때 assets_local/clips.json이 있으면 들어온다. 없으면 null)
 
-export const VERSION = 'p3d-0.15.2';
+export const VERSION = 'p3d-0.15.3';
 const params = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: params.has('test') });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = !params.has('noshadow');
@@ -138,7 +138,9 @@ function readCommands() {
 // 클라이밍장에서는 코스의 시작 자리로(누를 때마다 다음 코스). 시점은 등 뒤에서 벽을 본다(옛 벽과 같은 0.25rad 비스듬히)
 let courseI = -1;
 function wallStart() { if (gal.on) galOpen(false);
-  if (world.gym) { courseI = (courseI + 1) % world.courses.length; const C = world.courses[courseI], n = C.frame.n; reset({ pos: C.startPos, yaw: C.startYaw }); cam.yaw = Math.atan2(n[0], n[2]) + 0.25; cam.pitch = 0.12; cam.dist = cam.eff = 3.6; cam.follow = null; cam.dirEff = null; cam.target.set(C.startPos[0], 1.3, C.startPos[2]); courseSelect(gym, C, sim.tick); return; }
+  // p3d-0.15.3: 코스를 다 돈 다음 한 번은 누르기 시험 조각(혼자 선 대) 앞이다(코스 선택 없음 = 자유 등반)
+  if (world.gym) { courseI = (courseI + 1) % (world.courses.length + (world.pressPiece ? 1 : 0)); if (courseI === world.courses.length) { const P = world.pressPiece; reset({ pos: P.startPos, yaw: P.startYaw }); cam.yaw = 0.25; cam.pitch = 0.12; cam.dist = cam.eff = 3.6; cam.follow = null; cam.dirEff = null; cam.target.set(P.startPos[0], 1.3, P.startPos[2]); courseSelect(gym, null, sim.tick); return; }
+    const C = world.courses[courseI], n = C.frame.n; reset({ pos: C.startPos, yaw: C.startYaw }); cam.yaw = Math.atan2(n[0], n[2]) + 0.25; cam.pitch = 0.12; cam.dist = cam.eff = 3.6; cam.follow = null; cam.dirEff = null; cam.target.set(C.startPos[0], 1.3, C.startPos[2]); courseSelect(gym, C, sim.tick); return; }
   reset({ pos: world.fixture ? [-0.45, 0, -2.58] : [-0.9, 0, -2.58], yaw: Math.PI }); cam.yaw = 0.25; cam.pitch = 0.12; cam.dist = cam.eff = 3.6; cam.follow = null; cam.dirEff = null; cam.target.set(-0.9, 1.3, -2.58); }
 // 누르는 동안 뻗던 손을 거둔다(B2): 시점 보기 전환·손 조작 방식 바꾸기·창이 가려지거나 포커스를 잃음. 새로 잡지 않고 다른 접촉은 그대로 둔다
 // p3d-0.8.3(GPT P1-A): 아직 읽지 않은 누름도 버린다. 단추를 누른 뒤 첫 화면 프레임이 오기 전에 마우스가 화면을 벗어나면, 취소할 때는 아직 뻗기(aim.held)가 없어 아무것도 하지 않고
