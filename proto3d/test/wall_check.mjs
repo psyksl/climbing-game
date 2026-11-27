@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import * as THREE from 'three';
 const __P = prov(); console.log(provLine(__P));
 const HERE = path.dirname(fileURLToPath(import.meta.url)), SRC = path.resolve(HERE, '../src'), imp = f => import(pathToFileURL(path.join(SRC, f)).href);
-const { buildCharacter, DIM } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { limbState, CL, probeHand, FSTAT } = await imp('climb.js'), { PHY } = await imp('controller.js'), clamp = THREE.MathUtils.clamp;
+const { buildCharacter, DIM, headEll } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { limbState, CL, probeHand, FSTAT } = await imp('climb.js'), { PHY } = await imp('controller.js'), clamp = THREE.MathUtils.clamp;
 const CLP = path.resolve(HERE, '../assets_local/clips.json'), useClip = process.env.MODE === 'clip';
 if (useClip && !fs.existsSync(CLP)) { console.log('clips.json 없음 → 건너뜀'); process.exit(0); }
 const clips = useClip ? JSON.parse(fs.readFileSync(CLP, 'utf8')) : null, rig = buildCharacter(), DT = PHY.DT, G = PHY.G;
@@ -286,7 +286,7 @@ check('벽 동작 전체(위의 모든 장면): 뼈의 한 걸음 회전량이 �
 // ── 20. 팔 교차와 몸 앞을 가로지르는 길(p3d-0.8.5): 손 조작 1. 목표와 다른 손의 접촉은 그대로 두고, 뻗는 팔이 제 머리·몸통을 비켜 간다. 가까운 교차(다른 손 15cm 너머)는 거부되지 않는다 ──
 // 재는 것: 팔뚝의 줄기(팔꿈치–손목 아홉 점)가 머리 타원체·가슴 상자에 든 걸음(arm_mesh와 같은 기준), 손목 표면(반지름 3.6cm)이 머리·가슴에 든 가장 깊은 깊이, 두 팔뚝 줄기 사이의 거리(자료 — 통과·실패로 보지 않는다)
 { const inv = new THREE.Matrix4(), HR = DIM.headR, wp = n => rig.bones[n].getWorldPosition(new THREE.Vector3()), loc = (p, bone, c) => p.clone().applyMatrix4(inv.copy(rig.bones[bone].matrixWorld).invert()).sub(new THREE.Vector3(...c));
-  const dHead = p => { const l = loc(p, 'head', [0, HR * 0.9, 0.01]); return (1 - Math.hypot(l.x / (HR * 0.9), l.y / (HR * 1.05), l.z / HR)) * HR * 0.9; }, dChest = p => { const l = loc(p, 'chest', [0, 0.11, 0.005]); return Math.min(0.18 - Math.abs(l.x), 0.12 - Math.abs(l.y), 0.105 - Math.abs(l.z)); };
+  const dHead = p => { const E = headEll(), l = loc(p, 'head', E.c); return (1 - Math.hypot(l.x / E.r[0], l.y / E.r[1], l.z / E.r[2])) * E.r[0]; }, dChest = p => { const l = loc(p, 'chest', [0, 0.11, 0.005]); return Math.min(0.18 - Math.abs(l.x), 0.12 - Math.abs(l.y), 0.105 - Math.abs(l.z)); };
   const segDist = (a0, a1, b0, b1) => { let m = 9; for (let i = 0; i <= 8; i++) for (let j = 0; j <= 8; j++) m = Math.min(m, a0.clone().lerp(a1, i / 8).distanceTo(b0.clone().lerp(b1, j / 8))); return m; };
   // 굵기 기준의 팔–팔 겹침(p3d-0.8.6): 뻗는 팔의 팔뚝(반지름 4.5 → 3.6cm)이 다른 팔의 팔뚝·위팔(5.5 → 4.5cm)에 겹친 깊이 = 두 반지름의 합 − 가운데 선 사이의 거리. 살이 눌리는 여유 1.2cm를 넘는 걸음을 센다
   const capOv = (a0, a1, ra0, ra1, b0, b1, rb0, rb1) => { let m = -9; for (let i = 0; i <= 10; i++) for (let j = 0; j <= 10; j++) m = Math.max(m, ra0 + (ra1 - ra0) * i / 10 + rb0 + (rb1 - rb0) * j / 10 - a0.clone().lerp(a1, i / 10).distanceTo(b0.clone().lerp(b1, j / 10))); return m; };

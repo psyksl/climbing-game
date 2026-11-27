@@ -654,7 +654,14 @@ export function planHand(S, i, pt) { const g = resolveGrip(S.worldAll || S.world
 // 돌려주는 값의 verdict(p3d-0.15.1 — 발 미리보기의 kind(윗면·벽면)와 다른 이름, GPT의 0.15.0 검토 — "닿지 않음"을 단정하지 않게 화면이 셋으로 나눠 보인다):
 //   'reach' = 지금 자세에서 닿는다 · 'near' = 거리만 모자란다(다가가거나 뛰면 닿을 수 있다 — short = 모자란 거리) · 'block' = 지금 자세에서는 길·제 몸·관절에 막힌다 · 'none' = 잡을 턱이 아니다
 //   sure는 "몸이 거의 멈춰 있다"(자세 기준이 곧 바뀌지 않는다)일 뿐, 결과를 확신한다는 뜻이 아니다. 'reach'라도 뻗는 동안 다른 팔·몸·턱에 막힐 수 있다(재 본 것: test/preview_check.mjs)
-export function probeHand(S, i, pt) { const r = probeHand0(S, i, pt); r.verdict = r.ok ? 'reach' : r.short !== undefined ? 'near' : r.grip ? 'block' : 'none'; return r; }
+// 뻗기 전 검사의 결과를 상태가 같으면 다시 계산하지 않는다(미리보기는 프레임마다 묻는다): 목표·몸의 자리·손발의 상태와 자리가 1mm 안에서 같으면 같은 답
+function planCached(S, i, goal) { const K = S.climb, b = S.body, f = v => `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`, key = `${i}|${f(goal)}|${f(b.pos)}|${b.yaw.toFixed(3)}|${K.hands.map(h => h.st + (h.st === 'hold' ? f(h.goal) : '')).join('|')}|${K.feet.map(x => x.st + (x.st === 'plant' && x.ank ? f(x.ank) : '')).join('|')}|${linkOn(S) ? 1 : 0}`;
+  if (K.planC && K.planC.key === key) return K.planC.val; const val = planDecide(S, i, goal); K.planC = { key, val }; return val; }
+const planApplies = (S, H) => planOn(S) && S.climb.on && H.st !== 'reach' && !jumping(S) && S.body.vel.length() < 0.3;
+// 미리보기도 같은 검사를 거친다(옵션 켬에서만): 눌렀을 때 손을 떼지 않고 거부될 자리는 "현재 자세에서 막힘"으로 보인다(미리보기와 실제 판정은 같은 함수)
+export function probeHand(S, i, pt) { const r = probeHand0(S, i, pt);
+  if (r.ok && planApplies(S, S.climb.hands[i])) { const g = resolveGrip(S.worldAll || S.world, pt), pl = g ? planCached(S, i, anchorOf(g)) : null; if (pl && pl.act === 'deny') { r.ok = false; r.why = pl.why; r.plan = pl.kind; } }
+  r.verdict = r.ok ? 'reach' : r.short !== undefined ? 'near' : r.grip ? 'block' : 'none'; return r; }
 function probeHand0(S, i, pt) {
   const g = resolveGrip(S.worldAll || S.world, pt), H = S.climb.hands[i];
   if (!g) return { ok: false, why: '잡을 수 있는 턱이 아님', sure: true };
@@ -736,7 +743,7 @@ export function command(S, c) {
       H.armP = c.p.slice(); }
     // 뻗기 전 검사(p3d-0.15.5, 옵션 — 기본 끔): 가만히 있고 다른 손이 버티고 있을 때, 손을 떼기 전에 그 뻗기가 버티는 손을 제 몸에 걸리게 하는지 본다(planDecide). 잡던 자리로 돌아가는 손(H.st === 'reach')에는 걸지 않는다
     //   거부는 놓기가 아니다 — 두 손이 그대로 남는다. 쉬운 조작에서 거리가 모자란 것이면 먼 턱처럼 예약으로 기다린다(몸을 옮기면 잡는다)
-    if (planOn(S) && K.on && H.st !== 'reach' && !jumping(S) && S.body.vel.length() < 0.3) { const pl = planDecide(S, c.i, goal); K.planLast = { tick: K.tick, i: c.i, act: pl.act, kind: pl.kind || '', ms: (pl.a ? pl.a.ms : 0) + (pl.g ? pl.g.ms : 0) };
+    if (planApplies(S, H)) { const pl = planCached(S, c.i, goal); K.planLast = { tick: K.tick, i: c.i, act: pl.act, kind: pl.kind || '', ms: (pl.a ? pl.a.ms : 0) + (pl.g ? pl.g.ms : 0) };
       if (pl.act !== 'go' || pl.after) note(S, 'plan', 'hand', c.i, pl.act === 'deny' ? (pl.kind === 'far' ? '닿지 않고 뻗으면 버티는 손이 풀림 → 뻗지 않음' : '뻗는 동안 버티는 손이 풀림 → 뻗지 않음') : pl.act === 'guard' ? '버티는 팔을 지키며 뻗음' : '잡은 뒤 먼저 잡은 손이 풀릴 수 있음', { act: pl.act, lose: pl.a.lose, when: pl.a.when, at: pl.a.t, jamWhy: pl.a.why, far: pl.a.far });
       if (pl.act === 'deny' && pl.kind === 'far') { const pr = probeHand(S, c.i, pt); if (!pr.ok && pr.short !== undefined && pr.why) pl.why = pr.why; }
       if (pl.act === 'deny') { if (pl.kind === 'far' && armOn(S) && !c.armed && pl.a.far <= CL.ARM_MAX) { H.arm = { p: c.p.slice(), t: 0, short: Math.max(pl.a.far, 0), jump: false, tried: false, why: pl.why }; H.why = ''; H.armP = null; note(S, 'arm', 'hand', c.i, `닿으면 잡음(${short(Math.max(pl.a.far, 0))} 모자람)`); } else deny(S, H, 'hand', pl.why); return; }

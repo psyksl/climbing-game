@@ -5,9 +5,12 @@ import { prov, provLine } from './provenance.mjs'; import fs from 'fs';
 const { runCase } = await import('./support_trace.mjs'); console.log(provLine(prov()));
 const CASES = [['green', 0, '초록 5', 1], ['green', 0, '초록 발7', 1], ['green', 0, '초록 발8', 0], ['green', 1, '초록 발8', 0], ['green', 0, '홀드 4', 0], ['yellow', 0, '노랑 3', 0]];
 const VAR = []; for (const w of [10, 30, 60]) for (const [dx, dy] of [[0, 0], [0.06, 0], [-0.06, 0], [0, 0.06], [0, -0.06]]) VAR.push({ wait: w, dx, dy });
-const CFG = [['끔', { link: false }, {}], ['0.15.3 켬', { link: true }, { NOHELDCLR: 1 }], ['0.15.4 켬', { link: true }, {}], ['실험: 바닥 규칙도 켬', { link: true }, { FLOORROOM: 1 }]], out = process.env.OUT ? fs.createWriteStream(process.env.OUT) : null;
+// p3d-0.15.5: 뻗기 전 검사(plan) 켬을 끔·켬에 하나씩 더하고, EASY=1이면 모든 설정을 쉬운 조작 켬(화면 기본)으로 잰다. 결과를 넷으로 나눠 적는다:
+//   버티던 손 풀림 / 새 손 잡음 / 둘 다 유지 / 손을 떼지 않고 거부(뻗기 전 검사가 막음 — 닿지 않는 목표를 못 잡은 것은 실패가 아니다)
+const EASY = process.env.EASY === '1';
+const CFG = [['끔', { link: false }, {}], ['끔 + 뻗기 전 검사', { link: false, plan: true }, {}], ['0.15.3 켬', { link: true }, { NOHELDCLR: 1 }], ['전신 연결 켬', { link: true }, {}], ['전신 연결 켬 + 뻗기 전 검사', { link: true, plan: true }, {}]], out = process.env.OUT ? fs.createWriteStream(process.env.OUT) : null;
 for (const [course, d, hold, hand] of CASES) { const line = [];
-  for (const [name, o, sw] of CFG) { for (const k of ['FLOORROOM', 'NOHELDCLR']) delete globalThis[k]; Object.assign(globalThis, sw); let lost = 0, got = 0, both = 0;
-    for (const v of VAR) { const R = runCase({ course, d, hold, hand, n: 240, ...o, ...v }); if (R.lost) lost++; if (R.got) got++; if (R.got && !R.lost) both++; if (out) out.write(JSON.stringify({ course, d, hold, hand, cfg: name, ...v, got: R.got, lost: R.lost, pr: R.pr, why: (R.ev.find(e => e.type === 'slip') || {}).why || '' }) + '\n'); }
-    line.push(`${name}: 버티던 손 풀림 ${lost}/${VAR.length} · 새 손 잡음 ${got} · 둘 다 ${both}`); }
-  console.log(`${course} d${d} ${hold} ${hand ? '오른손' : '왼손'} | ` + line.join(' | ')); }
+  for (const [name, o, sw] of CFG) { for (const k of ['FLOORROOM', 'NOHELDCLR']) delete globalThis[k]; Object.assign(globalThis, sw); let lost = 0, got = 0, both = 0, den = 0, ms = 0, msN = 0;
+    for (const v of VAR) { const R = runCase({ course, d, hold, hand, n: EASY ? 420 : 240, easy: EASY, ...o, ...v }), pe = R.ev.filter(e => e.type === 'plan'), dn = pe.some(e => /뻗지 않음/.test(e.why)); if (R.lost) lost++; if (R.got) got++; if (R.got && !R.lost) both++; if (dn) den++; if (out) out.write(JSON.stringify({ course, d, hold, hand, cfg: name, ...v, easy: EASY, got: R.got, lost: R.lost, denied: dn, plan: pe.map(e => e.why), pr: R.pr, rel: R.ev.filter(e => e.type === 'release' || e.type === 'slip').map(e => `${e.name} ${e.why}`), why: (R.ev.find(e => e.type === 'slip') || {}).why || '' }) + '\n'); }
+    line.push(`${name}: 버티던 손 풀림 ${lost}/${VAR.length} · 새 손 잡음 ${got} · 둘 다 ${both} · 떼지 않고 거부 ${den}`); }
+  console.log(`${course} d${d} ${hold} ${hand ? '오른손' : '왼손'}${EASY ? ' (쉬운 조작 켬)' : ''}\n    ` + line.join('\n    ')); }

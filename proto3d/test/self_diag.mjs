@@ -2,14 +2,14 @@
 //   어디가 드는지(팔뚝의 어느 몫, 머리/가슴), 그때의 손목·팔꿈치·어깨·몸 자리, 손목 자체가 몸 안인지를 적는다.   사용: node test/self_diag.mjs
 import path from 'path'; import { fileURLToPath, pathToFileURL } from 'url'; import fs from 'fs'; import * as THREE from 'three';
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src'), imp = f => import(pathToFileURL(path.join(SRC, f)).href);
-const { buildCharacter, DIM } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { _dbg } = await imp('climb.js'), { twoBone } = await imp('ik.js');
+const { buildCharacter, DIM, headEll } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { _dbg } = await imp('climb.js'), { twoBone } = await imp('ik.js');
 const rig = buildCharacter(), HR = DIM.headR; let sim;
 const run = (n, inp = {}, cmd = null) => { for (let i = 0; i < n; i++) sim.step({ mx: 0, mz: 0, ...inp, cmd: i === 0 && cmd ? cmd : [] }); };
 const AL = [-1.1, 1.92, -2.84], AR = [-0.7, 1.92, -2.84], pts = [[-0.78, 1.55, -3.0], [-0.78, 2.25, -3.0], [-0.95, 1.5, -3.0], [-0.6, 2.3, -3.0], [-0.78, 2.03, -3.0], [-0.5, 1.6, -3.0], [-0.72, 2.06, -3.0]], P = k => pts[Math.floor(k / 60) % pts.length];
 const holdL = () => { run(30); run(150, {}, [{ type: 'hand', i: 0, p: AL }]); }, both = () => { holdL(); run(150, {}, [{ type: 'hand', i: 1, p: AR }]); };
 const inv = new THREE.Matrix4(), f = v => v.toArray().map(x => (x * 100).toFixed(0)).join(',');
 const loc = (p, bone, c) => p.clone().applyMatrix4(inv.copy(rig.bones[bone].matrixWorld).invert()).sub(new THREE.Vector3(...c));
-const dHead = p => { const l = loc(p, 'head', [0, HR * 0.9, 0.01]); return (1 - Math.hypot(l.x / (HR * 0.9), l.y / (HR * 1.05), l.z / HR)) * HR * 0.9; };
+const dHead = p => { const E = headEll(), l = loc(p, 'head', E.c); return (1 - Math.hypot(l.x / E.r[0], l.y / E.r[1], l.z / E.r[2])) * E.r[0]; };
 const dChest = p => { const l = loc(p, 'chest', [0, 0.11, 0.005]); return Math.min(0.18 - Math.abs(l.x), 0.12 - Math.abs(l.y), 0.105 - Math.abs(l.z)); };
 function scene(name, setup, step, steps) { sim = makeSim(rig, makeWorld(), null); sim.reset({ pos: [-0.9, 0, -2.58], yaw: Math.PI }); setup(); let last = -99, n = 0;
   for (let k = 0; k < steps; k++) { const s = step(k); run(1, s.inp, s.cmd); const H = sim.climb.hands[1]; if (H.st !== 'reach') continue; rig.root.updateMatrixWorld(true);

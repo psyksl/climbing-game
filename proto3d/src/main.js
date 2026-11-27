@@ -386,6 +386,11 @@ window.__p3 = {
     const snap = () => { if (sim.tick % every) return; out.push({ k: sim.tick, vel: body.vel.toArray(), climb: JSON.stringify(limbState(sim.climb)), pos: body.pos.toArray(), bones: rig.list.map(b => { b.updateWorldMatrix(true, false); return new THREE.Vector3().setFromMatrixPosition(b.matrixWorld).toArray(); }), modes: sim.motion.legs.map(L => L.mode), plants: sim.motion.legs.map(L => L.plant.toArray()) }); };
     try { for (const d of frameDts) { if (sim.tick >= inputs.length) break; frameCore(d, null, snap); } } finally { tickInput = null; acc = 0; } return out; },
   // 시험용 한 장: 시점을 몸 기준으로 바로 놓고 그린다(멈춘 채 찍을 때). off = 몸이 보는 쪽 기준 시점 각도
+  // 시험·영상용(p3d-0.15.5, GPT의 0.15.4 검토 — "최종 메시 화면 범위로 검사"): 지금 그려진 몸 메시(스키닝을 적용한 꼭짓점 전부)의 화면 범위 [왼, 위, 오른, 아래](CSS 픽셀). 옛 몸은 뼈대의 상자로 잰다
+  bodyRect() { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, n = 0; const v = new THREE.Vector3(), put = () => { const q = v.project(camera), x = (q.x + 1) / 2 * innerWidth, y = (1 - q.y) / 2 * innerHeight; x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); n++; };
+    if (human) { human.root.updateMatrixWorld(true); for (const m of human.meshes) { const P = m.geometry.attributes.position; for (let i = 0; i < P.count; i++) { m.getVertexPosition(i, v); v.applyMatrix4(m.matrixWorld); put(); } } }
+    else { rig.root.updateMatrixWorld(true); for (const k in rig.bones) { rig.bones[k].getWorldPosition(v); put(); } }
+    return { r: [x0, y0, x1, y1], n, vw: innerWidth, vh: innerHeight }; },
   shot(o = {}) { cam.yaw = body.yaw + (o.off ?? Math.PI / 2); cam.pitch = o.pitch ?? 0.1; cam.dist = cam.eff = o.dist ?? 3.2; cam.follow = null; cam.dirEff = null; if (o.at) cam.target.set(o.at[0], o.at[1], o.at[2]); else cam.target.set(body.pos.x, body.pos.y + (o.h ?? 0.95), body.pos.z); updateCamera(0); draw(); drawHud(fpsS); },
   boneNames: () => rig.list.map(b => b.name),
   galleryList: () => GALLERY ? gal.names.map(n => ({ name: n, cat: GALLERY.clips[n].cat, kind: GALLERY.clips[n].kind, dur: GALLERY.clips[n].dur, holds: (GALLERY.clips[n].holds || []).length })) : null,

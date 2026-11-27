@@ -7,7 +7,7 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import * as THREE from 'three';
 const HERE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), P3 = process.argv[2] ? path.resolve(process.argv[2]) : HERE, imp = f => import(pathToFileURL(path.join(P3, 'src', f)).href);
-const { buildCharacter, DIM } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js');
+const { buildCharacter, DIM, headEll } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js');
 const CLP = path.join(HERE, 'assets_local/clips.json'), useClip = process.env.MODE === 'clip' && fs.existsSync(CLP), clips = useClip ? JSON.parse(fs.readFileSync(CLP, 'utf8')) : null;
 const rig = buildCharacter(), G = rig.mesh.geometry, pos = G.attributes.position, si = G.attributes.skinIndex, sw = G.attributes.skinWeight;
 // 팔뚝·위팔 뼈의 영향을 조금이라도(1% 넘게) 받는 정점 = 팔 통의 표면 전체(손목 끝의 둥근 마감 포함. 이 부분은 손 뼈의 몫이 더 커서 "절반 넘게"로 고르면 빠진다 — GPT의 가장 깊은 정점이 여기였다)
@@ -27,7 +27,7 @@ const inv = new THREE.Matrix4(), lp = new THREE.Vector3(), HR = DIM.headR;
 function selfDepth() { rig.root.updateMatrixWorld(true); let deep = 0, where = ''; const a = new THREE.Vector3(), w = new THREE.Vector3();
   sim.climb.hands.forEach((h, i) => { if (h.st !== 'reach') return; const sd = i ? 'R' : 'L'; rig.bones[`foreArm.${sd}`].getWorldPosition(a); rig.bones[`hand.${sd}`].getWorldPosition(w);
     for (let k = 0; k <= 8; k++) { tmp.copy(a).lerp(w, k / 8);
-    lp.copy(tmp).applyMatrix4(inv.copy(rig.bones.head.matrixWorld).invert()).sub(new THREE.Vector3(0, HR * 0.9, 0.01)); { const r = Math.hypot(lp.x / (HR * 0.9), lp.y / (HR * 1.05), lp.z / HR), d = (1 - r) * HR * 0.9; if (d > deep) { deep = d; where = '머리'; } }
+    lp.copy(tmp).applyMatrix4(inv.copy(rig.bones.head.matrixWorld).invert()).sub(new THREE.Vector3(...headEll().c)); { const E = headEll(), r = Math.hypot(lp.x / E.r[0], lp.y / E.r[1], lp.z / E.r[2]), d = (1 - r) * E.r[0]; if (d > deep) { deep = d; where = '머리'; } }
     lp.copy(tmp).applyMatrix4(inv.copy(rig.bones.chest.matrixWorld).invert()).sub(new THREE.Vector3(0, 0.11, 0.005)); { const d = Math.min(0.18 - Math.abs(lp.x), 0.12 - Math.abs(lp.y), 0.105 - Math.abs(lp.z)); if (d > deep) { deep = d; where = '가슴'; } } } });
   return { deep, where }; }
 let selfWorst = { deep: 0, where: '', at: '' }, selfBad = 0, selfSeen = 0;
