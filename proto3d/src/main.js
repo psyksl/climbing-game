@@ -15,7 +15,7 @@ import GALLERY from 'gallery-data'; // 동작 보기용 자료(받은 동작 전
 import { poseRaw } from './clipmotion.js';
 import { buildProps, makeSwingRope, applyGrips } from './demo.js'; // 캡처 동작 자료(빌드할 때 assets_local/clips.json이 있으면 들어온다. 없으면 null)
 
-export const VERSION = 'p3d-0.15.5';
+export const VERSION = 'p3d-0.15.6';
 const params = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: params.has('test') });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = !params.has('noshadow');
@@ -46,7 +46,7 @@ loadKeys();
 const input = makeInput(renderer.domElement);
 const pending = []; // 다음 계산 걸음에 한 번만 들어갈 명령(손발 보내기·놓기)
 // 고를 수 있는 조작 설정(저장됨). handMode 1 = 눌러 보내기, 2 = 누르는 동안 뻗기(떼면 잡기). footAssist = 발 보조(간편 조작). diag = 진단 정보. helpAll = 조작표 모두 보기
-const OPT = { handMode: 1, grabAssist: true, poseAssist: true, easy: true, autoBody: true, keepHold: false, press: true, linkPose: false, planReach: false, footAssist: true, wallRest: false, diag: false, helpAll: false, helpFold: true, dev: false, oldPose: false };
+const OPT = { handMode: 1, grabAssist: true, poseAssist: true, easy: true, autoBody: true, keepHold: false, press: true, linkPose: false, planReach: false, autoGuard: false, footAssist: true, wallRest: false, diag: false, helpAll: false, helpFold: true, dev: false, oldPose: false };
 // 조작표 접힘(p3d-0.15.5: 새 프로필의 기본 = 접힘). 저장된 값은 사용자가 K로 직접 고른 것(helpFoldSet)일 때만 따른다 — 0.15.3·0.15.4는 고르지 않아도 기본값(펼침)을 저장했다
 try { const sv = JSON.parse(localStorage.getItem('p3dOpt_v1') || '{}'); if (!sv.helpFoldSet) delete sv.helpFold; Object.assign(OPT, sv); } catch (e) { OPT.handMode = 1; }
 // 비교 후보(p3d-0.15.2): ?keep=1 = 보조가 먼저 잡은 손을 놓지 않음(기본 끔. 키를 새로 두지 않는다 — GPT의 0.15.1 재검토). 저장된 설정보다 주소가 먼저다
@@ -55,6 +55,8 @@ if (params.has('keep')) OPT.keepHold = params.get('keep') !== '0';
 if (params.has('link')) OPT.linkPose = params.get('link') !== '0';
 // 뻗기 전 검사(p3d-0.15.5, 비교 후보 — 기본 끔, 키 없음): ?plan=1
 if (params.has('plan')) OPT.planReach = params.get('plan') !== '0';
+// 자동 이동 보호(p3d-0.15.6, 비교 후보 — 기본 끔, 키 없음): ?guard=1
+if (params.has('guard')) OPT.autoGuard = params.get('guard') !== '0';
 // 비교 스위치(p3d-0.15.4, 견주는 영상·시험용): ?sw=NOHELDCLR,FOLD_KEEP=0.3 → 계산의 전역 비교 스위치를 켠다(시험의 환경 변수와 같은 이름). 화면 위쪽에 켠 스위치를 적는다
 const SW_URL = (params.get('sw') || '').split(',').filter(Boolean); for (const k of SW_URL) { const [a, v] = k.split('='); if (/^[A-Z][A-Z0-9_]*$/.test(a)) globalThis[a] = v === undefined ? 1 : +v; }
 // 개발 모드(p3d-0.15.3): F2 또는 ?dev — 개발 키(잡기 보정 U·자세 보조 Y·누르기 P·전신 연결 9·벽 딛기 J·몸 자세 O·진단 I·뼈대 B·느리게 N·모션 M·동작 보기 G)는 이때만 듣는다. 진단 정보도 이때만 보인다
@@ -68,7 +70,7 @@ const OLDRISE_URL = /[?&]oldrise\b/.test(location.search); if (OLDRISE_URL) glob
 const FOOTX = /[?&]footx\b/.test(location.search); if (FOOTX) setKeys('footMod', ['KeyX'], false);
 const saveOpt = () => { if (MANUAL) return; try { localStorage.setItem('p3dOpt_v1', JSON.stringify(OPT)); } catch (e) { return; } };
 // 계산이 읽는 설정은 이 한곳에서만 옮긴다(p3d-0.15.3: 다섯 군데에 흩어져 있어 새 설정을 빠뜨리기 쉬웠다)
-function syncOpt() { for (const k of ['footAssist', 'grabAssist', 'poseAssist', 'easy', 'autoBody', 'keepHold', 'press', 'linkPose', 'planReach', 'wallRest']) sim.opt[k] = OPT[k]; sim.climb.oldPose = OPT.oldPose; DIAG = !!(OPT.dev && DIAG); input.setDev(OPT.dev); }
+function syncOpt() { for (const k of ['footAssist', 'grabAssist', 'poseAssist', 'easy', 'autoBody', 'keepHold', 'press', 'linkPose', 'planReach', 'autoGuard', 'wallRest']) sim.opt[k] = OPT[k]; sim.climb.oldPose = OPT.oldPose; DIAG = !!(OPT.dev && DIAG); input.setDev(OPT.dev); }
 syncOpt();
 let viewMode = false, cxSign = 1; // viewMode = 시점 보기 모드(조작 멈춤). cxSign = 몸 좌우 입력을 화면에서 보이는 쪽으로 맞추는 부호
 const aim = { world: null, held: [null, null], foot: [false, false], tap: [false, false] }; // 겨눈 자리(세계 좌표). 마우스를 움직이지 않는 동안에는 화면이 저절로 움직여도 이 자리를 그대로 겨눈다
@@ -220,6 +222,10 @@ function drawHelp() {
     + (conflicts().length ? `<span class=warn>겹친 입력: ${conflicts().map(c => keyName(c.key)).join(', ')}</span>` : '');
 }
 // 손발 이름표·미리보기(임시 표시. 모양·문구는 GPT 검토 대상). 색만이 아니라 글·기호로 상태를 구분한다
+// 손 보내기가 거부된 까닭의 플레이 문구(p3d-0.15.6, GPT의 0.15.5 검토 02_UI_FEEDBACK — 시안 반영, 사용자 확정 아님): [까닭, 힌트]. 자세한 까닭·cm는 개발 모드에서만 보인다(예측과 실제의 거리 오차가 커서 확정 수치처럼 내세우지 않는다)
+const HAND_WHY = why => (/^닿지 않음/.test(why) ? ['지금은 손이 닿지 않아요.', ''] : /자세 확인/.test(why) ? ['자세 확인이 끝나지 않았어요.', '다시 눌러 보세요.'] : /막|걸려|지나감|꺾이지|돌아가지|등지고/.test(why) ? ['지금 자세에서는 팔이 막혀요.', '몸이나 발 위치를 바꿔 보세요.'] : null);
+// 목표 자리의 짧은 반응(거부 · 예약 · 계산 중) — 손 이름표(tags[0·1])와 따로 둔다
+const fbTag = (() => { const d = document.createElement('div'); d.className = 'tag'; document.body.appendChild(d); return d; })();
 const tags = [0, 1, 2, 3, 4].map(() => { const d = document.createElement('div'); d.className = 'tag'; document.body.appendChild(d); return d; });
 const mark = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), new THREE.MeshBasicMaterial({ color: '#ffffff', depthTest: false, transparent: true, opacity: 0.9 })); mark.renderOrder = 9; mark.visible = false; scene.add(mark);
 // 진단 표시(임시): 하중과 그 손발이 지금 낼 수 있는 한계를 함께 적는다(둘 다 몸무게의 배수. 하중 ÷ 한계가 아니다 — GPT Reply07 5장)
@@ -229,13 +235,18 @@ const mark = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), new THREE.Mes
 const LOADT = (x, arm) => (DIAG ? ` <i>${arm ? `당김 ${(x.act || 0).toFixed(2)} · 편 팔 버팀 ${(x.pas || 0).toFixed(2)} · 고른 값 ${(x.loadS || 0).toFixed(2)} · 당김 한계 ${x.cap > 1e-3 ? x.cap.toFixed(2) : '0(더 못 냄)'}` : `미는 힘 ${(x.load || 0).toFixed(2)} · 고른 값 ${(x.loadS || 0).toFixed(2)} · 미는 한계 ${x.cap > 1e-3 ? x.cap.toFixed(2) : '0(더 못 냄)'}`}</i>` : '');
 function drawTags() {
   const K = sim.climb, put = (d, p, html, cls, dx = 10) => { const s = screenOf(p); d.style.display = s.front ? 'block' : 'none'; d.style.left = `${s.x + dx}px`; d.style.top = `${s.y - 10}px`; d.className = `tag ${cls}`; d.innerHTML = html; };
-  tags.forEach(d => { d.style.display = 'none'; }); mark.visible = false;
+  tags.forEach(d => { d.style.display = 'none'; }); fbTag.style.display = 'none'; mark.visible = false;
   if (gal.on) return;
   // 두 손이 가까우면 이름표를 좌우로 벌린다(왼손은 왼쪽으로)
   const near = K.hands.every(h => h.st !== 'free') && (() => { const a = screenOf(K.hands[0].st === 'hold' ? K.hands[0].grip : K.hands[0].goal), b = screenOf(K.hands[1].st === 'hold' ? K.hands[1].grip : K.hands[1].goal); return Math.abs(a.y - b.y) < 22 && Math.abs(a.x - b.x) < 150; })();
   // 취소 알림(임시 모양·문구): 뻗던 손을 거둔 뒤 0.9초 동안 그 손 자리에 한 번만 보인다(뻗는 표시는 이미 사라졌다). 놓기·실패와 다른 기호를 쓴다
   { const now = sim.tick / 120; for (let k = K.log.length - 1; k >= 0 && now - K.log[k].t < 0.9; k--) { const e = K.log[k]; if (e.type === 'cancel' && e.limb === 'hand' && K.hands[e.i].st === 'free') { put(tags[e.i], rig.bones[`hand.${e.i ? 'R' : 'L'}`].getWorldPosition(new THREE.Vector3()), `⤺ ${e.name} 보내기 취소`, 'pv'); break; } } }
-  K.hands.forEach((h, i) => { const n = i ? '오른손' : '왼손', dx = near && !i ? -112 : 10; const ARMT = h.arm ? ' · <b>◌ 예약: 닿으면 잡음 — 다가가거나 뛰기</b>' : ''; if (h.st === 'hold') put(tags[i], h.grip, `● ${n} 잡고 있음${LOADT(h, true)}${ARMT}`, i ? 'R' : 'L', dx); else if (h.st === 'free' && h.arm) put(tags[i], h.arm.p, `◌ ${n} 예약: 닿으면 잡음 — 다가가거나 뛰기`, i ? 'R' : 'L', dx); else if (h.st === 'reach') put(tags[i], h.w, (h.drag ? `◌ ${n} 뻗는 중${h.edge ? ' · 떼면 잡기' : ''}` : `→ ${n} 보내는 중`) + (h.swivel ? ` · <b>⤴ 팔꿈치 돌리는 중 ${'◜◝◞◟'[Math.floor(sim.tick / 10) % 4]}</b>` : (h.blockT || 0) > 0.12 ? ' · <b>⤬ 팔 경로 막힘</b>' : (h.stopB && (h.selfBlock || 0) > 0.12) ? ' · <b>⤬ 몸에 막힘</b>' : (h.stopA && (h.armCross || 0) > 0.12) ? ' · <b>⤬ 다른 팔에 막힘</b>' : h.auto ? ' · <b>몸을 옮겨 닿는 중</b>' : ''), i ? 'R' : 'L', dx); });
+  K.hands.forEach((h, i) => { const n = i ? '오른손' : '왼손', dx = near && !i ? -112 : 10; const ARMT = h.arm ? ' · <b>◌ 예약</b>' : ''; if (h.st === 'hold') put(tags[i], h.grip, `● ${n} 잡고 있음${LOADT(h, true)}${ARMT}`, i ? 'R' : 'L', dx); else if (h.st === 'free' && h.arm) put(tags[i], h.arm.p, `◌ ${n} 예약 · 닿으면 잡아요.`, i ? 'R' : 'L', dx); else if (h.st === 'reach') put(tags[i], h.w, (h.drag ? `◌ ${n} 뻗는 중${h.edge ? ' · 떼면 잡기' : ''}` : `→ ${n} 보내는 중`) + (h.swivel ? ` · <b>⤴ 팔꿈치 돌리는 중 ${'◜◝◞◟'[Math.floor(sim.tick / 10) % 4]}</b>` : (h.blockT || 0) > 0.12 ? ' · <b>⤬ 팔 경로 막힘</b>' : (h.stopB && (h.selfBlock || 0) > 0.12) ? ' · <b>⤬ 몸에 막힘</b>' : (h.stopA && (h.armCross || 0) > 0.12) ? ' · <b>⤬ 다른 팔에 막힘</b>' : h.auto ? ' · <b>몸을 옮겨 닿는 중</b>' : ''), i ? 'R' : 'L', dx); });
+  // 목표 자리의 반응(p3d-0.15.6, 시안): ① 거부 = 그 손 색의 표식이 0.15초 밝게 반응하고 1초쯤 까닭을 보인다(손은 그대로 붙어 있다 — 손을 떼었다 다시 잡는 몸짓을 넣지 않는다) ② 잡은 채의 예약 = 목표에 작은 대기 표식 ③ 계산이 0.1초 넘게 걸리면 "자세 확인 중"(금방 끝나면 깜빡이지 않게 보이지 않는다)
+  { const now = sim.tick / 120; let done = false;
+    for (let k = K.log.length - 1; k >= 0 && now - K.log[k].t < 1.0 && !done; k--) { const e = K.log[k]; if (e.type !== 'reject' || e.limb !== 'hand') continue; const w = HAND_WHY(e.why); let tr = null; for (let j = k - 1; j >= 0 && e.t - K.log[j].t < 3; j--) if (K.log[j].type === 'try' && K.log[j].limb === 'hand' && K.log[j].i === e.i && K.log[j].p) { tr = K.log[j]; break; }
+      if (w && tr) { put(fbTag, new THREE.Vector3(...tr.p), `⤬ <b>막힘</b> · ${w[0]}`, (e.i ? 'R' : 'L') + (now - e.t < 0.15 ? ' flash' : ''), 14); done = true; } }
+    if (!done) for (const h of K.hands) { if (h.planWait && h.planWait.t > 12) { put(fbTag, new THREE.Vector3(...h.planWait.p), '… 자세 확인 중', h.i ? 'R' : 'L', 14); break; } if (h.st === 'hold' && h.arm) { put(fbTag, new THREE.Vector3(...h.arm.p), `◌ ${h.i ? '오른손' : '왼손'} · 닿으면 잡아요.`, h.i ? 'R' : 'L', 14); break; } } }
   const nearF = K.feet.every(f => f.st !== 'free') && (() => { const a = screenOf(K.feet[0].p), b = screenOf(K.feet[1].p); return Math.abs(a.y - b.y) < 22 && Math.abs(a.x - b.x) < 150; })();
   K.feet.forEach((f, i) => { const n = i ? '오른발' : '왼발', dx = nearF && !i ? -112 : 10; if (f.st === 'plant' && !(f.auto && f.box.kind === 'floor' && !DIAG)) put(tags[2 + i], f.p, (f.loadS || 0) > 0.05 ? `▲ ${n} 디딤${LOADT(f, false)}` : `△ ${n} 닿아만 있음`, i ? 'R' : 'L', dx); else if (f.st === 'move') put(tags[2 + i], f.p, `→ ${n} 보내는 중${f.byAssist ? '(보조)' : ''}`, i ? 'R' : 'L', dx); });
   // 미리보기: 겨눈 자리를 지금 자세에서 잡을(디딜) 수 있는지. 실제 판정과 같은 함수. 몸이 움직이는 중이면 확정처럼 보이지 않게 "?"를 붙인다
@@ -269,7 +280,7 @@ function stateName() {
 }
 // 개발 항목의 설정(잡기 보정·자세 보조·누르기·전신 연결): 개발 모드에서는 모두 보인다. 그 밖에는 기본값(앞의 셋 켬·전신 연결 끔)과 다른 것만 굵게 보인다 — 키가 숨어 있어도 기본이 아닌 상태로 하고 있다는 것은 알 수 있게(p3d-0.15.3, 임시)
 // p3d-0.15.4(GPT의 0.15.3 검토 M4·UI 시안 — 사용자 확정 아님): 저장한 설정이 아니라 **실제로 적용되는 것**을 보인다(sim.effect = 계산과 같은 식). 전신 연결은 누르기를 포함하므로 누르기 설정이 꺼져 있어도 "누르기 끔"이라고 쓰지 않는다
-const DEV_OPT = [['grabAssist', '잡기 보정', true], ['poseAssist', '자세 보조', true], ['press', '누르기', true], ['linkPose', '전신 연결(시험)', false], ['planReach', '뻗기 전 검사(시험)', false]];
+const DEV_OPT = [['grabAssist', '잡기 보정', true], ['poseAssist', '자세 보조', true], ['press', '누르기', true], ['linkPose', '전신 연결(시험)', false], ['planReach', '뻗기 전 검사(시험)', false], ['autoGuard', '자동 이동 보호(시험)', false]];
 const devState = k => { const e = sim.effect(); return k === 'linkPose' ? (e.link ? '켬 · 누르기 포함' : OPT.linkPose ? '끔(자세 보조가 꺼져 있어 적용되지 않음)' : '끔') : k === 'press' ? (e.pressByLink ? '· 전신 연결에 포함' : e.press ? '켬' : '끔') : OPT[k] ? '켬' : '끔'; };
 const devDiff = ([k, , d]) => (k === 'press' ? sim.effect().press !== d : k === 'linkPose' ? !!OPT.linkPose !== d : !!OPT[k] !== d);
 const devLine = () => (OPT.dev ? DEV_OPT.map(([k, n]) => ` &nbsp; ${n} ${devState(k)}`).join('') + ' &nbsp; <span class=badge>개발 모드</span>' : DEV_OPT.filter(devDiff).map(([k, n]) => ` &nbsp; <b>${n} ${devState(k)}</b>`).join(''));
@@ -279,6 +290,9 @@ const UP_KO = { leg: ['다리가 뻗는 한계에 닿았어요.', '손이나 발
 const sideKo = n => (/왼/.test(n || '') ? '왼발' : /오른/.test(n || '') ? '오른발' : '발'), FC_KO = { rise: '몸이 올라가 다리가 닿지 않음', reach: '몸이 옮겨 가 다리가 닿지 않음', joint: '다리가 꺾이는 한계', physics: '디딘 자리가 버티지 못함' };
 // 발 기록(GPT 시안): 일반 화면 = 무슨 일이 났는지 한 줄(지지가 풀린 것과 몸이 떨어지는 것을 구분한다), 개발 모드 = 홀드 이름·누가 디뎠는지·까닭까지
 const footLog = e => (e.type === 'lift' && e.placed === 'user' && e.fcause !== 'command' ? `${sideKo(e.name)} 지지가 풀렸어요.${OPT.dev ? ` <span class=dim>${e.hold} · 직접 선택 · ${FC_KO[e.fcause] || e.why}</span>` : ''}` : e.type === 'step' && e.assist ? `발 보조 · ${sideKo(e.name)}을 디뎠어요.${OPT.dev ? ` <span class=dim>${e.box} · 발 보조</span>` : ''}` : null);
+// 일반 화면의 손 기록(p3d-0.15.6): 거부 = 까닭 + 힌트, 예약 = "닿으면 잡아요." 같은 거부를 이어 누르면 줄을 쌓지 않고 횟수만 붙인다. 개발 모드에서는 원래 문구(까닭·cm)를 그대로 보인다
+const handLog = e => { if (OPT.dev || e.limb !== 'hand') return ''; if (e.type === 'arm') return `${e.name} · 닿으면 잡아요.`; if (e.type !== 'reject') return ''; const w = HAND_WHY(e.why); if (!w) return ''; const L = sim.climb.log; let n = 0; for (let k = L.length - 1; k >= 0; k--) { const x = L[k]; if (x.type === 'try' || x.type === 'plan' || x.type === 'guard') continue; if (x.type === 'reject' && x.limb === 'hand' && x.i === e.i && HAND_WHY(x.why) && HAND_WHY(x.why)[0] === w[0]) n++; else break; }
+  return `${e.name} · <span class=warn>${w[0]}</span>${w[1] ? ' ' + w[1] : ''}${n > 1 ? ` (${n}번)` : ''}`; };
 const LOG_KO = { cancel: '취소', grab: '잡음', reject: '거부', release: '놓음', slip: '놓침', step: '디딤', lift: '발이 떨어짐', enter: '벽 등반 시작', exit: '벽 등반 끝', bump: '부딪힘', push: '도약 힘주기 시작', pushEnd: '도약 힘주기 끝', assist: '잡기 보정', arm: '예약', auto: '자동', wstop: '몸 위로 멈춤' };
 // 임시 표시(진단 정보): 최근 300프레임의 실행 성능. 게임 시간 ÷ 실제 시간이 100%보다 낮으면 게임이 실제보다 느리게 가고 있는 것이다(느리게 ×0.25를 켜면 25%)
 function perfLine() { const w = perfWin(); return w ? `<div class=dim>실행(최근 ${w.n}프레임) ${w.fps.toFixed(0)} fps · 가장 긴 프레임 ${w.maxMs.toFixed(0)}ms · CPU 계산 시간 ${w.stepMs.toFixed(1)}ms/프레임 · 화면 갱신 처리 시간 ${w.drawMs.toFixed(1)}ms/프레임(그리기 호출까지. 그래픽 카드의 전체 비용이 아니다) · 게임 시간 ÷ 실제 시간 ${(w.simRatio * 100).toFixed(0)}% · 버린 시간 ${w.drop.toFixed(2)}초(전체 ${PERF.drop.toFixed(2)}초)</div>` : ''; }
@@ -295,7 +309,7 @@ function drawHud(fps) {
     + (K.on && K.upWhy && UP_KO[K.upWhy] ? `<div class=warn>${UP_KO[K.upWhy][0]} <span class=dim>${UP_KO[K.upWhy][1]}</span></div>` : '')
     + (K.on ? `<div><b>손</b> ${K.hands.map((h, i) => `${i ? '오른손' : '왼손'} ${h.st === 'hold' ? `잡음(${h.edge.box.name}${DIAG ? `, 몸무게의 ${(h.loadS || 0).toFixed(1)}배` : ''})` : h.st === 'reach' ? '보내는 중' : '놓음'}`).join(' · ')}</div><div><b>발</b> ${K.feet.map((f, i) => `${i ? '오른발' : '왼발'} ${f.st === 'plant' ? ((f.loadS || 0) > 0.05 ? `디딤(${f.box.name}${DIAG ? `, ${(f.loadS || 0).toFixed(1)}배` : ''})` : `닿아만 있음(${f.box.name})`) : f.st === 'move' ? '보내는 중' : '떠 있음'}`).join(' · ')}</div>`
       : `<div><b>발</b> ${sim.motion.legs.map((L, i) => `${L.s === 'L' ? '왼발' : '오른발'} ${footName(L, i)}`).join(' · ')}</div>`)
-    + `<div class=log>${K.log.filter(e => e.type !== 'try' && !(e.box === '바닥' && e.auto) && !(e.type === 'lift' && /범위/.test(e.why) && e.placed !== 'user')).slice(OPT.dev ? -5 : -1).map(e => `<span class=t>${e.t.toFixed(2)}초</span> ${footLog(e) || `${LOG_KO[e.type] || e.type}${e.name ? ' ' + e.name : ''}${e.box ? ' · ' + e.box : ''}${e.why ? ' · ' + (e.type === 'wstop' ? (UP_KO[e.why] ? UP_KO[e.why][0] : e.why) : e.why) : ''}${e.keptGrip ? ' 현재 잡기를 유지했어요.' : ''}`}`).join('<br>')}</div>`
+    + `<div class=log>${K.log.filter(e => e.type !== 'try' && (OPT.dev || !/^(plan|guard)$/.test(e.type)) && !(e.box === '바닥' && e.auto) && !(e.type === 'lift' && /범위/.test(e.why) && e.placed !== 'user')).slice(OPT.dev ? -5 : -1).map(e => `<span class=t>${e.t.toFixed(2)}초</span> ${footLog(e) || handLog(e) || `${LOG_KO[e.type] || e.type}${e.name ? ' ' + e.name : ''}${e.box ? ' · ' + e.box : ''}${e.why ? ' · ' + (e.type === 'wstop' ? (UP_KO[e.why] ? UP_KO[e.why][0] : e.why) : e.why) : ''}${e.keptGrip ? ' 현재 잡기를 유지했어요.' : ''}`}`).join('<br>')}</div>`
     + (DIAG ? perfLine() : '')
     + (DIAG ? `<div class=dim>지지 구간 최대 이탈 ${(st.stanceMaxDev * 1000).toFixed(2)} mm · 다리 뻗음 최대 ${(st.maxRatio * 100).toFixed(0)}% · ${fps.toFixed(0)} fps</div>` : '')
     + `<div class=${slow ? 'slow' : 'real'}>${slow ? '느리게 ×0.25' : '실제 속도'}</div>`;
