@@ -2,7 +2,7 @@
 // 화면 기본 설정 그대로(지형·옵션·그림자를 건드리지 않는다. SHADOW=0이면 그림자 끔 대조). 구간 = 초록 시작1·2 → 3·4 → 5 → 6(두 손), 발은 초록 발 홀드.
 // 넣는 것: T(코스 시작 자리), 좌클릭·우클릭(손), Shift+클릭(발), W 누르고 있기, Q·E(손 놓기). 단계마다 상태가 정해질 때까지 기다린다(사람이 보고 기다리듯이).
 // 입력은 계산 걸음마다 기록해(__p3.recStart) 파일로 남긴다 → test/short_video.mjs가 같은 입력을 한 걸음씩 다시 틀어 1배속 영상으로 찍는다.
-// 사용: [MODE=clip] [ROUTE=a|b|c|d] [RECOVER=1(실패·취소·복구 장면을 끼움)] [KEEP=1] OUT=입력.json node test/short_browser.mjs
+// 사용: [MODE=clip] [ROUTE=a|b|c|d] [RECOVER=1(실패·취소·복구 장면을 끼움)] [KEEP=1] [LINK=1] [PLAN=1] [GUARD=1] [VIDEO=폴더(실제 시간 녹화)] OUT=입력.json node test/short_browser.mjs
 import fs from 'fs'; import path from 'path'; import crypto from 'crypto'; import { fileURLToPath, pathToFileURL } from 'url'; import { createRequire } from 'module';
 const HERE = path.dirname(fileURLToPath(import.meta.url)), require = createRequire(import.meta.url), { chromium } = require('playwright'), THREE = await import('three');
 const { makeGym } = await import(pathToFileURL(path.join(HERE, '../src/world.js')).href), { ROUTES } = await import(pathToFileURL(path.join(HERE, 'short_section.mjs')).href);
@@ -10,8 +10,8 @@ const E = process.env, clip = E.MODE === 'clip', build = E.BUILD || path.join(HE
 const world = makeGym(), C = world.courses.find(c => c.id === 'green'), n = new THREE.Vector3(...C.frame.n), box = nm => world.boxes.find(b => b.name === nm);
 const front = (b, du = 0, dy = 0) => { const c = b.min.clone().add(b.max).multiplyScalar(0.5), half = Math.abs(n.x) * (b.max.x - b.min.x) / 2 + Math.abs(n.z) * (b.max.z - b.min.z) / 2; return c.addScaledVector(n, half).setY(b.max.y + dy).add(new THREE.Vector3(du, 0, 0)).toArray(); };
 let fails = 0; const log = [], say = s => { log.push(s); console.log(s); }, check = (name, ok, d = '') => { say(`${ok ? 'PASS' : 'FAIL'}  ${name} ${d}`); if (!ok) fails++; };
-const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }), pg = await b.newPage({ viewport: { width: 1280, height: 760 } }), errs = []; pg.on('pageerror', e => errs.push(e.message));
-{ const q = [E.SHADOW === '0' ? 'noshadow' : '', E.KEEP === '1' ? 'keep=1' : '', E.LINK === '1' ? 'link=1' : E.LINK === '0' ? 'link=0' : ''].filter(Boolean); await pg.goto('file://' + build + (q.length ? '?' + q.join('&') : '')); } await pg.waitForTimeout(2500);
+const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }), pg = await b.newPage({ viewport: { width: 1280, height: 760 }, ...(E.VIDEO ? { recordVideo: { dir: E.VIDEO, size: { width: 1280, height: 760 } } } : {}) }), errs = []; pg.on('pageerror', e => errs.push(e.message));
+{ const q = [E.SHADOW === '0' ? 'noshadow' : '', E.KEEP === '1' ? 'keep=1' : '', E.LINK === '1' ? 'link=1' : E.LINK === '0' ? 'link=0' : '', E.PLAN === '1' ? 'plan=1' : '', E.GUARD === '1' ? 'guard=1' : ''].filter(Boolean); await pg.goto('file://' + build + (q.length ? '?' + q.join('&') : '')); } await pg.waitForTimeout(2500);
 const P = (f, a) => pg.evaluate(f, a), tick = () => P(() => __p3.tick()), st = () => P(() => { const L = __p3.climb(); return { h: L.hands.map(h => ({ st: h.st, box: h.box || '', why: h.why || '', arm: !!h.arm })), f: L.feet.map(f => ({ st: f.st, box: f.box || '', why: f.why || '' })), y: __p3.body().pos[1], t: __p3.tick() }; });
 const untilTicks = async k => { const t0 = await tick(); for (let i = 0; i < 400; i++) { await pg.waitForTimeout(40); if (await tick() - t0 >= k) return; } };
 const opts = await P(() => __p3.opt()), ver = await P(() => __p3.VERSION);
@@ -59,4 +59,6 @@ say(`수동으로 디딘 발이 그 자리에 있지 않게 된 것 ${changed.le
 say(`거부·풀림: ${steps.flatMap(s => s.ev).filter(e => / reject | deny | slip |\[(assist|cancel|body|physics)\]/.test(e)).join(' | ') || '없음'}`);
 check('페이지 오류 없음', !errs.length, errs.join(' / '));
 if (E.OUT) fs.writeFileSync(E.OUT, JSON.stringify({ version: ver, build: path.basename(build), sha256: crypto.createHash('sha256').update(fs.readFileSync(build)).digest('hex'), clip, route: RT, source: 'keymouse', recover: E.RECOVER === '1', shadow: E.SHADOW !== '0', opts, startPos: C.startPos, startYaw: C.startYaw, ok, steps, changed, end: { h: end.h, f: end.f }, inputs: rec, log }));
+// VIDEO=폴더(p3d-0.15.6, GPT 추가 전달문 6절 "현재 UI가 켜진 실제 시간 영상"): 이 실행의 화면을 실제 시간 그대로 녹화한다(프레임을 강제로 공급하지 않는다 — 이 기계의 그리기 속도가 그대로 찍힌다)
+if (E.VIDEO) { const v = pg.video(); await pg.close(); if (v) say('실제 시간 녹화 ' + await v.path()); }
 await b.close(); say(`실패 ${fails} · 기록한 계산 걸음 ${rec.length}(${(rec.length / 120).toFixed(1)}초)`); process.exit(fails ? 1 : 0);

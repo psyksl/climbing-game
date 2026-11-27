@@ -634,8 +634,9 @@ const planF3 = v => `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`;
 function planKey(S, i, goal) { const K = S.climb, e = optEffect(S.opt), G = globalThis;
   return [i, planF3(goal), K.hands.map(h => h.st + (h.st === 'hold' ? planF3(h.goal) : '')).join('/'), K.feet.map(x => x.st + (x.st === 'plant' && x.ank ? planF3(x.ank) : '')).join('/'), +e.link, +e.poseAssist, +e.press, +assistOn(S), G.NOHELDCLR ? 1 : 0, G.PLAN_LOSE ?? '', G.PLAN_T2 ?? '', G.PLAN_FULL ? 1 : 0, G.OLDHEADE ? 1 : 0, G.HEADE_K ?? '', G.OLDAIMBODY ? 1 : 0, G.OLDPLANAIM ? 1 : 0].join('|'); }
 function planSig(S, i, goal) { const b = S.body, K = S.climb, fb = K.fb; return { key: planKey(S, i, goal), pos: [b.pos.x, b.pos.y, b.pos.z], yaw: b.yaw, look: [K.pz.lookY, K.pz.lookP, K.pz.twist], x: Float64Array.from(fb.x), xs: Float64Array.from(fb.xs), v: Float64Array.from(fb.v) }; }
-function planSame(sig, S, i, goal) { const b = S.body, fb = S.climb.fb, Z = S.climb.pz, T = PLAN_TOL; if (!sig || sig.key !== planKey(S, i, goal)) return false;
-  if (Math.abs(sig.look[0] - Z.lookY) > 2 * T.ang || Math.abs(sig.look[1] - Z.lookP) > 2 * T.ang || Math.abs(sig.look[2] - Z.twist) > T.ang) return false;
+function planSame(sig, S, i, goal, k = 1) { const b = S.body, fb = S.climb.fb, Z = S.climb.pz, T = { pos: PLAN_TOL.pos * k, ang: PLAN_TOL.ang * k, vel: k > 1 ? 9 : PLAN_TOL.vel }; if (!sig || sig.key !== planKey(S, i, goal)) return false;
+  // 머리가 보는 쪽은 예측이 목표를 보는 각으로 다시 세우므로(planReachG) 표식에 넣지 않는다 — OLDPLANAIM에서만 본다
+  if ((globalThis.OLDPLANAIM && (Math.abs(sig.look[0] - Z.lookY) > 2 * T.ang || Math.abs(sig.look[1] - Z.lookP) > 2 * T.ang)) || Math.abs(sig.look[2] - Z.twist) > T.ang) return false;
   if (Math.abs(sig.pos[0] - b.pos.x) > T.pos || Math.abs(sig.pos[1] - b.pos.y) > T.pos || Math.abs(sig.pos[2] - b.pos.z) > T.pos || Math.abs(sig.yaw - b.yaw) > T.ang) return false;
   for (let a = 0; a < sig.x.length; a++) { const tol = a === FBI.PX || a === FBI.PY || a === FBI.PZ ? T.pos : T.ang; if (Math.abs(sig.x[a] - fb.x[a]) > tol || Math.abs(sig.xs[a] - fb.xs[a]) > tol || Math.abs(sig.v[a] - fb.v[a]) > T.vel) return false; }
   return true; }
@@ -701,13 +702,15 @@ export function planFresh(S, i, pt) { const g = resolveGrip(S.worldAll || S.worl
 const planApplies = (S, H) => planOn(S) && S.climb.on && H.st !== 'reach' && !jumping(S) && S.body.vel.length() < 0.3;
 const planBox = K => K.plan || (K.plan = { res: [null, null], job: null });
 // 지금 상태에 유효한 답(없으면 null). 계산하지 않는다 — 미리보기와 명령이 함께 읽는다
-function planGet(S, i, goal) { const K = S.climb, P = planBox(K);
+function planGet(S, i, goal, k = 1) { const K = S.climb, P = planBox(K);
   if (globalThis.OLDPLANCACHE) { const b = S.body, key = `${i}|${planF3(goal)}|${planF3(b.pos)}|${b.yaw.toFixed(3)}|${K.hands.map(h => h.st + (h.st === 'hold' ? planF3(h.goal) : '')).join('|')}|${K.feet.map(x => x.st + (x.st === 'plant' && x.ank ? planF3(x.ank) : '')).join('|')}|${linkOn(S) ? 1 : 0}`; if (!(K.planC && K.planC.key === key)) K.planC = { key, val: planDecide(S, i, goal) }; return K.planC.val; }
-  const r = P.res[i]; return r && planSame(r.sig, S, i, goal) ? r.val : null; }
+  const r = P.res[i]; return r && planSame(r.sig, S, i, goal, k) ? r.val : null; }
 // 미리 계산해 둔 답을 명령이 그대로 써도 되는가: 걸림이 한 번도 나오지 않은 "그대로 보냄"만(문턱 근처의 답은 상태가 조금만 달라도 뒤집힌다 → 누른 순간의 상태로 다시 계산한다). PLAN_NOFAST = 늘 다시 계산
+//   걸림이 전혀 없던 답은 문턱에서 멀다 → 자세가 조금 더 달라져도(PLAN_TOL의 PLAN_LOOSE배: 기본 4배 = 1.2cm·2.3°) 그대로 쓴다. 겨눈 뒤 가슴·머리가 겨눈 쪽으로 따라가는 동안에도 미리 계산한 답이 쓰이게(없으면 겨누고 바로 누를 때마다 몇 걸음을 기다린다). PLAN_AUDIT = 그렇게 쓴 답을 그 자리에서 새로 계산한 답과 견주어 센다(시험용)
 const planClear = v => !globalThis.PLAN_NOFAST && v && v.act === 'go' && !v.after && (!v.a || Math.max(...v.a.jam) < 1e-9);
 // 고정 계산 걸음마다 한 번(stepClimb의 처음): 기다리는 명령과 겨눈 목표의 예측을 정해진 양만큼 진행한다
-//   기다리는 명령의 작업은 **누른 순간의 상태**로 끝까지 굴린다(그사이 몸·자세가 조금 움직여도 다시 시작하지 않는다 — 손발의 상태나 옵션이 바뀌면 다시 시작한다). 겨눈 목표의 작업은 상태가 표식에서 벗어나면 버리고 다시 시작한다
+//   작업은 **시작한 순간의 상태**로 끝까지 굴린다(그사이 몸·자세가 조금 움직여도 다시 시작하지 않는다 — 손발의 상태나 옵션이 바뀌면 다시 시작한다). 답을 쓸 때 그때의 상태와 맞는지 본다.
+//   (처음에는 겨눈 목표의 작업을 자세가 벗어날 때마다 버리고 다시 시작했다 — 겨눈 쪽으로 가슴이 따라가는 0.5초 동안 한 번도 끝나지 못했다)
 function planTick(S, inp) { const K = S.climb, G = globalThis;
   if (!K.on || !planOn(S) || G.OLDPLANCACHE) { if (K.plan) K.plan.job = null; for (const H of K.hands) { const w = H.planWait; if (w) { H.planWait = null; command(S, { type: 'hand', i: H.i, p: w.p, armed: w.armed, planned: true }); } } return; }
   const P = planBox(K); let want = null;
@@ -720,13 +723,15 @@ function planTick(S, inp) { const K = S.climb, G = globalThis;
     if (!want) want = { i: H.i, goal: w.goal, cmd: true, H, w }; }
   // 겨눈 목표(누르기 전): 두 손 가운데 아직 답이 없는 쪽부터
   if (!want && inp && inp.look) { const g = resolveGrip(S.worldAll || S.world, V(...inp.look)); if (g) { const goal = anchorOf(g);
-      for (const H of K.hands) { if (!planApplies(S, H) || !K.hands.some(h => h.i !== H.i && h.st === 'hold') || (H.st === 'hold' && g.p.distanceTo(H.grip) < 0.04) || planGet(S, H.i, goal)) continue; want = { i: H.i, goal, cmd: false }; break; } } }
+      //   어느 손으로 누를지 모른다 → 답이 없는(또는 더 오래된) 손부터 번갈아. 걸림이 없던 답은 느슨한 범위 안이면 다시 계산하지 않는다(겨눈 쪽으로 자세가 따라가는 동안 한 손만 되풀이해 다른 손의 답이 끝내 안 나왔다)
+      let best = null; for (const H of K.hands) { if (!planApplies(S, H) || !K.hands.some(h => h.i !== H.i && h.st === 'hold') || (H.st === 'hold' && g.p.distanceTo(H.grip) < 0.04)) continue; const r = P.res[H.i], v = planGet(S, H.i, goal); if (v || planClear(planGet(S, H.i, goal, G.PLAN_LOOSE ?? 4))) continue; const age = r && r.goal.distanceToSquared(goal) < 1e-6 ? r.tick : -1; if (!best || age < best.age) best = { i: H.i, age }; }
+      if (best) { const J = P.job; want = J && !J.cmd && J.goal.distanceToSquared(goal) < 1e-6 && J.sig.key === planKey(S, J.i, J.goal) ? { i: J.i, goal, cmd: false } : { i: best.i, goal, cmd: false }; } } }
   if (!want) { P.job = null; return; }
-  let J = P.job; const sameJob = J && J.i === want.i && J.goal.distanceToSquared(want.goal) < 1e-6 && (want.cmd ? J.cmd && J.sig.key === planKey(S, J.i, J.goal) : !J.cmd && planSame(J.sig, S, J.i, J.goal));
+  let J = P.job; const sameJob = J && J.i === want.i && J.goal.distanceToSquared(want.goal) < 1e-6 && (want.cmd ? J.cmd : !J.cmd) && J.sig.key === planKey(S, J.i, J.goal);
   if (!sameJob) { const sn = planSnap(S, want.i, want.goal), sig = planSig(S, want.i, want.goal);
-    if (!sn) { const val = { act: 'go', a: null }; P.res[want.i] = { sig, goal: want.goal.clone(), val, units: 0 }; P.job = null; if (want.cmd) send(want.H, want.w, val); return; }
+    if (!sn) { const val = { act: 'go', a: null }; P.res[want.i] = { sig, goal: want.goal.clone(), val, units: 0, tick: K.tick }; P.job = null; if (want.cmd) send(want.H, want.w, val); return; }
     J = P.job = { i: want.i, goal: want.goal.clone(), sig, cmd: want.cmd, gen: planDecideG(S, want.i, want.goal, sn), units: 0 }; }
-  for (let n = want.cmd ? (G.PLAN_BUD_CMD ?? 12) : (G.PLAN_BUD ?? 4); n > 0; n--) { const r = J.gen.next(); J.units++; if (r.done) { P.res[J.i] = { sig: J.sig, goal: J.goal, val: r.value, units: J.units }; P.job = null; if (want.cmd) send(want.H, want.w, r.value); break; } } }
+  for (let n = want.cmd ? (G.PLAN_BUD_CMD ?? 12) : (G.PLAN_BUD ?? 6); n > 0; n--) { const r = J.gen.next(); J.units++; if (r.done) { P.res[J.i] = { sig: J.sig, goal: J.goal, val: r.value, units: J.units, tick: K.tick }; P.job = null; if (want.cmd) send(want.H, want.w, r.value); break; } } }
 // 미리보기도 같은 검사를 거친다(옵션 켬에서만): 눌렀을 때 손을 떼지 않고 거부될 자리는 "현재 자세에서 막힘"으로 보인다(미리보기와 실제 판정은 같은 함수).
 //   p3d-0.15.6: 계산하지 않고 유효한 답만 읽는다. 답이 아직 없으면 planWait = true(화면이 "자세 확인 중"을 보일 수 있다)
 export function probeHand(S, i, pt) { const r = probeHand0(S, i, pt);
@@ -816,7 +821,8 @@ export function command(S, c) {
       H.armP = c.p.slice(); }
     // 뻗기 전 검사(p3d-0.15.5, 옵션 — 기본 끔): 가만히 있고 다른 손이 버티고 있을 때, 손을 떼기 전에 그 뻗기가 버티는 손을 제 몸에 걸리게 하는지 본다(planDecide). 잡던 자리로 돌아가는 손(H.st === 'reach')에는 걸지 않는다
     //   거부는 놓기가 아니다 — 두 손이 그대로 남는다. 쉬운 조작에서 거리가 모자란 것이면 먼 턱처럼 예약으로 기다린다(몸을 옮기면 잡는다)
-    if (planApplies(S, H) && !(c.planned && !c.planVal)) { let pl = c.planVal || planGet(S, c.i, goal); if (!c.planVal && !globalThis.OLDPLANCACHE && !planClear(pl)) pl = null;
+    if (planApplies(S, H) && !(c.planned && !c.planVal)) { let pl = c.planVal || planGet(S, c.i, goal, globalThis.OLDPLANCACHE ? 1 : (globalThis.PLAN_LOOSE ?? 4)); if (!c.planVal && !globalThis.OLDPLANCACHE && !planClear(pl)) pl = null;
+      if (pl && !c.planVal && globalThis.PLAN_AUDIT) { const fr = planDecide(S, c.i, goal), A = K.planAudit || (K.planAudit = { n: 0, bad: 0 }); A.n++; if (fr.act !== pl.act) { A.bad++; note(S, 'plan', 'hand', c.i, `미리 계산한 답 ${pl.act} ≠ 새 답 ${fr.act}`); } }
       // 바로 쓸 답이 없다(아직 계산 중이거나, 미리 계산한 답이 문턱 근처다) → 손을 떼지 않은 채 기다린다(planTick이 누른 순간의 상태로 걸음마다 계산해 답이 나온 걸음에 이 명령을 다시 넣는다)
       if (!pl) { H.planWait = { p: c.p.slice(), goal: goal.clone(), armed: !!c.armed, st: H.st, t: 0 }; H.why = ''; return; }
       K.planLast = { tick: K.tick, i: c.i, act: pl.act, kind: pl.kind || '', units: (pl.a ? pl.a.units : 0) + (pl.g ? pl.g.units : 0), waited: K.planWaited || 0 };
