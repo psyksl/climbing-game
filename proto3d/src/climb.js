@@ -8,7 +8,7 @@ import { groundAt, pushOut, rayHit } from './world.js';
 import { PHY } from './controller.js';
 import { aimBone, setWorldQuat, twoBone, worldPos } from './ik.js';
 import { featOf, lookup } from './refpose.js';
-import { fk as fbFK, makeFB, stepFB, solveStep as fbSolve, FBI, FBW } from './fbik.js';
+import { fk as fbFK, makeFB, stepFB, solveStep as fbSolve, FBI, FBW, fbHeldPen } from './fbik.js';
 import { legExcess, kneeExcess, clampKnee, legMin, armExcess, clampElbow, fitPole, fitPoleLow } from './anat.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z), Q = () => new THREE.Quaternion(), clamp = THREE.MathUtils.clamp, lerp = THREE.MathUtils.lerp, UP = V(0, 1, 0), X = V(1, 0, 0), deg = Math.PI / 180;
@@ -1186,14 +1186,18 @@ function fbUpdate(S, inp, dt, held, planted, left, fwd) {
   { const tall = planted.some(f => f.kind === 'top' && (f.load || 0) > 0.4 && K.T && f.ank && K.T.hj[f.i].distanceTo(f.ank) > 0.93 * CL.LEG), busy = up || (inp.cx || 0) || K.hands.some(h => h.st === 'reach') || K.feet.some(f => f.st === 'move');
     K.sagT = tall && !busy && b.vel.y < -0.01 ? (K.sagT || 0) + dt : 0; if (globalThis.OLDGRIPLAT || busy || !tall) K.standFix = false; else if (K.sagT > 0.2) K.standFix = true; }
   yawT += K.aim ? K.aim.y : 0;
-  const c = { pos, yaw: b.yaw, boxes, ARM: CL.ARM, LEG: CL.LEG, LEGMIN: 0.30, kneeClr: DIM.kneeClr, axis: a3(ax), pitch: -0.12 * clamp(K.pz.tuck, 0, 1), twist, yawT,
-    arms: K.hands.map(h => ({ st: h.st === 'hold' ? 1 : h.st === 'reach' ? 2 : 0, goal: a3(h.goal), w: 1, low: h.st === 'hold' && h.low && !globalThis.NOLINKSOLVE ? 1 : 0, cone: h.st === 'hold' && h.low && !globalThis.NOLINKSOLVE && planted.some(f => f.kind === 'top' && f.box && f.box.kind !== 'floor') ? 1 : 0 })),
+  // 풀이가 잡은 팔과 견줄 머리 타원(p3d-0.15.4): 앞 걸음의 목·고개 자세를 가슴에 붙여 넘긴다(가운데의 가슴 기준 자리, 가슴 기준 방향). selfBody의 머리와 같은 식
+  let headE = null; if (K.T && K.T.tq && linkOn(S) && !globalThis.NOHELDCLR) { const T0 = K.T, qC0 = T0.qC, qN0 = qC0.clone().multiply(T0.tq.neck), qHd0 = qN0.clone().multiply(T0.tq.head), qCi0 = qC0.clone().invert(), ec = V(...DIM.oNeck).applyQuaternion(qC0).add(V(...DIM.oHead).applyQuaternion(qN0)).add(V(0, DIM.headR * 0.9, 0.01).applyQuaternion(qHd0)).applyQuaternion(qCi0), qr = qCi0.multiply(qHd0); headE = { off: [ec.x, ec.y, ec.z], q: [qr.x, qr.y, qr.z, qr.w] }; }
+  const c = { pos, yaw: b.yaw, boxes, headE, ARM: CL.ARM, LEG: CL.LEG, LEGMIN: 0.30, kneeClr: DIM.kneeClr, axis: a3(ax), pitch: -0.12 * clamp(K.pz.tuck, 0, 1), twist, yawT,
+    arms: K.hands.map(h => ({ st: h.st === 'hold' ? 1 : h.st === 'reach' ? 2 : 0, goal: a3(h.goal), w: 1, clr: 0, clr0: null, pole: h.st === 'hold' && h.elPole ? a3(h.elPole) : null, low: h.st === 'hold' && h.low && !globalThis.NOLINKSOLVE ? 1 : 0, cone: h.st === 'hold' && h.low && !globalThis.NOLINKSOLVE && planted.some(f => f.kind === 'top' && f.box && (f.box.kind !== 'floor' || (!globalThis.NOFLOORROOM && (fb.hang || 0) < 0.3))) ? 1 : 0 })),
     legs: K.feet.map(f => ({ st: f.st === 'plant' || (f.st === 'move' && f.outT > 0 && poseAssistOn(S)) ? 1 : f.st === 'move' ? 2 : 0, ank: a3(f.ank), w: 1, pole: S.poleS && S.poleS['kn' + f.s + 'p'] ? a3(S.poleS['kn' + f.s + 'p']) : null, aW: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE ? kneeWant(S, f.i ? -1 : 1, K.T.hj[f.i], f.ank, b.yaw + K.po.yaw) : null, kw: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE && !globalThis.OLDCROSSKNEE ? 1 + CL.CROSS_KW * (K.crS ? K.crS[f.i] : 0) : 1, load: f.st === 'plant' && f.box && f.box.kind !== 'floor' ? clamp(f.F ? f.F.y / BW : f.load || 0, 0, 1) : 0 })),
     shr: K.hands.map(h => (h.st === 'reach' && h.goal.y > b.pos.y + 1.4 ? 0.40 : h.st === 'hold' && (h.load || 0) > 0.5 && !up && !rch ? 0.28 : 0)), iters: fb.cost > 3 ? 2 : 1, stand: K.standFix ? 1 : 0, pa: poseAssistOn(S) ? 1 : 0, press: pressOn(S) && planted.some(f => f.kind === 'top' && f.box && f.box.kind !== 'floor') ? 1 : 0, foldD: (globalThis.FOLD_SOLVE ?? 0.26) + (globalThis.FOLD_HANG ?? 0.10) * clamp(fb.hang, 0, 1), foldHi: linkOn(S) && !globalThis.NOLINKSOLVE && !globalThis.NOFOLDALL ? (globalThis.FOLD_HI ?? CL.FOLD_KEEP) + 0.06 * clamp(fb.hang, 0, 1) : 0, pzT: -Math.min(0.16, (K.woutL || 0) * CL.OUT_PELVIS) };
   // p3d-0.11.9: 손으로 잡고 있는 턱은 아래로 늘리지 않는다(실제 턱 + 머리 여유만). 매달린 사람의 머리는 잡은 손 밑에 온다 — 늘린 상자(15cm) + 여유(4cm)로는 잡은 턱 밑 약 30cm 안에 머리가 들어갈 수 없어,
   //   W로 올라서면 풀이가 가슴을 31° 비틀고 29° 기울여 머리를 옆으로 뺐다(h1. 그 비틀린 가슴 때문에 뻗는 팔이 접혀 올라갔다 — 사용자 지적). 잡지 않은 턱은 그대로 늘린다(밑으로 들어가지 않고 비켜 올라간다). OLDHEADHELD = 모두 늘림
   const heldBox = new Set(globalThis.OLDHEADHELD ? [] : K.hands.filter(h => h.st === 'hold' && h.edge).map(h => h.edge.box));
   c.boxesHead = boxes.map(x => (heldBox.has(x.src) ? { min: x.min, max: x.max } : { min: [x.min[0], x.min[1] - 0.15, x.min[2]], max: x.max }));
+  // 전신 연결(p3d-0.15.4): 한 손을 뻗는 동안 버티는 손의 팔이 제 몸통·머리에 더 걸리지 않게 풀이에 알린다(fbik heldPen). 뻗기 시작한 걸음의 깊이(h.clr0)를 적어 두고 그보다 더 드는 만큼만 센다. NOHELDCLR = 끔
+  { const rch2 = K.hands.some(h => h.st === 'reach'), on = rch2 && linkOn(S) && !globalThis.NOHELDCLR; for (const h of K.hands) { const A = c.arms[h.i]; if (!on || h.st !== 'hold' || !A.pole) { h.clr0 = null; continue; } if (!h.clr0) h.clr0 = fbHeldPen(fb.xs, c, h.i); A.clr = h.clr0 ? 1 : 0; A.clr0 = h.clr0; } }
   stepFB(fb, c, dt); fb.ctx = c;
   K.po.x = 0; K.po.z = 0; K.po.yaw = fb.x[FBI.YH]; K.po.xV = 0; K.po.zV = 0; K.po.yawV = 0;
 }
@@ -1257,7 +1261,8 @@ export function stepClimb(S, inp, dt) {
   // 잡은 팔이 머리에 닿으면 비켜 준다(p3d-0.8.5: 윗몸 → 0.8.6: 목·머리. torso()가 K.hg를 목·머리의 회전에 쓴다): 팔을 다 펴서 엇갈려 잡으면 팔꿈치를 어느 쪽으로 두어도 팔이 얼굴 앞을 지나가는데, 윗몸이 잡은 손 쪽으로 기울며 머리가 그 팔에 들어가 0.15초 뒤 손을 놓쳤다.
   // 겹친 깊이만큼 머리가 팔에서 멀어지는 쪽으로 윗몸을 기울이고(K.hg — 앞뒤·좌우), 여유 1.5cm를 두고도 닿지 않을 때만 천천히 되돌린다. 계산 걸음에서만 바뀌고 torso()를 거친다(물리 = 그림). 기존 접촉을 놓는 대신 몸이 비킨다
   { const g = K.hg || (K.hg = { x: 0, z: 0 }), Tn = K.T || torso(b, K); let hit = false, loose = true;
-    if (!globalThis.NOSELF) for (const h of held) { const hp = heldPole(S, h.s, Tn.sh[h.i], h.goal, b.yaw, h.i ? -1 : 1, Tn.qC), sf = hp.self && hp.self.body && hp.self.body.head ? hp.self.body : null;
+    for (const h of K.hands) if (h.st !== 'hold') h.elPole = null;
+    if (!globalThis.NOSELF) for (const h of held) { const hp = heldPole(S, h.s, Tn.sh[h.i], h.goal, b.yaw, h.i ? -1 : 1, Tn.qC), sf = hp.self && hp.self.body && hp.self.body.head ? hp.self.body : null; h.elPole = hp.ik.mid.clone().sub(Tn.sh[h.i]);
       if (sf) { hit = true; const k = Math.min(sf.d / 0.01, 2) * 5 * dt / 0.65 * 0.1 * (DIM.boxCollide ? 3 : 1); g.x += -sf.n.dot(fwd) * k * 6.5; g.z += sf.n.dot(left) * k * 6.5; } // 사람형 몸은 세 배 빨리 비킨다(p3d-0.10.1: 땅 → 벽 섞기 동안 머리가 팔에 5걸음 겹쳤다)
       else if (loose) { const s2 = armSelf(selfShapes(S, h.i), hp.ik, Tn.sh[h.i], 0.015); if (s2 && s2.body && s2.body.head) loose = false; } }
     // p3d-0.11.2: 목표 6cm 안까지 온 뻗는 팔의 끝 자세가 머리를 지나가야 하면(한 손 매달림에서 다른 손을 머리 위의 턱에 모을 때) 잡은 팔과 같이 머리가 비킨다(고개를 젖히고 옆으로 뺀다). 0.11.1까지는 손목이 목표 1cm 앞에서 "몸에 막혀"로 거부됐다
@@ -1428,7 +1433,11 @@ export function stepClimb(S, inp, dt) {
       if ((inp.cy || 0) > 0 && !(inp.cx || 0) && !(S.opt && S.opt.rockOver === false)) { const mine = linkOn(S) && !globalThis.NOUSERFOOT ? tops.filter(f => !f.byAssist && !f.auto) : [], pool = mine.length ? mine : tops, hi = pool.reduce((a, f) => (f.p.y > a.p.y ? f : a), pool[0]); let dl = ctr(hi).sub(K.ref).setY(0).dot(left); if (poseAssistOn(S) && held.length) { const hs = K.hands.filter(h => h.st === 'hold' || (h.st === 'reach' && h.edge)), hl = hs.map(h => h.goal.clone().sub(K.ref).setY(0).dot(left));
         // 전신 연결(p3d-0.15.3): 어깨보다 낮은 손(누르는 높이)은 제 쪽에 남는다 — 높은 손은 몸이 10cm까지 넘어가도 되지만(ROCK_SPAN), 낮은 왼손이 가슴 오른쪽 앞에 오면 팔뚝이 가슴을 가로질러 "팔이 몸통을 지나감"이 됐다. 곧게 선 어깨 높이로 잰다(지금 자세로 재지 않는다)
         const sp = hs.map(h => (linkOn(S) && !globalThis.NOLOWSIDE && h.st === 'hold' ? lerp(CL.ROCK_SPAN, -CL.LOW_SIDE, clamp((b.pos.y + CL.SH_Y0 - h.goal.y) / 0.10, 0, 1)) : CL.ROCK_SPAN));
-        dl = dl > 0 ? Math.min(dl, Math.max(0, Math.max(...hl.map((l, k) => l + sp[k])))) : Math.max(dl, Math.min(0, Math.min(...hl.map((l, k) => l - sp[k])))); } { const rk = 0.35 * (globalThis.OLDROCK ? 1 : (globalThis.RISE_V ?? (globalThis.OLDRISE ? CL.SHIFT_V : CL.RISE_V)) / CL.SHIFT_V); K.ref.addScaledVector(left, clamp(dl, -rk * dt, rk * dt)); } } } }
+        dl = dl > 0 ? Math.min(dl, Math.max(0, Math.max(...hl.map((l, k) => l + sp[k])))) : Math.max(dl, Math.min(0, Math.min(...hl.map((l, k) => l - sp[k])))); } { const rk = 0.35 * (globalThis.OLDROCK ? 1 : (globalThis.RISE_V ?? (globalThis.OLDRISE ? CL.SHIFT_V : CL.RISE_V)) / CL.SHIFT_V); K.ref.addScaledVector(left, clamp(dl, -rk * dt, rk * dt)); } } }
+      // 전신 연결(p3d-0.15.4): 바닥에 서서 잡고 있을 때도 몸의 깊이를 잡은 손까지 보고 정한다(같은 식 foldRoom). 0.15.3은 발판을 디뎠을 때만 보아, 바닥에서는 선 자리 그대로 풀이의 팔 항만 바뀌었다 —
+      //   가슴이 곧게 서면서(−34° → −17°) 어깨 높이의 손목이 가슴 상자 앞 6cm에 붙었고, 다른 손을 뻗으려 가슴이 기울면 남은 팔뚝이 몸통에 걸려 0.4초 만에 놓쳤다(미리보기 표본: 초록 시작에서 초록 5·발7·발8, 노랑 3).
+      //   물러나기만 한다(바닥에는 깊이를 맞출 발판이 없다 — 다가가는 것은 사용자의 걷기·W). NOFLOORROOM = 0.15.3처럼
+      else if (linkOn(S) && !globalThis.NOFLOORROOM && topsAll.length && !K.push && !jumping(S)) { const fr = foldRoom(S, held, left, fwd); K.foldLim = fr < 0; if (fr < 0) K.ref.addScaledVector(fwd, Math.max(fr, -CL.OUT_V * dt)); } }
     else if (topsAll.length) {
       const P = K.pendFoot, hi = topsAll.reduce((a, f) => (f.p.y > a.p.y ? f : a), topsAll[0]);
       const tgt = P && K.feet[P.stay].st === 'plant' ? ctr(K.feet[P.stay]) : (inp.cy || 0) > 0 && topsAll.length > 1 && hi.p.y > Math.min(...topsAll.map(f => f.p.y)) + 0.05 ? ctr(hi) : topsAll.reduce((a, f) => a.add(ctr(f)), V()).multiplyScalar(1 / topsAll.length);

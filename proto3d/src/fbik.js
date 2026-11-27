@@ -14,7 +14,7 @@ const LO = [-0.16, -0.10, -0.18, -0.8, -0.6, -0.5, -0.9, -0.6, -0.5, -0.25, -0.2
 // 무게(1 = "1만큼의 값"). W_*는 아래 resid()에서 쓴다
 export const FBW = {
   com: 25, axis: 1.5, regP: 2.0, regH: [1.0, 1.6, 1.6], regC: [2.2, 0.5, 0.5], spineLim: 10, spine: 0.7, clav: 2.2, clavLim: 15,
-  armOver: 80, armFold: 30, armPref: 3.5, grip: 12, behind: 30, armBack: 10, armCross: 5, reach: 30, reachSat: 0.25,
+  armOver: 80, armFold: 30, armPref: 3.5, grip: 12, behind: 30, armBack: 10, armCross: 5, reach: 30, reachSat: 0.25, heldClr: 1000, heldHead: 1000,
   legOver: 60, legFold: 30, legAdd: 6, knee: 12, thigh: 12, legX: 120, crossYaw: 8, crossYawA: 0.5, moveK: 0.6, over: 3.0, hip: 9, body: 25, head: 30,
   wP: 0.42, wC: 0.58, spineT: 0.55, // wP·wC = 무게중심을 셀 때 골반·윗몸의 몫, spineT = 척추 뼈가 골반과 가슴 사이에서 도는 몫
   hl: [0.10, 0.10, 0.10, 0.12, 0.12, 0.12, 0.09, 0.09, 0.09, 0.07, 0.07], // 풀이 값이 뒤따르는 반감기(초): 골반 자리 · 골반 회전 · 가슴 회전 · 빗장뼈
@@ -58,6 +58,21 @@ export function fk(x, pos, yaw, k = 1) {
 const NEUTRAL = new Float64Array(NF);
 const comOf = g => add(mul(g.hip, FBW.wP), mul(add(g.chest, qrot(g.qC, [0, 0.10, 0])), FBW.wC));
 
+// 잡은 팔뚝이 제 몸통·머리에 걸리는 깊이(p3d-0.15.4, 전신 연결): 물리의 판정(climb.js armSelf — 팔뚝 줄기의 점들이 가슴·골반 상자에 2cm 안으로 들거나 머리 타원 안으로 듦)을 풀이가 미리 보게 한 것이다.
+//   0.15.3까지 풀이에는 이 값이 없어서, 뻗는 손 쪽으로 가슴이 35~39° 도는 동안 반대쪽에서 버티던 팔이 가슴 앞을 가로지르거나 머리를 지나가 0.15초 뒤에 놓쳤다(미리보기 표본: 초록 시작에서 홀드 4, 노랑 시작에서 노랑 3).
+//   **다른 손을 뻗는 동안에만, 뻗기 시작할 때보다 더 걸리는 만큼만** 센다(A.clr0 = 시작할 때의 깊이). 처음에는 여유 2cm를 두고 늘 걸었더니, 손이 골반 옆에 있는 보통 자세(누르는 높이의 손)에서도 값이 조금씩 남아 가슴이 22° 기울었고(되돌리는 항이 약하다) 그 기울기 때문에 짧은 구간 경로 d의 손이 13cm 모자랐다.
+//   문턱 = 겹치기 4mm 앞(HELD_M. 물리는 5mm 넘게 겹친 채 0.15초가 지나야 놓친다) — 문턱을 겹침 0에 두었더니 풀이가 그 경계에 서서 걸림이 깜빡이다가 2초쯤 뒤에 놓쳤다. 시작할 때 이미 그보다 가까웠으면 그 깊이가 문턱이다(물러나게 하지는 않는다)
+//   팔꿈치 = 앞 걸음에 물리가 고른 팔꿈치의 방향(pole)을 그대로 둔 두 뼈 풀이. 돌려주는 값 = [몸통 상자에 든 깊이(물리가 겹침으로 세기 시작하는 2cm 기준), 머리 타원에 든 깊이], 양수 = 겹침
+const sdBox = (l, h) => { const qx = Math.abs(l[0]) - h[0], qy = Math.abs(l[1]) - h[1], qz = Math.abs(l[2]) - h[2]; return Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0); };
+//   머리 = 물리가 팔과 견주는 타원(가운데·방향은 앞 걸음의 목·고개 자세 그대로 가슴에 붙여 본다 — c.headE. 고개가 돌고 비키는 것은 풀이 값이 아니다). 팔이 귀 옆에 붙는 것은 물리도 겹침으로 보지 않으므로 머리에는 여유를 두지 않고 타원 안으로 든 깊이만 센다
+const HELD_PAD = 0, HELD_T = [0.2, 0.4, 0.6, 0.8, 1], HELD_TU = [0.4, 0.55, 0.7, 0.85, 1];
+function heldPen(g, sh, goal, pole, hE) { const el = midJoint(sh, goal, DIM.upperArm, DIM.foreArm, pole), qCi = qinv(g.qC), qHi = qinv(g.qH), bc = DIM.boxChest, bh = DIM.boxHip, R = DIM.headR, ax = 0.9 * R;
+  const pad = globalThis.HELD_PAD ?? HELD_PAD, cc = add(g.chest, qrot(g.qC, bc.c)), hc = add(g.hip, qrot(g.qH, bh.c)), ec = add(g.chest, qrot(g.qC, hE ? hE.off : [DIM.oNeck[0] + DIM.oHead[0], DIM.oNeck[1] + DIM.oHead[1] + 0.9 * R, DIM.oNeck[2] + DIM.oHead[2] + 0.01])), qEi = hE ? qinv(qmul(g.qC, hE.q)) : qCi; let body = -9, head = -9;
+  const inHead = p => { const l = qrot(qEi, sub(p, ec)); return (1 - Math.hypot(l[0] / ax, l[1] / (1.05 * R), l[2] / R)) * ax; };
+  for (const t of HELD_T) { const p = lerp3(el, goal, t); body = Math.max(body, 0.02 + pad - sdBox(qrot(qCi, sub(p, cc)), bc.h), 0.02 + pad - sdBox(qrot(qHi, sub(p, hc)), bh.h)); head = Math.max(head, inHead(p)); }
+  // 위팔(어깨 → 팔꿈치)은 머리만 본다(물리도 그렇다 — armSelf의 0.4~0.85)
+  for (const t of HELD_TU) head = Math.max(head, inHead(lerp3(sh, el, t)));
+  return [body, head]; }
 // ── 값(잔차) ── c = { pos, yaw, boxes, arms: [{ st, goal, load }], legs: [{ st, ank, load }], hang(0~1 손이 받는 몫), sup(발판 위에 섰는가 0~1), shr[2](빗장뼈가 바라는 올림), tuck }
 function resid(x, c, out) {
   const g = fk(x, c.pos, c.yaw), W = FBW, r = out; let n = 0;
@@ -75,7 +90,7 @@ function resid(x, c, out) {
   // ④ 팔: 잡은 손은 늘어나지 않게·다 접히지 않게, 편한 길이 쪽으로 조금, 손이 가슴의 등 뒤·몸 건너편 멀리로 가지 않게. 뻗는 손은 어깨가 목표에 닿을 만큼 다가간다(끝없이 따라가지 않게 포화)
   const qCi = qinv(g.qC);
   for (let i = 0; i < 2; i++) { const A = c.arms[i], sx = i ? -1 : 1;
-    if (A.st === 0) { r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; continue; }
+    if (A.st === 0) { r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; continue; }
     const d3 = sub(A.goal, g.sh[i]), d = len(d3) || 1e-6, u = qrot(qCi, mul(d3, 1 / d)), out = u[0] * sx;
     if (A.st === 1) { r[n++] = W.armOver * hp(d - 0.985 * c.ARM); r[n++] = W.armFold * hp((A.low ? c.foldD : c.foldHi ? c.foldHi : (c.press ? 0.26 : globalThis.FOLD_D ?? 0.36)) - d); r[n++] = W.armPref * (d - 0.85 * c.ARM) * A.w * (c.press ? 0.3 : 1); r[n++] = W.armBack * hp(-0.10 - u[2]); r[n++] = W.armCross * hp(-0.45 - out);
       // 잡은 손이 미끄러지지 않는 쪽에 어깨를 둔다(당기는 방향이 아래에서 40° 안 — 물리의 한계는 50°. 어깨가 턱보다 높아지지 않게)
@@ -84,9 +99,11 @@ function resid(x, c, out) {
       // p3d-0.11.9: 발판을 디디고 서 있으면(몸무게 40% 넘게) 잡은 팔이 옆으로 비스듬히 당기지 않게 어깨를 손 아래 쪽에 둔다(옆 몫 25% 안) — 두 어깨가 손보다 옆에 있으면 팔이 몸을 손 아래로 끌어 디딘 발에서 벗어나 천천히 가라앉았다(W를 오래 누르면 옛 판에도). OLDGRIPLAT = 옛 방식
       // 전신 연결(A.cone — 낮은 손, p3d-0.15.3): 발판을 디딘 동안 낮은 손의 팔은 팔의 선 방향이 아니라 턱이 버티는 범위 안의 어느 쪽으로든 힘을 낸다(climb.js) → 어깨를 그 손의 위·아래 40° 안에 둘 까닭이 없다(이 항이 낮은 손 위로 가슴을 18° 숙였다). 접힘 거리: 낮은 손(A.low)의 팔은 c.foldD(발이 받치면 26cm, 매달리면 36cm), 전신 연결 켬의 그 밖의 잡은 팔은 c.foldHi(30cm, 매달리면 36cm) — 누르기의 26cm는 한 손을 떼어 뻗을 때 남은 팔이 25cm로 접혀 제 몸에 걸렸고, 걸리면 내려오는 규칙이 몸을 0.6초에 24cm 내렸다(옛 벽의 턱 A → 턱 F: 12cm 모자람)
       // 잡은 손이 몸의 등 뒤로 가지 않게(물리의 판정: 어깨 → 손이 몸이 보는 쪽에서 −0.2보다 뒤면 놓친다. 여유 0.1)
-      r[n++] = W.behind * hp(-0.10 - (d3[0] * g.F[0] + d3[2] * g.F[2]) / d); }
+      r[n++] = W.behind * hp(-0.10 - (d3[0] * g.F[0] + d3[2] * g.F[2]) / d);
+      // 전신 연결(p3d-0.15.4): 잡은 팔뚝이 제 몸통·머리에 걸리지 않게(heldPen). NOHELDCLR = 끔
+      if (A.clr && A.pole) { const hpn = heldPen(g, g.sh[i], A.goal, A.pole, c.headE); const m = globalThis.HELD_M ?? 0.004; r[n++] = (globalThis.HELDCLR_W ?? W.heldClr) * hp(hpn[0] - Math.max(-m, A.clr0[0]), 0.001) + (globalThis.HELDHEAD_W ?? W.heldHead) * hp(hpn[1] - Math.max(-m, A.clr0[1]), 0.001); } else r[n++] = 0; }
     // p3d-0.12.0 자세 보조(c.pa): 뻗는 손의 목표가 어깨에서 27cm보다 가까우면 어깨가 물러나 팔을 접을 자리를 만든다(전에는 먼 목표로 다가가기만 했다 — 한 손을 놓자 윗몸이 펴지며 어깨가 목표 16cm 앞까지 가 팔이 턱에 걸렸다)
-    else { const e = hp(d - 0.92 * c.ARM), sat = W.reachSat * Math.tanh(e / W.reachSat); r[n++] = W.reach * sat * A.w; r[n++] = c.pa ? W.armFold * hp(0.27 - d) * A.w : 0; r[n++] = 0; r[n++] = 0.5 * W.armBack * hp(-0.10 - u[2]) * A.w; r[n++] = 0.5 * W.armCross * hp(-0.45 - out) * A.w; r[n++] = 0; r[n++] = 0.3 * W.behind * hp(-0.10 - (d3[0] * g.F[0] + d3[2] * g.F[2]) / d) * A.w; } }
+    else { const e = hp(d - 0.92 * c.ARM), sat = W.reachSat * Math.tanh(e / W.reachSat); r[n++] = W.reach * sat * A.w; r[n++] = c.pa ? W.armFold * hp(0.27 - d) * A.w : 0; r[n++] = 0; r[n++] = 0.5 * W.armBack * hp(-0.10 - u[2]) * A.w; r[n++] = 0.5 * W.armCross * hp(-0.45 - out) * A.w; r[n++] = 0; r[n++] = 0.3 * W.behind * hp(-0.10 - (d3[0] * g.F[0] + d3[2] * g.F[2]) / d) * A.w; r[n++] = 0; } }
   // ⑤ 다리: 디딘 발은 늘어나지 않게·다 접히지 않게, 다리가 몸 건너편으로 깊이 넘어가지 않게, 무릎·넓적다리가 지형에 닿지 않게(골반이 물러나거나 돌아서 자리를 만든다). 가는 발은 그 자리를 미리 본다(약하게)
   const qHi = qinv(g.qH);
   const KN = [null, null];
@@ -120,7 +137,7 @@ function solveSPD(A, b, n) { for (let i = 0; i < n; i++) { for (let j = 0; j <= 
   const y = new Float64Array(n); for (let i = 0; i < n; i++) { let s = b[i]; for (let k = 0; k < i; k++) s -= A[i * n + k] * y[k]; y[i] = s / A[i * n + i]; }
   const x = new Float64Array(n); for (let i = n - 1; i >= 0; i--) { let s = y[i]; for (let k = i + 1; k < n; k++) s -= A[k * n + i] * x[k]; x[i] = s / A[i * n + i]; } return x; }
 
-const R0 = new Float64Array(96), R1 = new Float64Array(96), JJ = new Float64Array(96 * NF), AA = new Float64Array(NF * NF), GG = new Float64Array(NF);
+const R0 = new Float64Array(112), R1 = new Float64Array(112), JJ = new Float64Array(112 * NF), AA = new Float64Array(NF * NF), GG = new Float64Array(NF);
 // 풀이 한 걸음(감쇠 최소제곱, 수치 미분). xs를 그 자리에서 고친다. 돌려주는 값 = 값(비용)
 // stepMax = 한 걸음에 옮기는 가장 큰 양(기본 FBW.step. 미리보기의 "뻗어 본 자세"는 시간에 따라 움직이는 것이 아니어서 크게 준다 — climb.js reachShift)
 export function solveStep(xs, c, iters = 1, stepMax = FBW.step) {
@@ -145,6 +162,8 @@ export function stepFB(fb, c, dt) {
   fb.cost = solveStep(fb.xs, c, c.iters || 1);
   for (let i = 0; i < NF; i++) follow(fb, i, fb.xs[i], FBW.hl[i], dt);
 }
+// 풀이 값 xs에서 잡은 팔 i의 걸린 깊이 [몸통, 머리](climb.js가 손을 뻗기 시작할 때의 값을 적어 두는 데 쓴다)
+export const fbHeldPen = (xs, c, i) => { const A = c.arms[i]; if (!A || !A.pole) return null; const g = fk(xs, c.pos, c.yaw); return heldPen(g, g.sh[i], A.goal, A.pole, c.headE); };
 // 시험·진단용: 풀이 값 xs에서의 잔차와 몸의 자리
-export const fbDebug = (xs, c) => { const r = new Float64Array(96), n = resid(xs, c, r), g = fk(xs, c.pos, c.yaw), hd = add(g.chest, qrot(g.qC, [DIM.oNeck[0] + DIM.oHead[0] + DIM.headCT[0], DIM.oNeck[1] + DIM.oHead[1] + DIM.headCT[1], DIM.oNeck[2] + DIM.oHead[2] + DIM.headCT[2]])); return { r: Array.from(r.slice(0, n)), g, hd, sdHead: sdBoxes(c.boxesHead, hd), headR: DIM.headR }; };
+export const fbDebug = (xs, c) => { const r = new Float64Array(112), n = resid(xs, c, r), g = fk(xs, c.pos, c.yaw), hd = add(g.chest, qrot(g.qC, [DIM.oNeck[0] + DIM.oHead[0] + DIM.headCT[0], DIM.oNeck[1] + DIM.oHead[1] + DIM.headCT[1], DIM.oNeck[2] + DIM.oHead[2] + DIM.headCT[2]])); return { r: Array.from(r.slice(0, n)), g, hd, sdHead: sdBoxes(c.boxesHead, hd), headR: DIM.headR }; };
 export const FBI = { PX, PY, PZ, YH, PH, RH, YC, PC, RC, SL, SR };
