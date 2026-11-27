@@ -34,4 +34,14 @@ await pg.evaluate(() => __p3.perf(true)); await pg.waitForTimeout(3000);
   if (!done) check('④ 닿는 다른 홀드를 찾아 잡음', false, '닿는 다른 홀드가 없었다(이 시험의 조건이 서지 않음)'); }
 if (!OLD) { const o0 = await pg.evaluate(() => __p3.opt().autoBody); await pg.keyboard.press('KeyZ'); await pg.waitForTimeout(200); const o1 = await pg.evaluate(() => __p3.opt().autoBody), t = await pg.evaluate(() => document.body.innerText.match(/쉬운 조작 [^\n]{0,34}/)?.[0] || '');
   check('⑥ Z 키: 자동 몸 맞추기만 꺼지고 화면에 보인다', o0 === true && o1 === false && /자동 몸 맞추기 끔/.test(t), `${o0} → ${o1} · "${t}"`); }
+// ⑦~⑨ p3d-0.15.3(GPT의 0.15.2 검토 — 화면 정리): 개발 키는 개발 모드(F2)에서만 듣는다 · 조작표 접기(K) · T는 코스를 다 돈 다음 누르기 시험 조각 앞
+if (!OLD) { const opt = () => pg.evaluate(() => __p3.opt()), help = () => pg.evaluate(() => document.getElementById('help').innerText);
+  const a0 = await opt(); await pg.keyboard.press('KeyU'); await pg.keyboard.press('KeyP'); await pg.keyboard.press('KeyY'); await pg.waitForTimeout(200); const a1 = await opt(), h0 = await help();
+  check('⑦ 개발 모드 밖: U·P·Y를 눌러도 잡기 보정·누르기·자세 보조가 바뀌지 않고, 조작표에 그 줄이 없다', a1.grabAssist === a0.grabAssist && a1.press === a0.press && a1.poseAssist === a0.poseAssist && !a0.dev && !/잡기 보정 켬·끔/.test(h0), `개발 모드 ${a0.dev} · 조작표에 "잡기 보정" 줄 ${/잡기 보정 켬·끔/.test(h0)}`);
+  await pg.keyboard.press('F2'); await pg.waitForTimeout(200); const d1 = await opt(), h1 = await help(); await pg.keyboard.press('KeyU'); await pg.waitForTimeout(200); const d2 = await opt(); await pg.keyboard.press('KeyU'); await pg.waitForTimeout(150);
+  check('⑦ F2 = 개발 모드: 조작표에 개발 키가 보이고 U가 잡기 보정을 바꾼다', d1.dev === true && /잡기 보정 켬·끔/.test(h1) && d2.grabAssist === !d1.grabAssist, `개발 모드 ${d1.dev} · 잡기 보정 ${d1.grabAssist} → ${d2.grabAssist}`);
+  await pg.keyboard.press('F2'); await pg.waitForTimeout(150); const hf0 = (await help()).length; await pg.keyboard.press('KeyK'); await pg.waitForTimeout(200); const hf1 = await help(); await pg.keyboard.press('KeyK'); await pg.waitForTimeout(200); const hf2 = (await help()).length;
+  check('⑧ K: 조작표를 접으면 한 줄이고 다시 누르면 펼쳐진다', hf1.length < 60 && /펼치기/.test(hf1) && hf2 === hf0, `펼침 ${hf0}자 → 접힘 "${hf1.replace(/\n/g, ' ')}" → ${hf2}자`);
+  let at = null; for (let k = 0; k < 16; k++) { await pg.keyboard.press('KeyT'); await pg.waitForTimeout(120); at = await pg.evaluate(() => ({ pos: __p3.body().pos, course: __p3.gym().course })); if (!at.course) break; }
+  check('⑨ T: 코스를 다 돈 다음 누르기 시험 조각 앞(코스 선택 없음)', at && !at.course && Math.abs(at.pos[0] - 1.5) < 0.05 && Math.abs(at.pos[2] + 1.28) < 0.05, JSON.stringify(at)); }
 check('페이지 오류 없음', !errs.length, errs.join(' / ')); await b.close(); console.log(`실패 ${fails}`); process.exit(fails ? 1 : 0);

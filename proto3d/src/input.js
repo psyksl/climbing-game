@@ -47,7 +47,7 @@ const DEFAULT = [
   //   dev 표시가 붙은 동작(잡기 보정·자세 보조·누르기·전신 연결·벽 딛기·몸 자세·진단·뼈대·느리게·모션·동작 보기)은 개발 모드에서만 듣는다(makeInput의 active). 조작표도 개발 모드에서만 그 줄을 보인다 — 보이는 것과 듣는 것이 같다
   { id: 'helpAll', ctx: ['any'], keys: ['KeyK'], label: '조작표 접기·펼치기' },
   { id: 'devMode', ctx: ['any'], keys: ['F2'], label: '개발 모드 켬·끔(개발 키·진단 정보)' },
-  { id: 'linkPose', ctx: ['any'], keys: ['Digit9'], dev: true, label: '전신 연결 켬·끔(몸의 깊이·팔 힘을 손발 접촉에서 함께 정함 · 실험)' },
+  { id: 'linkPose', ctx: ['any'], keys: ['Digit9'], dev: true, label: '비교 후보: 전신 연결 켬·끔(몸의 깊이·팔 힘을 손발 접촉에서 함께 정함) · 기본 끔' },
   { id: 'diag', ctx: ['any'], keys: ['KeyI'], dev: true, label: '진단 정보(하중·오차·실행 성능)' },
   { id: 'bones', ctx: ['any'], keys: ['KeyB'], dev: true, label: '뼈대 보기' },
   { id: 'slow', ctx: ['any'], keys: ['KeyN'], dev: true, label: '느리게(0.25배)' },

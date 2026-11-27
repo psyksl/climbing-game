@@ -46,11 +46,11 @@ loadKeys();
 const input = makeInput(renderer.domElement);
 const pending = []; // 다음 계산 걸음에 한 번만 들어갈 명령(손발 보내기·놓기)
 // 고를 수 있는 조작 설정(저장됨). handMode 1 = 눌러 보내기, 2 = 누르는 동안 뻗기(떼면 잡기). footAssist = 발 보조(간편 조작). diag = 진단 정보. helpAll = 조작표 모두 보기
-const OPT = { handMode: 1, grabAssist: true, poseAssist: true, easy: true, autoBody: true, keepHold: false, press: true, linkPose: true, footAssist: true, wallRest: false, diag: false, helpAll: false, helpFold: false, dev: false, oldPose: false };
+const OPT = { handMode: 1, grabAssist: true, poseAssist: true, easy: true, autoBody: true, keepHold: false, press: true, linkPose: false, footAssist: true, wallRest: false, diag: false, helpAll: false, helpFold: false, dev: false, oldPose: false };
 try { Object.assign(OPT, JSON.parse(localStorage.getItem('p3dOpt_v1') || '{}')); } catch (e) { OPT.handMode = 1; }
 // 비교 후보(p3d-0.15.2): ?keep=1 = 보조가 먼저 잡은 손을 놓지 않음(기본 끔. 키를 새로 두지 않는다 — GPT의 0.15.1 재검토). 저장된 설정보다 주소가 먼저다
 if (params.has('keep')) OPT.keepHold = params.get('keep') !== '0';
-// 전신 연결(p3d-0.15.3, 화면 기본 켬): ?link=0 = 끔(0.15.2의 몸 깊이·팔 힘 그대로 — 비교용)
+// 전신 연결(p3d-0.15.3 — **비교 후보, 화면 기본 끔**. 닿는 범위·버티는 범위가 달라지는 변경이라 사용자·GPT의 결정 전에는 기본으로 두지 않는다): ?link=1 = 켬(개발 모드의 9 키로도). 저장된 설정보다 주소가 먼저다
 if (params.has('link')) OPT.linkPose = params.get('link') !== '0';
 // 개발 모드(p3d-0.15.3): F2 또는 ?dev — 개발 키(잡기 보정 U·자세 보조 Y·누르기 P·전신 연결 9·벽 딛기 J·몸 자세 O·진단 I·뼈대 B·느리게 N·모션 M·동작 보기 G)는 이때만 듣는다. 진단 정보도 이때만 보인다
 if (params.has('dev')) OPT.dev = params.get('dev') !== '0';
@@ -257,9 +257,9 @@ function stateName() {
   if (sim.motion.prm.crouch > 0.5) return v > 0.12 ? '웅크려 걷기' : '웅크림';
   return v < 0.12 ? '대기' : sim.motion.prm.runW > 0.5 ? '달리기' : '걷기';
 }
-// 개발 항목의 설정(잡기 보정·자세 보조·누르기·전신 연결): 개발 모드에서는 모두 보인다. 그 밖에는 기본값(모두 켬)과 다른 것만 굵게 보인다 — 키가 숨어 있어도 기본이 아닌 상태로 하고 있다는 것은 알 수 있게(p3d-0.15.3, 임시)
-const DEV_OPT = [['grabAssist', '잡기 보정'], ['poseAssist', '자세 보조'], ['press', '누르기'], ['linkPose', '전신 연결']];
-const devLine = () => (OPT.dev ? DEV_OPT.map(([k, n]) => ` &nbsp; ${n} ${OPT[k] ? '켬' : '끔'}`).join('') + ' &nbsp; <b>개발 모드</b>' : DEV_OPT.filter(([k]) => !OPT[k]).map(([, n]) => ` &nbsp; <b>${n} 끔</b>`).join(''));
+// 개발 항목의 설정(잡기 보정·자세 보조·누르기·전신 연결): 개발 모드에서는 모두 보인다. 그 밖에는 기본값(앞의 셋 켬·전신 연결 끔)과 다른 것만 굵게 보인다 — 키가 숨어 있어도 기본이 아닌 상태로 하고 있다는 것은 알 수 있게(p3d-0.15.3, 임시)
+const DEV_OPT = [['grabAssist', '잡기 보정', true], ['poseAssist', '자세 보조', true], ['press', '누르기', true], ['linkPose', '전신 연결(비교 후보)', false]];
+const devLine = () => (OPT.dev ? DEV_OPT.map(([k, n]) => ` &nbsp; ${n} ${OPT[k] ? '켬' : '끔'}`).join('') + ' &nbsp; <b>개발 모드</b>' : DEV_OPT.filter(([k, , d]) => !!OPT[k] !== d).map(([k, n]) => ` &nbsp; <b>${n} ${OPT[k] ? '켬' : '끔'}</b>`).join(''));
 // 몸 위로(W)가 멈춘 까닭(climb.js의 K.upWhy — 임시 문구. GPT의 0.15.2 검토: 막히면 정지하고 이유를 보인다)
 const UP_KO = { leg: '디딘 다리가 다 펴졌어요. 발을 올리거나 손을 옮기세요.', top: '누르는 팔이 다 펴졌어요. 낮은 손을 옮기세요.', fold: '팔이 다 접혔어요. 손을 올려 잡으세요.', gap: '손이 어깨 높이예요. 손을 올려 잡으세요.', jam: '팔이 몸에 걸려요. 낮은 손을 옮기거나 놓으세요.' };
 const LOG_KO = { cancel: '취소', grab: '잡음', reject: '거부', release: '놓음', slip: '놓침', step: '디딤', lift: '발이 떨어짐', enter: '벽 등반 시작', exit: '벽 등반 끝', bump: '부딪힘', push: '도약 힘주기 시작', pushEnd: '도약 힘주기 끝', assist: '잡기 보정', arm: '예약', auto: '자동', wstop: '몸 위로 멈춤' };
