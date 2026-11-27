@@ -2,6 +2,7 @@
 // 표본 = test/preview_check.mjs와 같은 상태(코스의 시작 두 홀드 + D개를 번갈아 잡은 자세, W·A·D 없음, 쉬운 조작 끔) + 손 하나를 HOLD로 보냄. **스크립트 입력(사람 손 아님).**
 // 걸음마다: 보낸 손의 상태 · 버티는 손의 낮은 손 표시·걸림(h.jam)·까닭·하중 · 버티는 팔의 어깨–손 거리 · 가슴의 좌우 돌림·앞뒤 기울기·옆 기울기(풀이 값) · 몸의 옆/높이/깊이 이동(시작 대비) · 기준 자리의 깊이
 // 사용: [MODE=clip] COURSE=green D=0 HOLD='초록 5' HAND=1 [LINK=1] [EASY=1] [KEEP=1] [N=240] [EVERY=6] [SW=스위치,...] node test/support_trace.mjs
+// runCase의 o.dx·o.dy(겨눈 자리를 옆·위로 옮김, m)·o.wait(보내기 전에 기다리는 걸음)는 test/support_jitter.mjs가 쓴다
 import { prov, provLine, provOptLine } from './provenance.mjs';
 import fs from 'fs'; import path from 'path'; import { fileURLToPath, pathToFileURL } from 'url';
 const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pathToFileURL(path.join(HERE, '../src', f)).href);
@@ -13,7 +14,7 @@ export function runCase(o) { const C = world.courses.find(c => c.id === o.course
   sim.reset({ pos: C.startPos, yaw: C.startYaw }); Object.assign(sim.opt, { posture: 'fb', grabAssist: true, poseAssist: true, easy: !!o.easy, press: true, footAssist: true, wallRest: false, keepHold: !!o.keep, linkPose: !!o.link });
   let look = null; const step = (k, cmd = []) => { for (let i = 0; i < k; i++) sim.step({ mx: 0, mz: 0, cxSign: 1, ...(look ? { look } : {}), cmd: i ? [] : cmd }); };
   step(12); for (let j = 0; j < 2 + o.d; j++) { const p = front(holds[j], n), i = j % 2; look = p.toArray(); if (j >= 2) step(30); step(j < 2 ? 90 : 150, [{ type: 'hand', i, p: p.toArray() }]); }
-  const K = sim.climb, b = sim.body, tgt = world.boxes.find(x => x.name === o.hold), p = front(tgt, n), i = o.hand, O = K.hands[1 - i], H = K.hands[i]; look = p.toArray(); step(30);
+  const K = sim.climb, b = sim.body, tgt = world.boxes.find(x => x.name === o.hold), p = front(tgt, n).add(new THREE.Vector3(Math.cos(sim.body.yaw), 0, -Math.sin(sim.body.yaw)).multiplyScalar(o.dx || 0)).add(new THREE.Vector3(0, o.dy || 0, 0)), i = o.hand, O = K.hands[1 - i], H = K.hands[i]; look = p.toArray(); step(o.wait ?? 30);
   const fw = new THREE.Vector3(Math.sin(b.yaw), 0, Math.cos(b.yaw)), lf = new THREE.Vector3(Math.cos(b.yaw), 0, -Math.sin(b.yaw)), pos0 = b.pos.clone(), pr = probeHand(sim, i, p), deg = 180 / Math.PI, rows = [], ev = [], log0 = K.log.length;
   const snap = k => { const x = K.fb ? K.fb.x : null, T = K.T, d = b.pos.clone().sub(pos0); return { k, t: k / 120, h: H.st, o: O.st, low: O.low ? 1 : 0, jam: O.jam || 0, jamWhy: O.jamWhy || '', load: O.load || 0, bad: O.bad || 0, shD: T && O.st === 'hold' ? T.sh[1 - i].distanceTo(O.goal) : null, shUp: T && O.st === 'hold' ? O.goal.y - T.sh[1 - i].y : null,
     // 버티는 손목의 자리를 가슴 상자의 좌표로(옆·위·앞) + 상자 겉까지의 거리(음수 = 상자 안), 그려진 팔꿈치도 같은 좌표로
