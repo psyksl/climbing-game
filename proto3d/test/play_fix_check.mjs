@@ -1,7 +1,7 @@
 // 사용자 플레이 영상(0.11.1, 8편 4분 34초)에서 찾은 문제의 점검(p3d-0.11.2). 스크립트 입력(사람 손 아님). 사용: node test/play_fix_check.mjs [JSON]   자세: VARIANT=fb(기본)|rule · 캡처 동작: MODE=clip
 // ① 점프하며 잡기: 점프를 누른 때 기준으로 클릭이 언제까지 잡히는가 ② 한 손 매달림에서 다른 손을 바로 옆에 모으기 ③ 옆으로 팽팽하게 당겨지는 잡기는 잡자마자 놓치지 않고 잡기 전에 거부 ④ 발 없이 매달린 다리의 무릎 간격
 import { prov, provLine } from './provenance.mjs';
-// [실제 설정] 한 줄(p3d-0.15.5, GPT의 0.15.4 검토: 회귀 파일에 실제 설정이 없었다): 이 시험이 마지막으로 만든 sim의 설정을 끝날 때 적는다(계산이 읽는 값 — provenance.mjs provOptLine)
+// [실제 설정] 한 줄(p3d-0.15.5, GPT의 0.15.4 검토: 회귀 파일에 실제 설정이 없었다): 이 시험이 **처음** 만든 sim의 설정을 끝날 때 적는다(처음에는 마지막 sim을 적었는데, 벽 회귀의 마지막 장면은 옛 자세 방식과 견주는 장면이라 "자세 rule · 전신 연결 끔"이 찍혔다)(계산이 읽는 값 — provenance.mjs provOptLine)
 import { provOptLine } from './provenance.mjs'; let lastSim__ = null; process.on('exit', () => { if (lastSim__) console.log(provOptLine(lastSim__)); });
 import fs from 'fs';
 import path from 'path';
@@ -10,7 +10,7 @@ const __P = prov(); console.log(provLine(__P));
 const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pathToFileURL(path.join(HERE, '../src', f)).href);
 const THREE = await import('three');
 const { buildCharacter } = await imp('rig.js'), W = await imp('world.js'), { makeSim } = await imp('sim.js');
-const mkSim__ = (...a) => (lastSim__ = makeSim(...a));
+const mkSim__ = (...a) => { const s = makeSim(...a); lastSim__ = lastSim__ || s; return s; };
 const CLP = path.join(HERE, '../assets_local/clips.json'); if (process.env.MODE === 'clip' && !fs.existsSync(CLP)) { console.log('clips.json 없음 → 건너뜀'); process.exit(0); }
 const clips = process.env.MODE === 'clip' ? JSON.parse(fs.readFileSync(CLP, 'utf8')) : null, POST = process.env.VARIANT || 'fb';
 const hand = (i, p) => ({ type: 'hand', i, p }), out = { 자세: POST, 동작: clips ? '캡처' : '자작', checks: [], cases: {} }; let fail = 0;

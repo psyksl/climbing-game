@@ -378,7 +378,9 @@ const assistOn = S => !!(S.opt && S.opt.grabAssist) && !globalThis.NOASSIST;
 export const optEffect = opt => { const o = opt || {}, poseAssist = (!!o.poseAssist || !!globalThis.POSEASSIST) && !globalThis.NOPOSEASSIST, link = (!!o.linkPose || !!globalThis.LINKPOSE) && !globalThis.NOLINKPOSE && poseAssist, pressSet = (!!o.press || !!globalThis.PRESSON) && !globalThis.NOPRESS;
   // plan = 뻗기 전 검사(p3d-0.15.5, S.opt.planReach — 화면·시험 모두 기본 끔, 비교 후보. PLANREACH = 시험 전체 켬, NOPLANREACH = 끔). 새 자세 방식 + 자세 보조에서만
   const plan = (!!o.planReach || !!globalThis.PLANREACH) && !globalThis.NOPLANREACH && poseAssist;
-  return { poseAssist, link, pressSet, press: pressSet || link, pressByLink: link && !pressSet, plan }; };
+  // easy·autoBody(p3d-0.15.5): 자동 몸 맞추기는 값을 주지 않으면 켬이다(쉬운 조작 켬일 때). 기록이 !!opt.autoBody로 읽어 "끔"이라고 적던 것을 계산과 같은 식으로
+  const easy = !!o.easy && !globalThis.NOARMREACH, autoBody = easy && o.autoBody !== false && !globalThis.NOAUTOBODY;
+  return { poseAssist, link, pressSet, press: pressSet || link, pressByLink: link && !pressSet, plan, easy, autoBody }; };
 const planOn = S => optEffect(S.opt).plan && fbOn(S.climb);
 const poseAssistOn = S => optEffect(S.opt).poseAssist && fbOn(S.climb);
 const outDir = S => V(-Math.sin(S.body.yaw), 0, -Math.cos(S.body.yaw)); // 벽에서 멀어지는 쪽(몸이 보는 쪽의 반대)
@@ -607,7 +609,7 @@ function reachShift(S, i, goal) { const K = S.climb, fb = K.fb, c = fb && fb.ctx
 //   걸림이 물리가 놓치는 시간(0.15초)만큼 이어지면 그 손을 놓친다고 본다. prot = 버티는 팔을 지키는 풀이 항(fbik heldPen)을 처음부터 켠 후보(전신 연결 켬에서만 뜻이 있다)
 //   처음에는 stepFB를 걸음마다 그대로 굴렸다(가장 충실하다). 한 번에 계산 걸음 12~45개의 시간이 들어 명령을 누른 프레임이 멈췄다 → 끝 자세 + 지연으로 바꿨다. PLAN_FULL = 처음 방식(비교용)
 // 돌려주는 값: lose = 놓칠 손(-1 = 없음) · when = 'reach'|'settle' · t = 그때(초) · why · jam = 손별로 가장 길게 이어진 걸림(초) · dev = 가슴이 시작 자세에서 가장 크게 벗어난 각(rad: 돌림·앞뒤·옆) · far = ① 끝의 어깨–목표 거리 − 팔 길이(양수 = 모자람) · ms
-// 상태를 바꾸지 않는다(K.fb·K.T·그 손의 상태를 잠깐 바꿔 재고 되돌린다). 스위치: PLAN_T2
+// 상태를 바꾸지 않는다(K.fb·K.T·그 손의 상태를 잠깐 바꿔 재고 되돌린다). 스위치: PLAN_T2 · PLAN_LOSE = 놓친다고 보는 걸림 시간(기본 0.15초 = 물리와 같다. 예측이 실제보다 짧게 나오는 표본이 있어 여유를 둔 값(0.08)을 비교로 잰다)
 export function planReach(S, i, goal, prot = false) {
   const K = S.climb, fb = K.fb, c = fb && fb.ctx, b = S.body; if (!K.on || !fbOn(K) || !c || !K.T) return null;
   const sup = K.hands.filter(h => h.i !== i && h.st === 'hold'); if (!sup.length) return null;
@@ -616,7 +618,7 @@ export function planReach(S, i, goal, prot = false) {
   const g2 = [null, null]; g2[i] = goal; for (const h of sup) g2[h.i] = h.goal; const isX = !!g2[0] && !!g2[1] && g2[0].clone().sub(g2[1]).dot(left) < -0.02, twist = isX ? (i ? 1 : -1) * 0.45 * (globalThis.XTW ?? (globalThis.CROSSOVER ? -1 : 1)) : 0;
   const mk = st => { const A = fbAims(S, st === 2 ? sup : [...sup, { goal }], left, fwd);
     return { ...c, axis: a3(A.ax), yawT: A.yawT + aimY, twist, arms: c.arms.map((a, j) => (j === i ? { st, goal: a3(goal), w: 1, clr: 0, clr0: null, pole: null, low: 0, cone: 0 } : prot && a.st === 1 && a.pole ? { ...a, clr: 1, clr0: [-9, -9] } : a)), shr: c.shr.map((v, j) => (j === i ? (st === 2 && goal.y > b.pos.y + 1.4 ? 0.40 : 0) : st === 2 ? 0 : v)) }; };
-  const fb0 = K.fb, T0 = K.T, st0 = H.st, goal0 = H.goal, jam = [0, 0], jmax = [0, 0], x0 = [fb.x[FBI.YC], fb.x[FBI.PC], fb.x[FBI.RC]], dev = [0, 0, 0], LOSE = 0.15, R = { lose: -1, when: '', t: 0, why: '', jam: jmax, dev, far: null, prot };
+  const fb0 = K.fb, T0 = K.T, st0 = H.st, goal0 = H.goal, jam = [0, 0], jmax = [0, 0], x0 = [fb.x[FBI.YC], fb.x[FBI.PC], fb.x[FBI.RC]], dev = [0, 0, 0], LOSE = globalThis.PLAN_LOSE ?? 0.15, R = { lose: -1, when: '', t: 0, why: '', jam: jmax, dev, far: null, prot };
   const dist = (H.w || K.T.sh[i]).distanceTo(goal), T1 = clamp(0.2 + 0.45 * dist, 0.25, 0.7), T2 = globalThis.PLAN_T2 ?? 0.6, NV = f2.xs.length;
   try { K.fb = f2; H.st = 'reach'; H.goal = goal.clone();
     const run = (cx, T, ph, t0, who) => { const n = Math.round(T / dt); let xa = null, xb = null, kN = 1;
@@ -707,7 +709,7 @@ function foldRoom(S, hands, left, fwd) { const K = S.climb, b = S.body, g = fbFK
     if (need > 0) room = Math.min(room, f - need); }
   return room; }
 // p3d-0.15.1(GPT의 0.15.0 검토): 자동 몸 맞추기(③)를 조준 맞춤·예약(①②)과 따로 켜고 끈다 — S.opt.autoBody(없으면 켬 = 0.13.0~0.15.0과 같다). 쉬운 조작이 꺼져 있으면 함께 꺼진다
-const armOn = S => !!(S.opt && S.opt.easy) && !globalThis.NOARMREACH, autoBodyOn = S => !!(S.opt && S.opt.easy) && S.opt.autoBody !== false && !globalThis.NOAUTOBODY && !globalThis.NOARMREACH;
+const armOn = S => optEffect(S.opt).easy, autoBodyOn = S => optEffect(S.opt).autoBody;
 const jumping = S => (S.climb.on ? !!S.climb.push : !!S.body.push || (!S.body.onGround && S.body.vel.y > 0));
 // ── 명령: 시도 → (성공 | 거부) → 유지 → 놓기 ──
 export function command(S, c) {

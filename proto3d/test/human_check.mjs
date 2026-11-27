@@ -9,7 +9,7 @@
 // 자세 규칙 비교: VARIANT=base|rule|ref(사람형 몸의 자세 규칙 — rule이 기본)
 // 옛 몸과 견주기: BODY=old — 옛 몸의 메시(제어 뼈대에 바로 붙은 것)로 ③④만 잰다(①②는 옮기는 단계가 없어 0)
 import { prov, provLine } from './provenance.mjs'; // 실행 출처(p3d-0.10.3) — 소스보다 먼저 불러와 설정 스위치를 켠다
-// [실제 설정] 한 줄(p3d-0.15.5, GPT의 0.15.4 검토: 회귀 파일에 실제 설정이 없었다): 이 시험이 마지막으로 만든 sim의 설정을 끝날 때 적는다(계산이 읽는 값 — provenance.mjs provOptLine)
+// [실제 설정] 한 줄(p3d-0.15.5, GPT의 0.15.4 검토: 회귀 파일에 실제 설정이 없었다): 이 시험이 **처음** 만든 sim의 설정을 끝날 때 적는다(처음에는 마지막 sim을 적었는데, 벽 회귀의 마지막 장면은 옛 자세 방식과 견주는 장면이라 "자세 rule · 전신 연결 끔"이 찍혔다)(계산이 읽는 값 — provenance.mjs provOptLine)
 import { provOptLine } from './provenance.mjs'; let lastSim__ = null; process.on('exit', () => { if (lastSim__) console.log(provOptLine(lastSim__)); });
 import fs from 'fs';
 import path from 'path';
@@ -18,7 +18,7 @@ const __P = prov(); console.log(provLine(__P));
 const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pathToFileURL(path.resolve(HERE, '../src', f)).href);
 const THREE = await import('three');
 const { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { CL } = await imp('climb.js'), { buildHuman, makeRetarget, humanPoints } = await imp('human.js');
-const mkSim__ = (...a) => (lastSim__ = makeSim(...a));
+const mkSim__ = (...a) => { const s = makeSim(...a); lastSim__ = lastSim__ || s; return s; };
 const { SCENES_FOOT, SCENES, SCENES_H, SCENES_HV = [], START } = await import('./scenes_foot.mjs');
 const clip = process.env.MODE === 'clip', clips = clip ? JSON.parse(fs.readFileSync(path.resolve(HERE, '../assets_local/clips.json'), 'utf8')) : null;
 if (process.env.PO_FAST) globalThis.PO_FAST = 1; // 비교 스위치: 골반 층 0.15초

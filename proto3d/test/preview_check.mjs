@@ -7,7 +7,7 @@
 import { prov, provLine, provOptLine } from './provenance.mjs';
 import fs from 'fs'; import path from 'path'; import { fileURLToPath, pathToFileURL } from 'url';
 const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pathToFileURL(path.join(HERE, '../src', f)).href);
-const { buildCharacter } = await imp('rig.js'), { makeGym } = await imp('world.js'), { makeSim } = await imp('sim.js'), { probeHand, limbState } = await imp('climb.js'), THREE = await import('three');
+const { buildCharacter } = await imp('rig.js'), { makeGym } = await imp('world.js'), { makeSim } = await imp('sim.js'), { probeHand, limbState, planHand } = await imp('climb.js'), THREE = await import('three');
 const E = process.env, CLIPS = E.MODE === 'clip' ? JSON.parse(fs.readFileSync(path.join(HERE, '../assets_local/clips.json'), 'utf8')) : null, rig = buildCharacter();
 const world = makeGym(), DEPTH = +(E.DEPTH || 3), R = +(E.R || 1.15), EASY = E.EASY === '1', f2 = v => (+v).toFixed(2);
 console.log(provLine(prov()), `· 쉬운 조작 ${EASY ? '켬' : '끔'} · 깊이 ${DEPTH} · 둘레 ${R}m`);
@@ -27,12 +27,14 @@ for (const id of IDS) { const C = world.courses.find(c => c.id === id); if (!C) 
       S.setLook(p); S.step(30); const pos0 = S.sim.body.pos.clone(), pr = probeHand(S.sim, i, p); if (!pr.grip) continue;
       const before = JSON.stringify([Array.from(S.sim.climb.fb.xs), S.sim.body.pos.toArray(), S.sim.climb.log.length, S.sim.climb.hands.map(h => [h.st, h.grip.toArray()])]); probeHand(S.sim, i, p);
       const pure = before === JSON.stringify([Array.from(S.sim.climb.fb.xs), S.sim.body.pos.toArray(), S.sim.climb.log.length, S.sim.climb.hands.map(h => [h.st, h.grip.toArray()])]);
+      // PRED=1(p3d-0.15.5): 뻗기 전 검사의 예측(그대로 a / 버티는 팔을 지키며 g)을 함께 적는다 — 검사를 켜지 않은 채(실제는 그대로) 예측과 실제를 맞대어 보는 데 쓴다
+      const pd = E.PRED === '1' ? planHand(S.sim, i, p) : null, pk = x => (x ? { lose: x.lose, when: x.when, t: +x.t.toFixed(3), jam: +Math.max(...x.jam).toFixed(3), far: +x.far.toFixed(3), ms: +x.ms.toFixed(1) } : null);
       const held0 = S.sim.climb.hands.map(h => h.st === 'hold'), log0 = S.sim.climb.log.length, k0 = S.sim.tick; let first = -1; S.step(1, [{ type: 'hand', i, p: p.toArray() }]);
       // p3d-0.15.2(GPT의 0.15.1 재검토): "2초 뒤 잡고 있는가"(got)만 보던 것을 나눈다 — first = 처음 그 홀드를 잡은 걸음(-1 = 한 번도 못 잡음), got = 2초 뒤에도 잡고 있음, lost = 버티던 다른 손이 풀림(lostWhy·lostCause = 그 까닭과 갈래)
       for (let k = 1; k < 240; k++) { S.step(1); const hh = S.sim.climb.hands[i]; if (first < 0 && hh.st === 'hold' && hh.edge && hh.edge.box.name === pr.name) first = S.sim.tick - k0; }
       const h = S.sim.climb.hands[i], got = h.st === 'hold' && !!h.edge && h.edge.box.name === pr.name, lost = held0[1 - i] && S.sim.climb.hands[1 - i].st !== 'hold';
       const evs = S.sim.climb.log.slice(log0).filter(e => e.limb === 'hand' && (e.type === 'release' || e.type === 'slip' || e.type === 'reject') && e.cause), oEv = evs.filter(e => e.i === 1 - i).pop(), mEv = evs.filter(e => e.i === i && e.cause !== 'command').pop();
-      const row = { course: id, d, hold: b.name, i, ok: pr.ok, why: pr.why || '', short: pr.short === undefined ? null : +pr.short.toFixed(3), sure: pr.sure, first, got, lost, lostWhy: lost && oEv ? oEv.why : '', lostCause: lost && oEv ? oEv.cause : '', dropWhy: first >= 0 && !got && mEv ? mEv.why : '', dropCause: first >= 0 && !got && mEv ? mEv.cause : '', move: +S.sim.body.pos.distanceTo(pos0).toFixed(3), end: h.st === 'hold' ? '' : (limbState(S.sim.climb).hands[i].why || ''), pure };
+      const row = { course: id, d, hold: b.name, i, ok: pr.ok, why: pr.why || '', short: pr.short === undefined ? null : +pr.short.toFixed(3), sure: pr.sure, first, got, lost, lostWhy: lost && oEv ? oEv.why : '', lostCause: lost && oEv ? oEv.cause : '', dropWhy: first >= 0 && !got && mEv ? mEv.why : '', dropCause: first >= 0 && !got && mEv ? mEv.cause : '', move: +S.sim.body.pos.distanceTo(pos0).toFixed(3), end: h.st === 'hold' ? '' : (limbState(S.sim.climb).hands[i].why || ''), pure, ...(pd ? { pred: { a: pk(pd.a), g: pk(pd.b) } } : {}) };
       rows.push(row); if (out) out.write(JSON.stringify(row) + '\n'); } } }
 const by = (rs, key) => { const m = {}; for (const r of rs) m[key(r)] = (m[key(r)] || 0) + 1; return Object.entries(m).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(' · '); };
 const cnt = f => rows.filter(f).length, N = rows.length;

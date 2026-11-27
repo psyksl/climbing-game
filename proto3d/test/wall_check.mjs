@@ -2,7 +2,7 @@
 // 손: 시도 → 잡음/거부 → 유지 → 놓기. 발: 누르는 힘과 마찰로만 버틴다(벽에 붙지 않는다). 놓는 걸음에 속도가 이어지는지, 접촉 오차·관통·거부 까닭을 적는다.
 // 사용: node test/wall_check.mjs [결과 JSON]   캡처 동작으로: MODE=clip (assets_local/clips.json이 있을 때)
 import { prov, provLine } from './provenance.mjs'; // 실행 출처(p3d-0.10.3) — 소스보다 먼저 불러와 설정 스위치를 켠다
-// [실제 설정] 한 줄(p3d-0.15.5, GPT의 0.15.4 검토: 회귀 파일에 실제 설정이 없었다): 이 시험이 마지막으로 만든 sim의 설정을 끝날 때 적는다(계산이 읽는 값 — provenance.mjs provOptLine)
+// [실제 설정] 한 줄(p3d-0.15.5, GPT의 0.15.4 검토: 회귀 파일에 실제 설정이 없었다): 이 시험이 **처음** 만든 sim의 설정을 끝날 때 적는다(처음에는 마지막 sim을 적었는데, 벽 회귀의 마지막 장면은 옛 자세 방식과 견주는 장면이라 "자세 rule · 전신 연결 끔"이 찍혔다)(계산이 읽는 값 — provenance.mjs provOptLine)
 import { provOptLine } from './provenance.mjs'; let lastSim__ = null; process.on('exit', () => { if (lastSim__) console.log(provOptLine(lastSim__)); });
 import fs from 'fs';
 import path from 'path';
@@ -11,7 +11,7 @@ import * as THREE from 'three';
 const __P = prov(); console.log(provLine(__P));
 const HERE = path.dirname(fileURLToPath(import.meta.url)), SRC = path.resolve(HERE, '../src'), imp = f => import(pathToFileURL(path.join(SRC, f)).href);
 const { buildCharacter, DIM, headEll } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { limbState, CL, probeHand, FSTAT } = await imp('climb.js'), { PHY } = await imp('controller.js'), clamp = THREE.MathUtils.clamp;
-const mkSim__ = (...a) => (lastSim__ = makeSim(...a));
+const mkSim__ = (...a) => { const s = makeSim(...a); lastSim__ = lastSim__ || s; return s; };
 const CLP = path.resolve(HERE, '../assets_local/clips.json'), useClip = process.env.MODE === 'clip';
 if (useClip && !fs.existsSync(CLP)) { console.log('clips.json 없음 → 건너뜀'); process.exit(0); }
 const clips = useClip ? JSON.parse(fs.readFileSync(CLP, 'utf8')) : null, rig = buildCharacter(), DT = PHY.DT, G = PHY.G;
