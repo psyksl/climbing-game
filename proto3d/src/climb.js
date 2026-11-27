@@ -608,61 +608,126 @@ function reachShift(S, i, goal) { const K = S.climb, fb = K.fb, c = fb && fb.ctx
 //   ② 잡은 뒤(닿을 때만): "그 턱도 잡음"으로 바꿔 같은 식으로 PLAN_T2초 더(새 손도 본다) — 새 손을 잡은 뒤 자세가 자리를 잡으며 옛 팔이 걸리는 것
 //   걸림이 물리가 놓치는 시간(0.15초)만큼 이어지면 그 손을 놓친다고 본다. prot = 버티는 팔을 지키는 풀이 항(fbik heldPen)을 처음부터 켠 후보(전신 연결 켬에서만 뜻이 있다)
 //   처음에는 stepFB를 걸음마다 그대로 굴렸다(가장 충실하다). 한 번에 계산 걸음 12~45개의 시간이 들어 명령을 누른 프레임이 멈췄다 → 끝 자세 + 지연으로 바꿨다. PLAN_FULL = 처음 방식(비교용)
-// 돌려주는 값: lose = 놓칠 손(-1 = 없음) · when = 'reach'|'settle' · t = 그때(초) · why · jam = 손별로 가장 길게 이어진 걸림(초) · dev = 가슴이 시작 자세에서 가장 크게 벗어난 각(rad: 돌림·앞뒤·옆) · far = ① 끝의 어깨–목표 거리 − 팔 길이(양수 = 모자람) · ms
-// 상태를 바꾸지 않는다(K.fb·K.T·그 손의 상태를 잠깐 바꿔 재고 되돌린다). 스위치: PLAN_T2 · PLAN_LOSE = 놓친다고 보는 걸림 시간(기본 0.15초 = 물리와 같다. 예측이 실제보다 짧게 나오는 표본이 있어 여유를 둔 값(0.08)을 비교로 잰다)
-export function planReach(S, i, goal, prot = false) {
-  const K = S.climb, fb = K.fb, c = fb && fb.ctx, b = S.body; if (!K.on || !fbOn(K) || !c || !K.T) return null;
-  const sup = K.hands.filter(h => h.i !== i && h.st === 'hold'); if (!sup.length) return null;
-  const t00 = typeof performance !== 'undefined' ? performance.now() : 0, yaw = b.yaw, left = V(Math.cos(yaw), 0, -Math.sin(yaw)), fwd = V(Math.sin(yaw), 0, Math.cos(yaw)), dt = 1 / 120, a3 = v => [v.x, v.y, v.z], H = K.hands[i], FULL = !!globalThis.PLAN_FULL, EV = FULL ? 2 : 4;
-  const f2 = { xs: Float64Array.from(fb.xs), x: Float64Array.from(fb.x), v: Float64Array.from(fb.v), hang: fb.hang, sup: fb.sup, cost: fb.cost, axis: fb.axis }, aimY = K.aim ? K.aim.y : 0;
-  const g2 = [null, null]; g2[i] = goal; for (const h of sup) g2[h.i] = h.goal; const isX = !!g2[0] && !!g2[1] && g2[0].clone().sub(g2[1]).dot(left) < -0.02, twist = isX ? (i ? 1 : -1) * 0.45 * (globalThis.XTW ?? (globalThis.CROSSOVER ? -1 : 1)) : 0;
-  const mk = st => { const A = fbAims(S, st === 2 ? sup : [...sup, { goal }], left, fwd);
+// 돌려주는 값: lose = 놓칠 손(-1 = 없음) · when = 'reach'|'settle' · t = 그때(초) · why · jam = 손별로 가장 길게 이어진 걸림(초) · dev = 가슴이 시작 자세에서 가장 크게 벗어난 각(rad: 돌림·앞뒤·옆) · far = ① 끝의 어깨–목표 거리 − 팔 길이(양수 = 모자람) · units = 든 일의 양
+// 스위치: PLAN_T2 · PLAN_LOSE = 놓친다고 보는 걸림 시간(기본 0.15초 = 물리와 같다. 예측이 실제보다 짧게 나오는 표본이 있어 여유를 둔 값(0.08)을 비교로 잰다)
+//
+// p3d-0.15.6(GPT의 0.15.5 검토 — "목표를 겨누고 잠깐 기다리면 자세가 바뀌어도 예전 답을 재사용한다 / 클릭 순간의 긴 계산"):
+//   ㉮ 답의 유효 범위: 0.15.5는 답을 "목표·몸의 자리·손발의 상태"만으로 찾아 썼다. 예측은 전신 자세(풀이 값·쓰는 값·그 빠르기)와 겨눈 쪽으로 가슴이 따라간 값(K.aim)·옵션도 읽는다 →
+//      겨누고 기다리는 동안 가슴이 겨눈 쪽으로 돌아도(자세가 바뀌어도) 예전 "보내도 됨"을 썼다. 이제 답에 **계산을 시작한 때의 표식**(planSig: 손발·옵션·스위치 = 같아야 함 / 몸의 자리·전신 자세 = PLAN_TOL 안)을 붙이고, 쓸 때마다 지금 상태와 맞는지 본다.
+//   ㉯ 겨눈 값의 모형: 실제로 손을 뻗는 동안에는 K.aim이 0.08초로 0으로 돌아가고 잡은 뒤에는 다시 겨눈 쪽으로 간다. 0.15.5는 누른 순간의 값을 끝까지 그대로 썼다(겨눈 지 얼마 안 됐으면 작게, 오래 겨눴으면 크게 — 같은 요청의 답이 기다린 시간에 따라 갈렸다).
+//      이제 뻗는 동안 0, 잡은 뒤는 그 목표를 겨눴을 때의 값(aimYawFor — 걸음의 식과 같은 함수). OLDPLANAIM = 0.15.5처럼
+//   ㉰ 계산을 나눔: 예측을 일의 단위(끝 자세 풀이 한 번 · 판정 한 번 = 1)마다 멈출 수 있는 작업으로 만들고(planReachG·planDecideG), **고정 계산 걸음**이 걸음마다 정해진 양만 한다(planTick — 벽시계가 아니라 일의 양이라 같은 입력이면 같은 걸음에 끝난다).
+//      겨눈 목표는 누르기 전부터 미리 계산해 둔다(걸음마다 PLAN_BUD). 누른 순간 답이 없으면 그 명령은 손을 떼지 않은 채 기다리고(H.planWait) 걸음마다 PLAN_BUD_CMD씩 계산해, 답이 나온 걸음에 같은 명령을 다시 넣는다.
+//      기다리는 동안 새 명령·놓기가 오면 버리고, 같은 목표를 또 누르면 한 명령으로 보고, 몸이 움직이기 시작하면(검사의 범위 밖) 검사 없이 보내고, PLAN_WAIT_MAX걸음이 지나면 버린다(늦게 몰래 실행하지 않는다).
+//      미리보기(probeHand)는 계산하지 않고 유효한 답만 읽는다 — 0.15.5는 미리보기가 답을 만들어 넣어, 미리보기를 불렀는지에 따라 게임의 결과가 달라졌다(그리기는 상태를 바꾸지 않는다는 규칙을 어겼다).
+//      OLDPLANCACHE = 0.15.5의 방식(옛 열쇠·그 자리에서 한 번에 계산 — 결함 재현용)
+const PLAN_TOL = { pos: 0.003, ang: 0.01, vel: 0.15 };
+// 겨눈 점을 가만히 보고 있을 때 가슴이 따라갈 좌우 각(stepClimb의 K.aim 목표와 뻗기 전 검사가 같은 식을 쓴다)
+function aimYawFor(b, look, fwd, left) { const d = look.clone().sub(V(b.pos.x, b.pos.y + 1.68, b.pos.z)), f = d.dot(fwd), l = d.dot(left); return f > -0.1 ? clamp(Math.atan2(l, Math.max(0.15, f)), -1, 1) * (globalThis.AIM_YAW ?? CL.AIM_YAW) : 0; }
+// 머리가 그 점을 볼 때의 좌우·위아래 각(가슴 기준. stepClimb의 머리 목표와 뻗기 전 검사가 같은 식을 쓴다). 등 뒤면 null
+function lookAnglesFor(T, tgt) { const d = tgt.clone().sub(T.head).applyQuaternion(T.qC.clone().invert()); return d.z > -0.1 ? [clamp(Math.atan2(d.x, d.z), -1.0, 1.0), clamp(-Math.atan2(d.y, Math.hypot(d.x, d.z)), -0.7, 0.8)] : null; }
+const planF3 = v => `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`;
+// 답의 표식: key = 같아야 하는 것(손·목표·손발의 상태와 자리(1mm)·검사가 읽는 옵션과 스위치) / 나머지 = PLAN_TOL 안이어야 하는 것(몸의 자리·방향, 전신 자세의 풀이 값·쓰는 값·빠르기)
+function planKey(S, i, goal) { const K = S.climb, e = optEffect(S.opt), G = globalThis;
+  return [i, planF3(goal), K.hands.map(h => h.st + (h.st === 'hold' ? planF3(h.goal) : '')).join('/'), K.feet.map(x => x.st + (x.st === 'plant' && x.ank ? planF3(x.ank) : '')).join('/'), +e.link, +e.poseAssist, +e.press, +assistOn(S), G.NOHELDCLR ? 1 : 0, G.PLAN_LOSE ?? '', G.PLAN_T2 ?? '', G.PLAN_FULL ? 1 : 0, G.OLDHEADE ? 1 : 0, G.HEADE_K ?? '', G.OLDAIMBODY ? 1 : 0, G.OLDPLANAIM ? 1 : 0].join('|'); }
+function planSig(S, i, goal) { const b = S.body, K = S.climb, fb = K.fb; return { key: planKey(S, i, goal), pos: [b.pos.x, b.pos.y, b.pos.z], yaw: b.yaw, look: [K.pz.lookY, K.pz.lookP, K.pz.twist], x: Float64Array.from(fb.x), xs: Float64Array.from(fb.xs), v: Float64Array.from(fb.v) }; }
+function planSame(sig, S, i, goal) { const b = S.body, fb = S.climb.fb, Z = S.climb.pz, T = PLAN_TOL; if (!sig || sig.key !== planKey(S, i, goal)) return false;
+  if (Math.abs(sig.look[0] - Z.lookY) > 2 * T.ang || Math.abs(sig.look[1] - Z.lookP) > 2 * T.ang || Math.abs(sig.look[2] - Z.twist) > T.ang) return false;
+  if (Math.abs(sig.pos[0] - b.pos.x) > T.pos || Math.abs(sig.pos[1] - b.pos.y) > T.pos || Math.abs(sig.pos[2] - b.pos.z) > T.pos || Math.abs(sig.yaw - b.yaw) > T.ang) return false;
+  for (let a = 0; a < sig.x.length; a++) { const tol = a === FBI.PX || a === FBI.PY || a === FBI.PZ ? T.pos : T.ang; if (Math.abs(sig.x[a] - fb.x[a]) > tol || Math.abs(sig.xs[a] - fb.xs[a]) > tol || Math.abs(sig.v[a] - fb.v[a]) > T.vel) return false; }
+  return true; }
+// 계산을 시작하는 순간의 재료(작업이 여러 걸음에 걸쳐도 이 값으로 굴린다. 그사이 상태가 표식에서 벗어나면 작업을 버리고 다시 시작한다 — planTick)
+function planSnap(S, i, goal) { const K = S.climb, fb = K.fb, c = fb && fb.ctx, b = S.body; if (!K.on || !fbOn(K) || !c || !K.T) return null;
+  const held = K.hands.filter(h => h.i !== i && h.st === 'hold'); if (!held.length) return null;
+  const yaw = b.yaw, left = V(Math.cos(yaw), 0, -Math.sin(yaw)), fwd = V(Math.sin(yaw), 0, Math.cos(yaw)), H = K.hands[i];
+  return { c, xs: Float64Array.from(fb.xs), x: Float64Array.from(fb.x), v: Float64Array.from(fb.v), hang: fb.hang, sup: fb.sup, cost: fb.cost, axis: fb.axis, held: held.map(h => ({ i: h.i, goal: h.goal.clone() })), left, fwd,
+    pos: b.pos.clone(), yaw, pz: { ...K.pz }, lean: { ...K.lean }, hg: K.hg ? { ...K.hg } : null, hc: K.hc, shrug: K.shrug.slice(), aim0: K.aim ? K.aim.y : 0, aimT: poseAssistOn(S) && !globalThis.OLDAIMBODY ? aimYawFor(b, goal, fwd, left) : 0, sh0: K.T.sh[i].clone(), w0: (H.w || K.T.sh[i]).clone() }; }
+// 예측 하나(멈출 수 있는 작업 — yield 한 번 = 일 한 단위). 상태를 바꾸지 않는다(판정할 때만 K.fb·K.T·그 손의 상태를 잠깐 바꾸고 그 자리에서 되돌린다)
+function* planReachG(S, i, goal, prot, sn) {
+  const K = S.climb, b = S.body, c = sn.c, dt = 1 / 120, a3 = v => [v.x, v.y, v.z], H = K.hands[i], G = globalThis, FULL = !!G.PLAN_FULL, EV = FULL ? 2 : 4;
+  const f2 = { xs: Float64Array.from(sn.xs), x: Float64Array.from(sn.x), v: Float64Array.from(sn.v), hang: sn.hang, sup: sn.sup, cost: sn.cost, axis: sn.axis };
+  const g2 = [null, null]; g2[i] = goal; for (const h of sn.held) g2[h.i] = h.goal; const isX = !!g2[0] && !!g2[1] && g2[0].clone().sub(g2[1]).dot(sn.left) < -0.02, twist = isX ? (i ? 1 : -1) * 0.45 * (G.XTW ?? (G.CROSSOVER ? -1 : 1)) : 0;
+  const mk = st => { const A = fbAims(S, st === 2 ? sn.held : [...sn.held, { goal }], sn.left, sn.fwd), aimY = G.OLDPLANAIM ? sn.aim0 : st === 2 ? 0 : sn.aimT;
     return { ...c, axis: a3(A.ax), yawT: A.yawT + aimY, twist, arms: c.arms.map((a, j) => (j === i ? { st, goal: a3(goal), w: 1, clr: 0, clr0: null, pole: null, low: 0, cone: 0 } : prot && a.st === 1 && a.pole ? { ...a, clr: 1, clr0: [-9, -9] } : a)), shr: c.shr.map((v, j) => (j === i ? (st === 2 && goal.y > b.pos.y + 1.4 ? 0.40 : 0) : st === 2 ? 0 : v)) }; };
-  const fb0 = K.fb, T0 = K.T, st0 = H.st, goal0 = H.goal, jam = [0, 0], jmax = [0, 0], x0 = [fb.x[FBI.YC], fb.x[FBI.PC], fb.x[FBI.RC]], dev = [0, 0, 0], LOSE = globalThis.PLAN_LOSE ?? 0.15, R = { lose: -1, when: '', t: 0, why: '', jam: jmax, dev, far: null, prot };
-  const dist = (H.w || K.T.sh[i]).distanceTo(goal), T1 = clamp(0.2 + 0.45 * dist, 0.25, 0.7), T2 = globalThis.PLAN_T2 ?? 0.6, NV = f2.xs.length;
-  try { K.fb = f2; H.st = 'reach'; H.goal = goal.clone();
-    const run = (cx, T, ph, t0, who) => { const n = Math.round(T / dt); let xa = null, xb = null, kN = 1;
-      if (!FULL) { xa = Float64Array.from(f2.xs); xb = Float64Array.from(f2.xs); let prev = null; for (let it = 0; it < 16; it++) { fbSolve(xb, cx, 1, 0.12); let m = 0; if (prev) for (let a = 0; a < NV; a++) m = Math.max(m, Math.abs(xb[a] - prev[a])); if (prev && m < 0.004) break; prev = Float64Array.from(xb); }
-        let mx = 0; for (let a = 0; a < NV; a++) mx = Math.max(mx, Math.abs(xb[a] - xa[a])); kN = Math.max(1, mx / FBW.step); cx.xEnd = xb; }
-      for (let k = 1; k <= n; k++) {
-        if (FULL) { cx.iters = f2.cost > 3 ? 2 : 1; stepFB(f2, cx, dt); } else { const u = Math.min(1, k / kN); for (let a = 0; a < NV; a++) f2.xs[a] = xa[a] + (xb[a] - xa[a]) * u; fbFollow(f2, f2.xs, dt); }
-        if (k % EV) continue;
-        K.T = torso(b, K); dev[0] = Math.max(dev[0], Math.abs(f2.x[FBI.YC] - x0[0])); dev[1] = Math.max(dev[1], Math.abs(f2.x[FBI.PC] - x0[1])); dev[2] = Math.max(dev[2], Math.abs(f2.x[FBI.RC] - x0[2]));
-        for (const [j, gj] of who) { const w = armCheck(S, j, K.T.sh[j], gj); jam[j] = w ? jam[j] + EV * dt : 0; jmax[j] = Math.max(jmax[j], jam[j]); if (jam[j] > LOSE - 1e-6 && R.lose < 0) { R.lose = j; R.when = ph; R.t = t0 + k * dt; R.why = w; } }
-        if (R.lose >= 0) return false; } return true; };
-    const who1 = sup.map(h => [h.i, h.goal]); const cx1 = mk(2); let ok = run(cx1, T1, 'reach', 0, who1);
-    // 닿는가: 뻗은 끝 자세의 어깨에서(중간에 놓쳐 멈췄어도 끝 자세로 잰다) 팔 길이 + 잡기 보정의 가만히 있을 때 몫 — 미리보기(probeHand)와 같은 기준
-    { const xe = FULL || !cx1.xEnd ? null : cx1.xEnd, AS = assistOn(S) ? CL.ASSIST_S : 0; let sh = null; if (xe) { const p0 = fbFK(fb.x, c.pos, c.yaw).sh[i], p1 = fbFK(xe, c.pos, c.yaw).sh[i]; sh = T0.sh[i].clone().add(V(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2])); } else { K.T = torso(b, K); sh = K.T.sh[i]; } R.far = sh.distanceTo(goal) - CL.ARM - AS; }
-    // 닿지 않으면 손은 뻗은 채 머물다 돌아온다 → 뻗는 문맥으로 0.4초 더 본다. 닿으면 잡은 뒤를 본다
-    if (ok && R.far > 0.02) ok = run(mk(2), 0.4, 'reach', T1, who1);
-    else if (ok) { H.st = 'hold'; run(mk(1), T2, 'settle', T1, [...who1, [i, goal]]); }
-  } finally { K.fb = fb0; K.T = T0; H.st = st0; H.goal = goal0; }
-  R.ms = typeof performance !== 'undefined' ? performance.now() - t00 : 0; return R; }
-// 뻗기 전 검사의 결정(p3d-0.15.5). 고치려는 것 = "새 명령 때문에 버티는 손이 제 몸에 걸려 풀리는 것"뿐이다(미끄러짐·과부하·점프·사용자가 놓는 것은 그대로).
+  const jam = [0, 0], jmax = [0, 0], jph = ['', ''], x0 = [sn.x[FBI.YC], sn.x[FBI.PC], sn.x[FBI.RC]], dev = [0, 0, 0], LOSE = G.PLAN_LOSE ?? 0.15, R = { lose: -1, when: '', t: 0, why: '', jam: jmax, dev, far: null, prot, units: 0 };
+  const dist = sn.w0.distanceTo(goal), T1 = clamp(0.2 + 0.45 * dist, 0.25, 0.7), T2 = G.PLAN_T2 ?? 0.6, NV = f2.xs.length; let hst = 'reach';
+  // 판정 한 번: 굴려 본 자세를 잠깐 입혀 물리와 같은 함수로 본다
+  //   몸의 자리·방향, 머리·목이 보는 쪽과 몸의 층(K.pz·K.lean·K.hg·K.hc·K.shrug — torso가 읽는다)도 계산을 시작한 때의 것으로: 작업이 몇 걸음에 걸치는 동안 머리가 겨눈 쪽으로 더 돌면 "팔이 머리를 지나감"의 답이 달라졌다(같은 상태의 답이 계산을 나눈 방식에 따라 갈렸다)
+  const pos1 = V(), check = (who, ph, t) => { const fb0 = K.fb, T0 = K.T, st0 = H.st, g0 = H.goal, yaw1 = b.yaw, pz1 = K.pz, lean1 = K.lean, hg1 = K.hg, hc1 = K.hc, shr1 = K.shrug; pos1.copy(b.pos); try { K.fb = f2; H.st = hst; H.goal = goal; b.pos.copy(sn.pos); b.yaw = sn.yaw; K.pz = sn.pz; K.lean = sn.lean; K.hg = sn.hg; K.hc = sn.hc; K.shrug = sn.shrug; K.T = torso(b, K);
+      // 머리: 손을 뻗는 동안 머리는 그 목표를 본다(0.09초로 따라간다) → 굴려 본 가슴에서 그 목표를 볼 때의 각으로 다시 세운다. 누른 순간의 고개(겨눈 지 얼마 안 됐으면 아직 덜 돌아가 있다)를 그대로 쓰면 같은 요청의 답이 겨눈 시간에 따라 갈렸다
+      if (!G.OLDPLANAIM) { const lk = lookAnglesFor(K.T, goal); if (lk) { K.pz = { ...sn.pz, lookY: lk[0], lookP: lk[1] }; K.T = torso(b, K); } }
+      dev[0] = Math.max(dev[0], Math.abs(f2.x[FBI.YC] - x0[0])); dev[1] = Math.max(dev[1], Math.abs(f2.x[FBI.PC] - x0[1])); dev[2] = Math.max(dev[2], Math.abs(f2.x[FBI.RC] - x0[2]));
+      // 놓치는 때의 갈래는 그 걸림이 **시작된** 때로 정한다(p3d-0.15.6): 뻗는 동안 걸리기 시작해 잡은 뒤까지 이어진 것은 '뻗는 중'이다 — 0.15.5는 0.15초를 넘긴 때로 갈라, 잡기 직전에 시작된 걸림을 '잡은 뒤'로 보고 막지 않았다(노랑 3)
+      for (const [j, gj] of who) { const w = armCheck(S, j, K.T.sh[j], gj); if (w && !(jam[j] > 0)) jph[j] = ph; jam[j] = w ? jam[j] + EV * dt : 0; jmax[j] = Math.max(jmax[j], jam[j]); if (jam[j] > LOSE - 1e-6 && R.lose < 0) { R.lose = j; R.when = G.OLDPLANAIM ? ph : jph[j]; R.t = t; R.why = w; } }
+    } finally { K.fb = fb0; K.T = T0; H.st = st0; H.goal = g0; b.pos.copy(pos1); b.yaw = yaw1; K.pz = pz1; K.lean = lean1; K.hg = hg1; K.hc = hc1; K.shrug = shr1; } };
+  function* run(cx, T, ph, t0, who) { const n = Math.round(T / dt); let xa = null, xb = null, kN = 1;
+    if (!FULL) { xa = Float64Array.from(f2.xs); xb = Float64Array.from(f2.xs); let prev = null; for (let it = 0; it < 16; it++) { fbSolve(xb, cx, 1, 0.12); R.units++; yield 1; let m = 0; if (prev) for (let a = 0; a < NV; a++) m = Math.max(m, Math.abs(xb[a] - prev[a])); if (prev && m < 0.004) break; prev = Float64Array.from(xb); }
+      let mx = 0; for (let a = 0; a < NV; a++) mx = Math.max(mx, Math.abs(xb[a] - xa[a])); kN = Math.max(1, mx / FBW.step); cx.xEnd = xb; }
+    for (let k = 1; k <= n; k++) {
+      if (FULL) { cx.iters = f2.cost > 3 ? 2 : 1; stepFB(f2, cx, dt); } else { const u = Math.min(1, k / kN); for (let a = 0; a < NV; a++) f2.xs[a] = xa[a] + (xb[a] - xa[a]) * u; fbFollow(f2, f2.xs, dt); }
+      if (k % EV) continue;
+      check(who, ph, t0 + k * dt); R.units++; yield 1; if (R.lose >= 0) return false; }
+    return true; }
+  const who1 = sn.held.map(h => [h.i, h.goal]), cx1 = mk(2); let ok = yield* run(cx1, T1, 'reach', 0, who1);
+  // 닿는가: 뻗은 끝 자세의 어깨에서(중간에 놓쳐 멈췄어도 끝 자세로 잰다) 팔 길이 + 잡기 보정의 가만히 있을 때 몫 — 미리보기(probeHand)와 같은 기준
+  { const xe = FULL || !cx1.xEnd ? f2.x : cx1.xEnd, AS = assistOn(S) ? CL.ASSIST_S : 0, p0 = fbFK(sn.x, c.pos, c.yaw).sh[i], p1 = fbFK(xe, c.pos, c.yaw).sh[i]; R.far = sn.sh0.clone().add(V(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2])).distanceTo(goal) - CL.ARM - AS; }
+  // 닿지 않으면 손은 뻗은 채 머물다 돌아온다 → 뻗는 문맥으로 0.4초 더 본다. 닿으면 잡은 뒤를 본다
+  if (ok && R.far > 0.02) ok = yield* run(mk(2), 0.4, 'reach', T1, who1);
+  else if (ok) { hst = 'hold'; yield* run(mk(1), T2, 'settle', T1, [...who1, [i, goal]]); }
+  return R; }
+const planDrive = g => { let r; while (!(r = g.next()).done); return r.value; };
+export function planReach(S, i, goal, prot = false) { const sn = planSnap(S, i, goal); return sn ? planDrive(planReachG(S, i, goal, prot, sn)) : null; }
+// 뻗기 전 검사의 결정. 고치려는 것 = "새 명령 때문에 버티는 손이 제 몸에 걸려 풀리는 것"뿐이다(미끄러짐·과부하·점프·사용자가 놓는 것은 그대로).
 //   go    = 그대로 보낸다(놓칠 손이 없다 · 또는 잡은 뒤에 옛 손이 풀리지만 지킬 길을 못 찾음 — 새 손은 잡히므로 막지 않는다. 0.11.4의 "필요하면 다른 쪽을 놓고 원했던 턱을 잡게"와 같은 결과)
 //   guard = 버티는 팔을 지키는 풀이 항을 처음부터 켜고 보낸다(그 길로는 놓치지 않고 닿는다고 나옴. 전신 연결 켬에서만)
 //   deny  = 손을 떼지 않고 거부한다: ㉠ 어차피 닿지 않는데(far) 뻗으면 버티는 손이 풀림 ㉡ 닿지만 뻗는 동안 버티는 손이 풀리고 지킬 길도 없음(jam)
 //   몸이 움직이는 중·뛰는 중에는 부르지 않는다(가만히 있을 때의 분명한 것만 미리 막는다)
-export function planDecide(S, i, goal) { const a = planReach(S, i, goal, false); if (!a) return { act: 'go', a: null }; if (a.lose < 0) return { act: 'go', a };
+function* planDecideG(S, i, goal, sn) { const a = yield* planReachG(S, i, goal, false, sn); if (a.lose < 0) return { act: 'go', a };
   const guardOk = linkOn(S) && !globalThis.NOHELDCLR;
   if (a.when === 'reach') { if (a.far > 0.02) return { act: 'deny', kind: 'far', why: `닿지 않음(${short(a.far)} 모자람)`, a };
     // 지키며 뻗으면 뻗는 동안은 버티고 닿는다 → 보낸다(잡은 뒤에 풀리는 것은 아래 줄과 같이 막지 않는다)
-    const g = guardOk ? planReach(S, i, goal, true) : null; if (g && g.far <= 0.02 && (g.lose < 0 || g.when === 'settle')) return { act: 'guard', a, g, after: g.lose >= 0 };
+    const g = guardOk ? yield* planReachG(S, i, goal, true, sn) : null; if (g && g.far <= 0.02 && (g.lose < 0 || g.when === 'settle')) return { act: 'guard', a, g, after: g.lose >= 0 };
     return { act: 'deny', kind: 'jam', why: '버티는 팔이 몸에 걸려 그렇게는 뻗지 못함', a, g }; }
-  const g = guardOk ? planReach(S, i, goal, true) : null; if (g && g.lose < 0 && g.far <= 0.02) return { act: 'guard', a, g };
+  const g = guardOk ? yield* planReachG(S, i, goal, true, sn) : null; if (g && g.lose < 0 && g.far <= 0.02) return { act: 'guard', a, g };
   return { act: 'go', a, g, after: true }; }
+export function planDecide(S, i, goal) { const sn = planSnap(S, i, goal); return sn ? planDrive(planDecideG(S, i, goal, sn)) : { act: 'go', a: null }; }
 // 시험·진단용: 겨눈 점 pt를 명령과 같은 식으로 턱에 맞춘 뒤 두 후보(그대로 / 버티는 팔을 지키며)를 굴려 본다
 export function planHand(S, i, pt) { const g = resolveGrip(S.worldAll || S.world, pt); if (!g) return null; const goal = anchorOf(g); return { a: planReach(S, i, goal, false), b: planReach(S, i, goal, true) }; }
-// 돌려주는 값의 verdict(p3d-0.15.1 — 발 미리보기의 kind(윗면·벽면)와 다른 이름, GPT의 0.15.0 검토 — "닿지 않음"을 단정하지 않게 화면이 셋으로 나눠 보인다):
-//   'reach' = 지금 자세에서 닿는다 · 'near' = 거리만 모자란다(다가가거나 뛰면 닿을 수 있다 — short = 모자란 거리) · 'block' = 지금 자세에서는 길·제 몸·관절에 막힌다 · 'none' = 잡을 턱이 아니다
-//   sure는 "몸이 거의 멈춰 있다"(자세 기준이 곧 바뀌지 않는다)일 뿐, 결과를 확신한다는 뜻이 아니다. 'reach'라도 뻗는 동안 다른 팔·몸·턱에 막힐 수 있다(재 본 것: test/preview_check.mjs)
-// 뻗기 전 검사의 결과를 상태가 같으면 다시 계산하지 않는다(미리보기는 프레임마다 묻는다): 목표·몸의 자리·손발의 상태와 자리가 1mm 안에서 같으면 같은 답
-function planCached(S, i, goal) { const K = S.climb, b = S.body, f = v => `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`, key = `${i}|${f(goal)}|${f(b.pos)}|${b.yaw.toFixed(3)}|${K.hands.map(h => h.st + (h.st === 'hold' ? f(h.goal) : '')).join('|')}|${K.feet.map(x => x.st + (x.st === 'plant' && x.ank ? f(x.ank) : '')).join('|')}|${linkOn(S) ? 1 : 0}`;
-  if (K.planC && K.planC.key === key) return K.planC.val; const val = planDecide(S, i, goal); K.planC = { key, val }; return val; }
+// 시험·진단용: 지금 상태에서 저장된 답·진행 중인 계산을 쓰지 않고 처음부터 새로 내린 결정(상태를 바꾸지 않는다)
+export function planFresh(S, i, pt) { const g = resolveGrip(S.worldAll || S.world, pt); return g ? planDecide(S, i, anchorOf(g)) : null; }
 const planApplies = (S, H) => planOn(S) && S.climb.on && H.st !== 'reach' && !jumping(S) && S.body.vel.length() < 0.3;
-// 미리보기도 같은 검사를 거친다(옵션 켬에서만): 눌렀을 때 손을 떼지 않고 거부될 자리는 "현재 자세에서 막힘"으로 보인다(미리보기와 실제 판정은 같은 함수)
+const planBox = K => K.plan || (K.plan = { res: [null, null], job: null });
+// 지금 상태에 유효한 답(없으면 null). 계산하지 않는다 — 미리보기와 명령이 함께 읽는다
+function planGet(S, i, goal) { const K = S.climb, P = planBox(K);
+  if (globalThis.OLDPLANCACHE) { const b = S.body, key = `${i}|${planF3(goal)}|${planF3(b.pos)}|${b.yaw.toFixed(3)}|${K.hands.map(h => h.st + (h.st === 'hold' ? planF3(h.goal) : '')).join('|')}|${K.feet.map(x => x.st + (x.st === 'plant' && x.ank ? planF3(x.ank) : '')).join('|')}|${linkOn(S) ? 1 : 0}`; if (!(K.planC && K.planC.key === key)) K.planC = { key, val: planDecide(S, i, goal) }; return K.planC.val; }
+  const r = P.res[i]; return r && planSame(r.sig, S, i, goal) ? r.val : null; }
+// 미리 계산해 둔 답을 명령이 그대로 써도 되는가: 걸림이 한 번도 나오지 않은 "그대로 보냄"만(문턱 근처의 답은 상태가 조금만 달라도 뒤집힌다 → 누른 순간의 상태로 다시 계산한다). PLAN_NOFAST = 늘 다시 계산
+const planClear = v => !globalThis.PLAN_NOFAST && v && v.act === 'go' && !v.after && (!v.a || Math.max(...v.a.jam) < 1e-9);
+// 고정 계산 걸음마다 한 번(stepClimb의 처음): 기다리는 명령과 겨눈 목표의 예측을 정해진 양만큼 진행한다
+//   기다리는 명령의 작업은 **누른 순간의 상태**로 끝까지 굴린다(그사이 몸·자세가 조금 움직여도 다시 시작하지 않는다 — 손발의 상태나 옵션이 바뀌면 다시 시작한다). 겨눈 목표의 작업은 상태가 표식에서 벗어나면 버리고 다시 시작한다
+function planTick(S, inp) { const K = S.climb, G = globalThis;
+  if (!K.on || !planOn(S) || G.OLDPLANCACHE) { if (K.plan) K.plan.job = null; for (const H of K.hands) { const w = H.planWait; if (w) { H.planWait = null; command(S, { type: 'hand', i: H.i, p: w.p, armed: w.armed, planned: true }); } } return; }
+  const P = planBox(K); let want = null;
+  const send = (H, w, val) => { H.planWait = null; K.planWaited = w.t; command(S, { type: 'hand', i: H.i, p: w.p, armed: w.armed, planned: true, planVal: val }); K.planWaited = 0; };
+  for (const H of K.hands) { const w = H.planWait; if (!w) continue; w.t++;
+    if (H.st !== w.st) { H.planWait = null; continue; }
+    // 몸이 움직이기 시작했다(검사의 범위 밖) → 검사 없이 보낸다
+    if (!planApplies(S, H)) { send(H, w, null); continue; }
+    if (w.t > (G.PLAN_WAIT_MAX ?? 42)) { H.planWait = null; deny(S, H, 'hand', '자세 확인이 끝나지 않아 취소됨'); continue; }
+    if (!want) want = { i: H.i, goal: w.goal, cmd: true, H, w }; }
+  // 겨눈 목표(누르기 전): 두 손 가운데 아직 답이 없는 쪽부터
+  if (!want && inp && inp.look) { const g = resolveGrip(S.worldAll || S.world, V(...inp.look)); if (g) { const goal = anchorOf(g);
+      for (const H of K.hands) { if (!planApplies(S, H) || !K.hands.some(h => h.i !== H.i && h.st === 'hold') || (H.st === 'hold' && g.p.distanceTo(H.grip) < 0.04) || planGet(S, H.i, goal)) continue; want = { i: H.i, goal, cmd: false }; break; } } }
+  if (!want) { P.job = null; return; }
+  let J = P.job; const sameJob = J && J.i === want.i && J.goal.distanceToSquared(want.goal) < 1e-6 && (want.cmd ? J.cmd && J.sig.key === planKey(S, J.i, J.goal) : !J.cmd && planSame(J.sig, S, J.i, J.goal));
+  if (!sameJob) { const sn = planSnap(S, want.i, want.goal), sig = planSig(S, want.i, want.goal);
+    if (!sn) { const val = { act: 'go', a: null }; P.res[want.i] = { sig, goal: want.goal.clone(), val, units: 0 }; P.job = null; if (want.cmd) send(want.H, want.w, val); return; }
+    J = P.job = { i: want.i, goal: want.goal.clone(), sig, cmd: want.cmd, gen: planDecideG(S, want.i, want.goal, sn), units: 0 }; }
+  for (let n = want.cmd ? (G.PLAN_BUD_CMD ?? 12) : (G.PLAN_BUD ?? 4); n > 0; n--) { const r = J.gen.next(); J.units++; if (r.done) { P.res[J.i] = { sig: J.sig, goal: J.goal, val: r.value, units: J.units }; P.job = null; if (want.cmd) send(want.H, want.w, r.value); break; } } }
+// 미리보기도 같은 검사를 거친다(옵션 켬에서만): 눌렀을 때 손을 떼지 않고 거부될 자리는 "현재 자세에서 막힘"으로 보인다(미리보기와 실제 판정은 같은 함수).
+//   p3d-0.15.6: 계산하지 않고 유효한 답만 읽는다. 답이 아직 없으면 planWait = true(화면이 "자세 확인 중"을 보일 수 있다)
 export function probeHand(S, i, pt) { const r = probeHand0(S, i, pt);
-  if (r.ok && planApplies(S, S.climb.hands[i])) { const g = resolveGrip(S.worldAll || S.world, pt), pl = g ? planCached(S, i, anchorOf(g)) : null; if (pl && pl.act === 'deny') { r.ok = false; r.why = pl.why; r.plan = pl.kind; } }
+  if (r.ok && planApplies(S, S.climb.hands[i])) { const g = resolveGrip(S.worldAll || S.world, pt), goal = g ? anchorOf(g) : null, pl = goal ? planGet(S, i, goal) : null; if (pl && pl.act === 'deny') { r.ok = false; r.why = pl.why; r.plan = pl.kind; } else if (goal && !pl && S.climb.hands.some(h => h.i !== i && h.st === 'hold')) r.planWait = true; }
   r.verdict = r.ok ? 'reach' : r.short !== undefined ? 'near' : r.grip ? 'block' : 'none'; return r; }
 function probeHand0(S, i, pt) {
   const g = resolveGrip(S.worldAll || S.world, pt), H = S.climb.hands[i];
@@ -717,10 +782,13 @@ export function command(S, c) {
   // 직접 뗀 발(userOff)은 사용자가 그 발을 다시 보내거나 보조를 켜고 끌 때(= 보조 다시 시작)까지 보조·벽 딛기가 다시 보내지 않는다.
   // 시간이 지났거나 손을 옮겼다고 다시 붙이지 않는다(p3d-0.8.1, GPT 결정. 0.7.0은 1.5초 뒤, 0.8.0은 손을 새로 잡으면 다시 보냈다)
   if (c.type === 'assistResume') { for (const F of K.feet) { F.userOff = false; F.offBox = null; } return; }
-  if (c.type === 'release') { if (c.limb === 'hand') { K.hands[c.i].arm = null; releaseHand(S, c.i, '놓음'); } else liftFoot(S, c.i, '뗌'); return; }
+  if (c.type === 'release') { if (c.limb === 'hand') { K.hands[c.i].arm = null; K.hands[c.i].planWait = null; releaseHand(S, c.i, '놓음'); } else liftFoot(S, c.i, '뗌'); return; }
   if (c.type === 'hand') {
-    const H = K.hands[c.i], g = resolveGrip(S.worldAll || S.world, pt); H.arm = null;
-    if (!c.armed) note(S, 'try', 'hand', c.i, '', { p: c.p, hold: !!c.hold });
+    const H = K.hands[c.i], g = resolveGrip(S.worldAll || S.world, pt);
+    // 계산을 기다리는 명령(p3d-0.15.6): 같은 목표를 또 누른 것은 한 명령으로 본다. 다른 명령이 오면 기다리던 것을 버린다
+    if (H.planWait && !c.planned) { if (!c.hold && g && anchorOf(g).distanceToSquared(H.planWait.goal) < 1e-6) return; H.planWait = null; }
+    H.arm = null;
+    if (!c.armed && !c.planned) note(S, 'try', 'hand', c.i, '', { p: c.p, hold: !!c.hold });
     if (!K.on && H.st === 'free' && !(H.ov > 0)) seedBend(S, 'el' + H.s, `upperArm.${H.s}`, `foreArm.${H.s}`, `hand.${H.s}`);
     if (c.hold) {
       // 누르는 동안 뻗기(손 조작 2번): 누르는 순간 그 손을 놓고 조작을 시작한다. 이것은 의도적인 놓기다(거부와 다르다)
@@ -745,7 +813,10 @@ export function command(S, c) {
       H.armP = c.p.slice(); }
     // 뻗기 전 검사(p3d-0.15.5, 옵션 — 기본 끔): 가만히 있고 다른 손이 버티고 있을 때, 손을 떼기 전에 그 뻗기가 버티는 손을 제 몸에 걸리게 하는지 본다(planDecide). 잡던 자리로 돌아가는 손(H.st === 'reach')에는 걸지 않는다
     //   거부는 놓기가 아니다 — 두 손이 그대로 남는다. 쉬운 조작에서 거리가 모자란 것이면 먼 턱처럼 예약으로 기다린다(몸을 옮기면 잡는다)
-    if (planApplies(S, H)) { const pl = planCached(S, c.i, goal); K.planLast = { tick: K.tick, i: c.i, act: pl.act, kind: pl.kind || '', ms: (pl.a ? pl.a.ms : 0) + (pl.g ? pl.g.ms : 0) };
+    if (planApplies(S, H) && !(c.planned && !c.planVal)) { let pl = c.planVal || planGet(S, c.i, goal); if (!c.planVal && !globalThis.OLDPLANCACHE && !planClear(pl)) pl = null;
+      // 바로 쓸 답이 없다(아직 계산 중이거나, 미리 계산한 답이 문턱 근처다) → 손을 떼지 않은 채 기다린다(planTick이 누른 순간의 상태로 걸음마다 계산해 답이 나온 걸음에 이 명령을 다시 넣는다)
+      if (!pl) { H.planWait = { p: c.p.slice(), goal: goal.clone(), armed: !!c.armed, st: H.st, t: 0 }; H.why = ''; return; }
+      K.planLast = { tick: K.tick, i: c.i, act: pl.act, kind: pl.kind || '', units: (pl.a ? pl.a.units : 0) + (pl.g ? pl.g.units : 0), waited: K.planWaited || 0 };
       if (pl.act !== 'go' || pl.after) note(S, 'plan', 'hand', c.i, pl.act === 'deny' ? (pl.kind === 'far' ? '닿지 않고 뻗으면 버티는 손이 풀림 → 뻗지 않음' : '뻗는 동안 버티는 손이 풀림 → 뻗지 않음') : pl.act === 'guard' ? '버티는 팔을 지키며 뻗음' : '잡은 뒤 먼저 잡은 손이 풀릴 수 있음', { act: pl.act, lose: pl.a.lose, when: pl.a.when, at: pl.a.t, jamWhy: pl.a.why, far: pl.a.far });
       if (pl.act === 'deny' && pl.kind === 'far') { const pr = probeHand(S, c.i, pt); if (!pr.ok && pr.short !== undefined && pr.why) pl.why = pr.why; }
       if (pl.act === 'deny') { if (pl.kind === 'far' && armOn(S) && !c.armed && pl.a.far <= CL.ARM_MAX) { H.arm = { p: c.p.slice(), t: 0, short: Math.max(pl.a.far, 0), jump: false, tried: false, why: pl.why }; H.why = ''; H.armP = null; note(S, 'arm', 'hand', c.i, `닿으면 잡음(${short(Math.max(pl.a.far, 0))} 모자람)`); } else deny(S, H, 'hand', pl.why); return; }
@@ -1279,6 +1350,8 @@ export function stepClimb(S, inp, dt) {
   b.events.length = 0; b.t += dt;
   // 자세 규칙(p3d-0.10.1, GPT의 0.10.0 검토 "㉮와 참고 자세 선택 + 접촉 IK를 대표 장면에서 비교"): 'rule' = 사람형 몸의 새 규칙(기본), 'base' = 0.10.0, 'ref' = 참고 자세 색인(캡처 빌드의 실험 설정)
   K.post = DIM.boxCollide ? (S.opt.posture || 'rule') : 'base';
+  // 뻗기 전 검사의 계산(p3d-0.15.6): 기다리는 명령·겨눈 목표의 예측을 이 걸음의 몫만큼 진행한다(앞 걸음에 확정된 상태로)
+  planTick(S, inp);
   // 엇갈린 정도(crossK)는 계산 걸음마다 한 번, 초속 CROSS_RATE까지만 바뀐다(p3d-0.11.7). 바닥이 아닌 발판이고 그 발판이 몸이 보는 벽에 붙어 있을 때만 센다(두 벽 사이에서 몸이 돌아 옆 벽의 발판에 남은 발까지 엇갈림으로 보면 다른 벽 시험의 잡기가 깨졌다). 그대로 쓰면 몸이 경계(안쪽 10cm)를 오갈 때 무릎의 바람이 뛰어 디딘 무릎이 0.1초 사이에 5cm 오갔다(motion_scan v3)
   if (K.on && K.T && DIM.boxCollide) { K.crS = K.crS || [0, 0]; const bf = V(Math.sin(b.yaw), 0, Math.cos(b.yaw)); for (const F of K.feet) { const al = F.box && F.box.kind !== 'floor' ? clamp((-boxFacing(S.world, F.box, bf.clone().negate()).dot(bf) - 0.5) / 0.3, 0, 1) : 0, tgt = F.st === 'free' || !al ? 0 : al * crossK(F.i ? -1 : 1, K.T.hj[F.i], F.st === 'plant' ? F.ank : F.a, b.yaw + K.po.yaw); K.crS[F.i] += clamp(tgt - K.crS[F.i], -CL.CROSS_RATE * dt, CL.CROSS_RATE * dt); } } else K.crS = [0, 0];
   if (K.post === 'fb' && !K.fb) K.fb = makeFB();
@@ -1384,7 +1457,7 @@ export function stepClimb(S, inp, dt) {
     else if (hanging) hr = clamp(b.vel.dot(left) * 0.10, -0.15, 0.15) + side * 0.10;
     springS(Z, 'hipRoll', hr + 0.035 * (Z.idleW || 0) * Math.sin(Z.breath * 1.5) - 0.06 * K.stretch.s * (K.stretchUp || 0) * (reach ? (reach.i ? 1 : -1) : 0), 0.10, dt);
     const mv = K.feet.find(f => f.st === 'move'), tgt = mv ? mv.p : reach ? reach.goal : inp.look ? V(...inp.look) : null; let ly = 0, lp = 0;
-    if (tgt && K.T) { const d = tgt.clone().sub(K.T.head).applyQuaternion(K.T.qC.clone().invert()); if (d.z > -0.1) { ly = clamp(Math.atan2(d.x, d.z), -1.0, 1.0); lp = clamp(-Math.atan2(d.y, Math.hypot(d.x, d.z)), -0.7, 0.8); } }
+    if (tgt && K.T) { const lk = lookAnglesFor(K.T, tgt); if (lk) { ly = lk[0]; lp = lk[1]; } }
     // p3d-0.12.3 자세 보조(사용자: "위로 올라가려면 위를 봐야 하는데 얼굴을 벽에 처박고 있다"): 볼 곳이 없을 때(옮기는 발·뻗는 손·겨눈 곳이 모두 없음 — 스크립트 장면, 마우스가 벽 밖)도 손을 잡고 있으면 가장 높이 잡은 손의 조금 위를 본다.
     //   전에는 가슴이 향한 쪽을 그대로 봐서, 엉덩이를 빼고 가슴이 벽 쪽으로 숙은 자세에서 얼굴이 벽을 향했다(캡처 p2: 가슴 −24°, 얼굴 위로 10°). 가만히 있을 때의 둘러보기는 그 위에 얹힌다. OLDLOOKUP = 옛 방식
     if (!tgt && K.T && held.length && poseAssistOn(S) && !globalThis.OLDLOOKUP) { const top = held.reduce((a, h) => (h.goal.y > a.goal.y ? h : a), held[0]), up = top.goal.clone().add(V(0, CL.LOOK_UP, 0)).sub(K.T.head), hz = V(up.x, 0, up.z), el = Math.min(globalThis.LOOK_EL ?? CL.LOOK_EL, Math.atan2(up.y, hz.length()));
@@ -1395,7 +1468,7 @@ export function stepClimb(S, inp, dt) {
     { const wI = clamp((K.idleT - 1.5) / 1.0, 0, 1); if (wI > 0 && !tgt) { ly += 0.38 * wI * Math.sin(Z.breath * 1.18); lp += 0.10 * wI * Math.sin(Z.breath * 0.83 + 1); } Z.idleW = wI; }
     // p3d-0.12.4 자세 보조(사용자: "머리가 마우스를 따라가면 그에 맞게 상체 조정도 있는가" → "그렇게 진행해"): 겨눈 곳(inp.look)이 있고 손을 뻗거나 발을 옮기는 중이 아니면 가슴도 그쪽으로 조금 따라간다(K.aim → fbUpdate의 가슴 목표).
     //   좌우로만, AIM_YAW까지, 머리보다 느리게(0.22초). 앞뒤(젖힘·숙임)는 넣었다가 뺐다 — 가슴 숙임의 바람을 6배로, 몸통 축의 바람을 4배로 주어도 듣지 않았다(잡은 손의 버티는 각이 가슴의 앞뒤를 정한다). 가만히 있을 때만(손·발을 보내는 중, W·A·D·점프, 몸이 초속 0.15m 넘게 움직이는 중에는 0.08초로 0으로 돌아간다 — 겨눈 곳을 넘긴 채 W로 오르게 두었더니 같은 입력의 몸 높이가 0.26 → 0.13m로 달라졌다: 조준만으로 오르는 결과가 바뀌면 안 된다). 손을 뻗는 동안에는 0으로 돌아간다 — 뻗을 때는 뻗는 어깨가 벽 쪽으로 나가야 해서 보는 쪽으로 가슴을 돌리면 덜 닿는다. 방향은 몸의 기준 자리에서 잰다(가슴에서 재면 제 값을 되먹는다). OLDAIMBODY = 끔
-    { let ay = 0; const calm = !mv && !reach && !(inp.cx || 0) && !(inp.cy || 0) && !K.push && !inp.jump && b.vel.length() < 0.15; if (calm && inp.look && held.length && poseAssistOn(S) && !globalThis.OLDAIMBODY) { const d = V(...inp.look).sub(V(b.pos.x, b.pos.y + 1.68, b.pos.z)), f = d.dot(fwd), l = d.dot(left); if (f > -0.1) ay = clamp(Math.atan2(l, Math.max(0.15, f)), -1, 1) * (globalThis.AIM_YAW ?? CL.AIM_YAW); }
+    { let ay = 0; const calm = !mv && !reach && !(inp.cx || 0) && !(inp.cy || 0) && !K.push && !inp.jump && b.vel.length() < 0.15; if (calm && inp.look && held.length && poseAssistOn(S) && !globalThis.OLDAIMBODY) ay = aimYawFor(b, V(...inp.look), fwd, left);
       K.aim = K.aim || { y: 0 }; springS(K.aim, 'y', ay, calm ? 0.22 : 0.08, dt); }
     { const lk = K.lookK ?? 1; ly *= lk; lp *= lk; }
     springS(Z, 'lookY', ly, 0.09, dt); springS(Z, 'lookP', lp, 0.09, dt); springS(Z, 'tuck', K.push ? 1 : 0, 0.07, dt); Z.breath += dt;
