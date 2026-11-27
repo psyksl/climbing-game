@@ -15,7 +15,7 @@ const IDS = (E.COURSES || world.courses.map(c => c.id).join(',')).split(',');
 const front = (b, n) => { const c = b.min.clone().add(b.max).multiplyScalar(0.5), half = Math.abs(n.x) * (b.max.x - b.min.x) / 2 + Math.abs(n.z) * (b.max.z - b.min.z) / 2; return c.addScaledVector(n, half).setY(b.max.y); };
 // 코스 C에서 손 홀드를 d개째까지 잡은 상태를 만든다(실패하면 null). 돌려주는 값 = { sim, step }
 function state(C, d) { const sim = makeSim(rig, world, CLIPS), n = new THREE.Vector3(...C.frame.n), holds = world.boxes.filter(b => b.course === C.id && b.role !== 'foot').sort((a, b) => a.seq - b.seq);
-  sim.reset({ pos: C.startPos, yaw: C.startYaw }); Object.assign(sim.opt, { posture: 'fb', grabAssist: true, poseAssist: true, easy: EASY, press: true, footAssist: true, wallRest: false, keepHold: E.KEEP === '1' });
+  sim.reset({ pos: C.startPos, yaw: C.startYaw }); Object.assign(sim.opt, { posture: 'fb', grabAssist: true, poseAssist: true, easy: EASY, press: true, footAssist: true, wallRest: false, keepHold: E.KEEP === '1', linkPose: E.LINK === '1' });
   let look = null; const step = (k, cmd = []) => { for (let i = 0; i < k; i++) sim.step({ mx: 0, mz: 0, cxSign: 1, ...(look ? { look } : {}), cmd: i ? [] : cmd }); }, setLook = p => { look = p.toArray(); };
   step(12); for (let j = 0; j < 2 + d; j++) { if (j >= holds.length) return null; const p = front(holds[j], n), i = j % 2; setLook(p); if (j >= 2) step(30); step(j < 2 ? 90 : 150, [{ type: 'hand', i, p: p.toArray() }]); const h = sim.climb.hands[i]; if (!(h.st === 'hold' && h.edge && h.edge.box === holds[j])) return null; }
   return { sim, step, setLook, n }; }

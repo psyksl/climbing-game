@@ -46,10 +46,12 @@ loadKeys();
 const input = makeInput(renderer.domElement);
 const pending = []; // 다음 계산 걸음에 한 번만 들어갈 명령(손발 보내기·놓기)
 // 고를 수 있는 조작 설정(저장됨). handMode 1 = 눌러 보내기, 2 = 누르는 동안 뻗기(떼면 잡기). footAssist = 발 보조(간편 조작). diag = 진단 정보. helpAll = 조작표 모두 보기
-const OPT = { handMode: 1, grabAssist: true, poseAssist: true, easy: true, autoBody: true, keepHold: false, press: true, footAssist: true, wallRest: false, diag: false, helpAll: false, oldPose: false };
+const OPT = { handMode: 1, grabAssist: true, poseAssist: true, easy: true, autoBody: true, keepHold: false, press: true, linkPose: true, footAssist: true, wallRest: false, diag: false, helpAll: false, oldPose: false };
 try { Object.assign(OPT, JSON.parse(localStorage.getItem('p3dOpt_v1') || '{}')); } catch (e) { OPT.handMode = 1; }
 // 비교 후보(p3d-0.15.2): ?keep=1 = 보조가 먼저 잡은 손을 놓지 않음(기본 끔. 키를 새로 두지 않는다 — GPT의 0.15.1 재검토). 저장된 설정보다 주소가 먼저다
 if (params.has('keep')) OPT.keepHold = params.get('keep') !== '0';
+// 전신 연결(p3d-0.15.3, 화면 기본 켬): ?link=0 = 끔(0.15.2의 몸 깊이·팔 힘 그대로 — 비교용)
+if (params.has('link')) OPT.linkPose = params.get('link') !== '0';
 // 시범용 수동 프로필(p3d-0.8.1, GPT 권고): 주소에 ?manual 을 붙이면 발 보조·벽 딛기를 끄고 시작한다(발은 사용자가 고른다). 저장된 사용자 옵션은 덮어쓰지 않는다(이 프로필에서는 저장하지 않는다)
 const MANUAL = /[?&]manual\b/.test(location.search); if (MANUAL) { OPT.footAssist = false; OPT.wallRest = false; }
 // 시범 프로필 ?footx(GPT 답): 벽에서도 발 선택을 X로(지상과 같은 키). 저장된 키 설정을 덮지 않는다(이 실행에만 적용)
@@ -57,7 +59,9 @@ const MANUAL = /[?&]manual\b/.test(location.search); if (MANUAL) { OPT.footAssis
 const OLDRISE_URL = /[?&]oldrise\b/.test(location.search); if (OLDRISE_URL) globalThis.OLDRISE = 1;
 const FOOTX = /[?&]footx\b/.test(location.search); if (FOOTX) setKeys('footMod', ['KeyX'], false);
 const saveOpt = () => { if (MANUAL) return; try { localStorage.setItem('p3dOpt_v1', JSON.stringify(OPT)); } catch (e) { return; } };
-sim.opt.footAssist = OPT.footAssist; sim.opt.grabAssist = OPT.grabAssist; sim.opt.poseAssist = OPT.poseAssist; sim.opt.easy = OPT.easy; sim.opt.autoBody = OPT.autoBody; sim.opt.keepHold = OPT.keepHold; sim.opt.press = OPT.press; sim.opt.wallRest = OPT.wallRest; sim.climb.oldPose = OPT.oldPose;
+// 계산이 읽는 설정은 이 한곳에서만 옮긴다(p3d-0.15.3: 다섯 군데에 흩어져 있어 새 설정을 빠뜨리기 쉬웠다)
+function syncOpt() { for (const k of ['footAssist', 'grabAssist', 'poseAssist', 'easy', 'autoBody', 'keepHold', 'press', 'linkPose', 'wallRest']) sim.opt[k] = OPT[k]; sim.climb.oldPose = OPT.oldPose; }
+syncOpt();
 let viewMode = false, cxSign = 1; // viewMode = 시점 보기 모드(조작 멈춤). cxSign = 몸 좌우 입력을 화면에서 보이는 쪽으로 맞추는 부호
 const aim = { world: null, held: [null, null], foot: [false, false], tap: [false, false] }; // 겨눈 자리(세계 좌표). 마우스를 움직이지 않는 동안에는 화면이 저절로 움직여도 이 자리를 그대로 겨눈다
 const cam = { yaw: Math.PI + 0.35, pitch: 0.28, dist: 4.2, target: new THREE.Vector3(0, 1.1, 2), eff: 4.2, follow: null, followOff: 0, blocked: false }; // eff = 벽에 막혀 줄인 실제 거리, follow = 영상용 따라가기(몸 방향 기준 각도)
@@ -146,7 +150,7 @@ document.documentElement.addEventListener('mouseleave', () => { lostFocus = 'mou
 // 입력 기록(p3d-0.15.2, 시험·영상용): 실제 키·마우스로 넣은 입력을 계산 걸음마다(계산에 넘어간 그대로) 적어 두었다가, 같은 입력을 멈춘 화면에서 한 걸음씩 다시 틀어 영상으로 찍는다(__p3.recStart / recStop)
 let REC = null;
 function physStep(inp) { const c = pending.splice(0), x = c.length ? { ...inp, cmd: (inp.cmd || []).concat(c) } : inp; if (REC) REC.push(JSON.parse(JSON.stringify(x))); sim.step(x); }
-function reset(o) { sim.reset(o || world.spawn); courseReset(gym, sim.tick); sim.opt.footAssist = OPT.footAssist; sim.opt.grabAssist = OPT.grabAssist; sim.opt.poseAssist = OPT.poseAssist; sim.opt.easy = OPT.easy; sim.opt.autoBody = OPT.autoBody; sim.opt.keepHold = OPT.keepHold; sim.opt.press = OPT.press; sim.opt.wallRest = OPT.wallRest; sim.climb.oldPose = OPT.oldPose; body = sim.body; pending.length = 0; aim.held[0] = aim.held[1] = null; }
+function reset(o) { sim.reset(o || world.spawn); courseReset(gym, sim.tick); syncOpt(); body = sim.body; pending.length = 0; aim.held[0] = aim.held[1] = null; }
 
 const CAM = { AIR_BOX: 0.9, WALL_DEAD: 0.12, WALL_RATE: 2.5, LAND_T: 0.8 }, lerpN = (a, b, t) => a + (b - a) * t;
 function updateCamera(dt) {
@@ -288,13 +292,13 @@ function frame(now) {
   if (input.wasPressed('wallStart')) wallStart();
   if (input.wasPressed('handMode')) { cancelHolds('handMode'); OPT.handMode = OPT.handMode === 2 ? 1 : 2; saveOpt(); }
   // 보조를 켜고 끄는 것은 "보조 다시 시작"의 뜻이다: 직접 뗀 발의 표시를 지운다(그 밖에는 그 발을 다시 보낼 때만 지워진다)
-  if (input.wasPressed('poseAssist')) { OPT.poseAssist = !OPT.poseAssist; sim.opt.poseAssist = OPT.poseAssist; saveOpt(); }
-  if (input.wasPressed('press')) { OPT.press = !OPT.press; sim.opt.press = OPT.press; saveOpt(); }
-  if (input.wasPressed('autoBody')) { OPT.autoBody = !OPT.autoBody; sim.opt.autoBody = OPT.autoBody; sim.opt.keepHold = OPT.keepHold; saveOpt(); }
-  if (input.wasPressed('easy')) { OPT.easy = !OPT.easy; sim.opt.easy = OPT.easy; sim.opt.autoBody = OPT.autoBody; sim.opt.keepHold = OPT.keepHold; sim.opt.press = OPT.press; aim.resync = true; saveOpt(); }
-  if (input.wasPressed('grabAssist')) { OPT.grabAssist = !OPT.grabAssist; sim.opt.grabAssist = OPT.grabAssist; sim.opt.poseAssist = OPT.poseAssist; saveOpt(); }
-  if (input.wasPressed('footAssist')) { OPT.footAssist = !OPT.footAssist; sim.opt.footAssist = OPT.footAssist; pending.push({ type: 'assistResume' }); saveOpt(); }
-  if (input.wasPressed('wallRest')) { OPT.wallRest = !OPT.wallRest; sim.opt.wallRest = OPT.wallRest; pending.push({ type: 'assistResume' }); saveOpt(); }
+  if (input.wasPressed('poseAssist')) { OPT.poseAssist = !OPT.poseAssist; syncOpt(); saveOpt(); }
+  if (input.wasPressed('press')) { OPT.press = !OPT.press; syncOpt(); saveOpt(); }
+  if (input.wasPressed('autoBody')) { OPT.autoBody = !OPT.autoBody; syncOpt(); saveOpt(); }
+  if (input.wasPressed('easy')) { OPT.easy = !OPT.easy; syncOpt(); aim.resync = true; saveOpt(); }
+  if (input.wasPressed('grabAssist')) { OPT.grabAssist = !OPT.grabAssist; syncOpt(); saveOpt(); }
+  if (input.wasPressed('footAssist')) { OPT.footAssist = !OPT.footAssist; syncOpt(); pending.push({ type: 'assistResume' }); saveOpt(); }
+  if (input.wasPressed('wallRest')) { OPT.wallRest = !OPT.wallRest; syncOpt(); pending.push({ type: 'assistResume' }); saveOpt(); }
   if (input.wasPressed('diag')) { OPT.diag = !OPT.diag; saveOpt(); }
   // 실험 비교(p3d-0.9.0): 몸통 자세의 층을 끄면 0.8.8의 몸통·무릎·발의 길 그대로다. 붙은 손발은 건드리지 않는다(골반과 무릎이 스프링으로 옮겨 간다)
   if (input.wasPressed('poseMode')) { POSTURE = POSTURE === 'fb' ? 'rule' : 'fb'; applyPosture(); }
@@ -361,7 +365,7 @@ window.__p3 = {
   // 영상·시연용: 계산 걸음마다의 입력 목록을 지금부터 차례로 넣는다(실제 화면 루프로 돈다). 끝나면 저절로 풀린다. 스크립트 입력이며 사람 손이 아니다
   script(inputs) { const k0 = sim.tick; tickInput = k => { const i = k - k0; if (i >= inputs.length - 1) tickInput = null; return inputs[Math.min(i, inputs.length - 1)]; }; }, scripting: () => !!tickInput, pending: () => pending.length, probe: (limb, i, p) => (limb === 'foot' ? probeFoot : probeHand)(sim, i, new THREE.Vector3(...p)),
   screenOf: p => screenOf(p), aim: () => { const a = aimPoint(); return a ? a.toArray() : null; }, aimGrip: () => (aim.grip ? aim.grip.toArray() : null), wallStart, gym: () => { const v = courseView(gym), T = v.try; return { course: v.course && v.course.id, phase: v.phase, done: !!(T && T.done), tryId: T ? T.id : 0, clean: !!(T && T.clean), cleanWhy: T ? T.cleanWhy : '', doneT: T ? T.doneT : 0, live: v.live, rec: v.rec, world: WNAME }; },
-  opt: o => { if (o) { if (('footAssist' in o && o.footAssist !== OPT.footAssist) || ('wallRest' in o && o.wallRest !== OPT.wallRest)) pending.push({ type: 'assistResume' }); if ('handMode' in o && o.handMode !== OPT.handMode) cancelHolds('handMode'); Object.assign(OPT, o); sim.opt.footAssist = OPT.footAssist; sim.opt.grabAssist = OPT.grabAssist; sim.opt.poseAssist = OPT.poseAssist; sim.opt.easy = OPT.easy; sim.opt.autoBody = OPT.autoBody; sim.opt.keepHold = OPT.keepHold; sim.opt.press = OPT.press; sim.opt.wallRest = OPT.wallRest; sim.climb.oldPose = OPT.oldPose; helpFor = ''; } return { ...OPT, viewMode, cxSign }; }, setView: v => { viewMode = !!v; }, aimSet: p => { aim.world = p ? new THREE.Vector3(...p) : null; },
+  opt: o => { if (o) { if (('footAssist' in o && o.footAssist !== OPT.footAssist) || ('wallRest' in o && o.wallRest !== OPT.wallRest)) pending.push({ type: 'assistResume' }); if ('handMode' in o && o.handMode !== OPT.handMode) cancelHolds('handMode'); Object.assign(OPT, o); syncOpt(); helpFor = ''; } return { ...OPT, viewMode, cxSign }; }, setView: v => { viewMode = !!v; }, aimSet: p => { aim.world = p ? new THREE.Vector3(...p) : null; },
   input: () => ({ mode: input.st.mode, view: viewMode, cxSign, down: [...input.down.keys()], read: (() => { const o = override; override = null; const r = readInput(); override = o; return r; })() }),
   setKeys: (id, keys) => { cancelHolds('setKeys'); const r = setKeys(id, keys); helpFor = ''; return r; }, resetKeys: () => { resetKeys(); helpFor = ''; }, tagsText: () => tags.map(d => (d.style.display === 'none' ? '' : d.innerText)),
   hasClips: () => !!sim.clipSet, setMode: m => { if (sim.clipSet) sim.useClip = m === 'clip'; return sim.useClip ? 'clip' : 'proc'; }, mode: () => (sim.useClip ? 'clip' : 'proc'),

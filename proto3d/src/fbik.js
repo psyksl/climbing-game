@@ -77,11 +77,12 @@ function resid(x, c, out) {
   for (let i = 0; i < 2; i++) { const A = c.arms[i], sx = i ? -1 : 1;
     if (A.st === 0) { r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; continue; }
     const d3 = sub(A.goal, g.sh[i]), d = len(d3) || 1e-6, u = qrot(qCi, mul(d3, 1 / d)), out = u[0] * sx;
-    if (A.st === 1) { r[n++] = W.armOver * hp(d - 0.985 * c.ARM); r[n++] = W.armFold * hp((c.press ? 0.26 : globalThis.FOLD_D ?? 0.36) - d); r[n++] = W.armPref * (d - 0.85 * c.ARM) * A.w * (c.press ? 0.3 : 1); r[n++] = W.armBack * hp(-0.10 - u[2]); r[n++] = W.armCross * hp(-0.45 - out);
+    if (A.st === 1) { r[n++] = W.armOver * hp(d - 0.985 * c.ARM); r[n++] = W.armFold * hp((c.foldD ?? (c.press ? 0.26 : globalThis.FOLD_D ?? 0.36)) - d); r[n++] = W.armPref * (d - 0.85 * c.ARM) * A.w * (c.press ? 0.3 : 1); r[n++] = W.armBack * hp(-0.10 - u[2]); r[n++] = W.armCross * hp(-0.45 - out);
       // 잡은 손이 미끄러지지 않는 쪽에 어깨를 둔다(당기는 방향이 아래에서 40° 안 — 물리의 한계는 50°. 어깨가 턱보다 높아지지 않게)
       // 누르기(c.press, p3d-0.15.0): 어깨가 손 위로 올라가도 된다 — 손이 위든 아래든 어깨에서 세로로 40° 안이면 되고, 손 높이 둘레를 지나는 동안에는 옆으로 30cm까지 둔다(그 구간은 팔이 힘을 내지 않는다)
-      const down = d3[1], hor = Math.hypot(d3[0], d3[2]); r[n++] = W.grip * (c.press ? hp(hor - Math.max(0.84 * Math.abs(down) + 0.02, 0.30)) : hp(hor - 0.84 * down - 0.02)) + (c.stand ? W.grip * hp(Math.abs(d3[0] * g.F[2] - d3[2] * g.F[0]) / d - 0.25) : 0);
+      const down = d3[1], hor = Math.hypot(d3[0], d3[2]); r[n++] = W.grip * (c.link ? 0 : c.press ? hp(hor - Math.max(0.84 * Math.abs(down) + 0.02, 0.30)) : hp(hor - 0.84 * down - 0.02)) + (c.stand ? W.grip * hp(Math.abs(d3[0] * g.F[2] - d3[2] * g.F[0]) / d - 0.25) : 0);
       // p3d-0.11.9: 발판을 디디고 서 있으면(몸무게 40% 넘게) 잡은 팔이 옆으로 비스듬히 당기지 않게 어깨를 손 아래 쪽에 둔다(옆 몫 25% 안) — 두 어깨가 손보다 옆에 있으면 팔이 몸을 손 아래로 끌어 디딘 발에서 벗어나 천천히 가라앉았다(W를 오래 누르면 옛 판에도). OLDGRIPLAT = 옛 방식
+      // 전신 연결(c.link, p3d-0.15.3): 발판을 디딘 동안 팔은 팔의 선 방향이 아니라 턱이 버티는 범위 안의 어느 쪽으로든 힘을 낸다(climb.js) → 어깨를 손의 위·아래 40° 안에 둘 까닭이 없다(이 항이 낮은 손 위로 가슴을 18° 숙였다)
       // 잡은 손이 몸의 등 뒤로 가지 않게(물리의 판정: 어깨 → 손이 몸이 보는 쪽에서 −0.2보다 뒤면 놓친다. 여유 0.1)
       r[n++] = W.behind * hp(-0.10 - (d3[0] * g.F[0] + d3[2] * g.F[2]) / d); }
     // p3d-0.12.0 자세 보조(c.pa): 뻗는 손의 목표가 어깨에서 27cm보다 가까우면 어깨가 물러나 팔을 접을 자리를 만든다(전에는 먼 목표로 다가가기만 했다 — 한 손을 놓자 윗몸이 펴지며 어깨가 목표 16cm 앞까지 가 팔이 턱에 걸렸다)

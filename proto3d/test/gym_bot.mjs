@@ -22,7 +22,7 @@ console.log(provLine(prov()), `· 쉬운 조작 ${EASY ? '켬' : '끔'} · 누�
 
 function climbCourse(courseId, seed) {
   const world = makeGym(LAD ? { courses: GYMOPT.courses.filter(c => c.id === courseId), free: false } : { ...GYMOPT, free: E.FREE !== '0' }), C = world.courses.find(c => c.id === courseId), sim = makeSim(rig, world, CLIPS), rnd = mulberry(seed * 7919 + courseId.length);
-  sim.reset({ pos: C.startPos, yaw: C.startYaw }); Object.assign(sim.opt, { wallRest: false, footAssist: true, grabAssist: true, poseAssist: true, posture: 'fb', easy: EASY, press: E.PRESS === '1', autoBody: E.AUTOBODY !== '0', keepHold: E.KEEP === '1' });
+  sim.reset({ pos: C.startPos, yaw: C.startYaw }); Object.assign(sim.opt, { wallRest: false, footAssist: true, grabAssist: true, poseAssist: true, posture: 'fb', easy: EASY, press: E.PRESS === '1', autoBody: E.AUTOBODY !== '0', keepHold: E.KEEP === '1', linkPose: E.LINK === '1' });
   const W = C.frame, t = V3(...W.t), n = V3(...W.n), o = V3(...W.o), uOf = p => p.clone().sub(o).dot(t);
   const log = [], ev = [], res = { course: courseId, seed, ok: false, t: 0, moves: 0, rejects: 0, slips: 0, why: '', at: '' };
   // 화면과 같은 코스 상태 모듈(p3d-0.15.1)을 걸음마다 불러, 봇의 완등 판정과 화면의 완등·색 지킴이 같은지 본다
