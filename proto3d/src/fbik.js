@@ -4,7 +4,7 @@
 //   몸통의 축이 받치는 쪽을 향하는가, 척추가 꺾이는 한계, 그리고 무게중심은 물리가 준 자리에 그대로(골반이 가면 윗몸이 반대로 간다).
 // 몸의 자리(무게중심)·손발 접촉·판정은 물리(climb.js)가 정한다. 이 풀이는 그 둘레에 몸을 놓을 뿐이다 — 닿지 않는 곳을 닿게 하지 않는다(어깨가 목표 쪽으로 몇 cm 가는 만큼은 닿는 거리가 달라진다. 잰 값은 문서).
 // 계산은 고정 계산 걸음(stepClimb)에서만 한다. 물리와 그림은 같은 fk()로 어깨·고관절 자리를 읽는다. 숫자(무게)는 모두 실험값이다.
-import { DIM } from './rig.js';
+import { DIM, headEll } from './rig.js';
 import { legExcess } from './anat.js';
 
 // 풀 값 11개: 골반의 벗어남(왼쪽·위·벽 쪽, m) · 골반의 회전(돌림·숙임·옆 기울기, rad. 몸이 보는 쪽 기준) · 가슴의 회전(같은 순서, 몸이 보는 쪽 기준) · 빗장뼈 올림(왼·오른, rad)
@@ -66,9 +66,9 @@ const comOf = g => add(mul(g.hip, FBW.wP), mul(add(g.chest, qrot(g.qC, [0, 0.10,
 const sdBox = (l, h) => { const qx = Math.abs(l[0]) - h[0], qy = Math.abs(l[1]) - h[1], qz = Math.abs(l[2]) - h[2]; return Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0); };
 //   머리 = 물리가 팔과 견주는 타원(가운데·방향은 앞 걸음의 목·고개 자세 그대로 가슴에 붙여 본다 — c.headE. 고개가 돌고 비키는 것은 풀이 값이 아니다). 팔이 귀 옆에 붙는 것은 물리도 겹침으로 보지 않으므로 머리에는 여유를 두지 않고 타원 안으로 든 깊이만 센다
 const HELD_PAD = 0, HELD_T = [0.2, 0.4, 0.6, 0.8, 1], HELD_TU = [0.4, 0.55, 0.7, 0.85, 1];
-function heldPen(g, sh, goal, pole, hE) { const el = midJoint(sh, goal, DIM.upperArm, DIM.foreArm, pole), qCi = qinv(g.qC), qHi = qinv(g.qH), bc = DIM.boxChest, bh = DIM.boxHip, R = DIM.headR, ax = 0.9 * R;
-  const pad = globalThis.HELD_PAD ?? HELD_PAD, cc = add(g.chest, qrot(g.qC, bc.c)), hc = add(g.hip, qrot(g.qH, bh.c)), ec = add(g.chest, qrot(g.qC, hE ? hE.off : [DIM.oNeck[0] + DIM.oHead[0], DIM.oNeck[1] + DIM.oHead[1] + 0.9 * R, DIM.oNeck[2] + DIM.oHead[2] + 0.01])), qEi = hE ? qinv(qmul(g.qC, hE.q)) : qCi; let body = -9, head = -9;
-  const inHead = p => { const l = qrot(qEi, sub(p, ec)); return (1 - Math.hypot(l[0] / ax, l[1] / (1.05 * R), l[2] / R)) * ax; };
+function heldPen(g, sh, goal, pole, hE) { const el = midJoint(sh, goal, DIM.upperArm, DIM.foreArm, pole), qCi = qinv(g.qC), qHi = qinv(g.qH), bc = DIM.boxChest, bh = DIM.boxHip, E0 = headEll(), er = hE && hE.r ? hE.r : E0.r, ax = Math.min(er[0], er[1], er[2]);
+  const pad = globalThis.HELD_PAD ?? HELD_PAD, cc = add(g.chest, qrot(g.qC, bc.c)), hc = add(g.hip, qrot(g.qH, bh.c)), ec = add(g.chest, qrot(g.qC, hE ? hE.off : [DIM.oNeck[0] + DIM.oHead[0] + E0.c[0], DIM.oNeck[1] + DIM.oHead[1] + E0.c[1], DIM.oNeck[2] + DIM.oHead[2] + E0.c[2]])), qEi = hE ? qinv(qmul(g.qC, hE.q)) : qCi; let body = -9, head = -9;
+  const inHead = p => { const l = qrot(qEi, sub(p, ec)); return (1 - Math.hypot(l[0] / er[0], l[1] / er[1], l[2] / er[2])) * ax; };
   for (const t of HELD_T) { const p = lerp3(el, goal, t); body = Math.max(body, 0.02 + pad - sdBox(qrot(qCi, sub(p, cc)), bc.h), 0.02 + pad - sdBox(qrot(qHi, sub(p, hc)), bh.h)); head = Math.max(head, inHead(p)); }
   // 위팔(어깨 → 팔꿈치)은 머리만 본다(물리도 그렇다 — armSelf의 0.4~0.85)
   for (const t of HELD_TU) head = Math.max(head, inHead(lerp3(sh, el, t)));

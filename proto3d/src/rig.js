@@ -24,6 +24,8 @@ const BODY_HUMAN = {
   toeZ: 0.241, heelZ: -0.062, ballZ: 0.149,
   oSpine: [0, 0.134, 0.034], oChest: [0, 0.264, 0.011], oClav: [0.019, 0.143, 0.076], oSh: [0.173, -0.017, -0.136], oNeck: [0, 0.173, -0.006], oHead: [0, 0.081, 0.016],
   headC: [0, 0.121, -0.002],
+  // 팔–머리 판정의 타원(p3d-0.15.5): 마네킹의 머리 메시(Head 뼈에 절반 넘게 묶인 꼭짓점 202개)를 머리 뼈 좌표로 옮긴 범위 — 가운데 [0, 0.1223, −0.0062], 반폭 [0.0867, 0.138, 0.1164]. 축 방향의 끝은 메시와 같고, 각진 머리의 모서리는 타원 밖으로 1.9cm까지 나온다
+  headE: { c: [0, 0.1223, -0.0062], r: [0.0867, 0.138, 0.1164] },
   // 제 몸 충돌의 상자(가슴 = chest 뼈 기준, 골반 = hips 뼈 기준): 중심과 반 크기. 마네킹 메시의 정점(그 뼈의 몫이 가장 큰 것)으로 잰 값
   boxChest: { c: [0, 0.035, -0.013], h: [0.165, 0.165, 0.14] }, boxHip: { c: [0, 0.096, 0.052], h: [0.135, 0.17, 0.12] },
   // 팔의 그려지는 굵기(어깨 쪽, 끝 쪽): 마네킹 메시에서 뼈 축까지의 거리
@@ -43,6 +45,8 @@ export const DIM = { ...(BODY === 'old' ? BODY_OLD : BODY_HUMAN) };
 // 벡터 값이 없는 몸(old)은 숫자 값에서 만든다 — p3d-0.9.1과 같은 자리
 DIM.hipZ ??= 0; DIM.oSpine ??= [0, DIM.spine, 0]; DIM.oChest ??= [0, DIM.chest, 0]; DIM.oClav ??= [DIM.clavX, DIM.clavY, 0]; DIM.oSh ??= [DIM.shoulderX, 0, 0]; DIM.oNeck ??= [0, DIM.neck, 0]; DIM.oHead ??= [0, DIM.head, 0];
 DIM.oHip = [DIM.hipW, -DIM.hipDrop, DIM.hipZ]; DIM.oToe = [0, -(DIM.ankleY - 0.02), DIM.ballZ];
+// 팔–머리 판정의 타원 하나를 물리(climb.js headShape)·풀이(fbik.js heldPen)·진단(test/replay_trace.mjs)이 함께 읽는다. 0.15.4까지는 사람형 몸에서도 옛 몸의 그려진 머리(가운데 [0, 0.9R, 0.01], 반지름 0.9R·1.05R·R)를 썼다 — 실제 머리보다 옆으로 1.7cm 넓고 위로 3.6cm 짧고 가운데가 2.5cm 어긋났다. OLDHEADE = 옛 타원
+export const headEll = () => (DIM.headE && !globalThis.OLDHEADE ? DIM.headE : { c: [0, DIM.headR * 0.9, 0.01], r: [DIM.headR * 0.9, DIM.headR * 1.05, DIM.headR] });
 DIM.headCT = DIM.headC ?? [0, DIM.headR * 0.9, 0]; DIM.headC ??= [0, DIM.headR * 0.9, 0.01]; // headCT = 몸통 계산(torso)의 머리 중심. 옛 몸은 0.9.1까지 torso에서만 앞쪽 1cm를 빼고 썼다(그대로 둔다)
 DIM.boxChest ??= { c: [0, 0.11, 0.005], h: [0.18, 0.12, 0.105] }; DIM.boxHip ??= { c: [0, 0.07, 0], h: [0.15, 0.17, 0.095] };
 DIM.armR ??= { upper: [0.055, 0.045], fore: [0.045, 0.036] }; DIM.kneeClr ??= 0.06; DIM.palm ??= 0.08;

@@ -3,7 +3,7 @@
 // 몸 = 질점 하나(속도·중력) + 팔다리 힘. 팔은 당기기만(곧게 펴지면 줄처럼 버틴다), 다리는 밀기만(마찰 범위 안에서만). 발은 벽에 붙지 않는다.
 // 숫자(힘·마찰·각도·시간)는 모두 첫 판의 임시값이다. 캡처 통계는 편한 기본 자세에만 쓰고 허용 판정에는 쓰지 않는다.
 import * as THREE from 'three';
-import { DIM } from './rig.js';
+import { DIM, headEll } from './rig.js';
 import { groundAt, pushOut, rayHit } from './world.js';
 import { PHY } from './controller.js';
 import { aimBone, setWorldQuat, twoBone, worldPos } from './ik.js';
@@ -262,7 +262,7 @@ function selfShapes(S, i = -1) { const B = selfBody(S); if (!B) return null;
 // 머리의 모양(p3d-0.10.4, 사람형 몸): 머리뼈 둘레의 타원체(옆 0.9·위아래 1.05·앞뒤 1.0 × 머리 반지름, 가운데 = 머리뼈 + (0, 0.9R, 0.01)) — 팔 검사(wall_check 20, test/arm_mesh.mjs)와 같은 모양.
 //   팔의 줄기 검사(armSelf)에만, 줄기(가운데 선)로 쓴다(검사와 같은 뜻 — 줄기 반지름 1cm를 더하면 정상 교차가 막혔다) — 손목이 비켜 가는 길(공)에도 쓰면 교차 두 장면이 "다른 팔에 막혀"로 바뀌었다(해 봄).
 //   0.10.3까지는 그보다 1.7cm 높은 공이라 턱·뺨 높이를 지나는 팔뚝 줄기가 검사의 머리에는 들고 물리의 머리에는 들지 않았다(땅에서 몸 앞을 가로질러 뻗기 — 2mm). c·r(공)은 다른 곳(머리 비킴 등)이 그대로 쓴다
-const headShape = (hb, qHd) => { const R = DIM.headR, c = hb.clone().add(V(...DIM.headC).applyQuaternion(qHd)); if (!DIM.boxCollide || globalThis.OLDHEAD) return { c, r: R }; return { c, r: R, e: { c: hb.clone().add(V(0, R * 0.9, 0.01).applyQuaternion(qHd)), q: qHd, qi: qHd.clone().invert(), ax: V(R * 0.9, R * 1.05, R) } }; };
+const headShape = (hb, qHd) => { const R = DIM.headR, c = hb.clone().add(V(...DIM.headC).applyQuaternion(qHd)); if (!DIM.boxCollide || globalThis.OLDHEAD) return { c, r: R }; const E0 = headEll(); return { c, r: R, e: { c: hb.clone().add(V(...E0.c).applyQuaternion(qHd)), q: qHd, qi: qHd.clone().invert(), ax: V(...E0.r) } }; };
 function selfBody(S) {
   const K = S.climb; if (globalThis.NOSELF) return null;
   // 지상(땅에 서서·뛰며 뻗는 팔): 앞 걸음에 확정된 자세의 뼈에서 읽는다(지상 문맥의 어깨 자리도 그렇게 읽는다 — joints)
@@ -1187,7 +1187,7 @@ function fbUpdate(S, inp, dt, held, planted, left, fwd) {
     K.sagT = tall && !busy && b.vel.y < -0.01 ? (K.sagT || 0) + dt : 0; if (globalThis.OLDGRIPLAT || busy || !tall) K.standFix = false; else if (K.sagT > 0.2) K.standFix = true; }
   yawT += K.aim ? K.aim.y : 0;
   // 풀이가 잡은 팔과 견줄 머리 타원(p3d-0.15.4): 앞 걸음의 목·고개 자세를 가슴에 붙여 넘긴다(가운데의 가슴 기준 자리, 가슴 기준 방향). selfBody의 머리와 같은 식
-  let headE = null; if (K.T && K.T.tq && linkOn(S) && !globalThis.NOHELDCLR) { const T0 = K.T, qC0 = T0.qC, qN0 = qC0.clone().multiply(T0.tq.neck), qHd0 = qN0.clone().multiply(T0.tq.head), qCi0 = qC0.clone().invert(), ec = V(...DIM.oNeck).applyQuaternion(qC0).add(V(...DIM.oHead).applyQuaternion(qN0)).add(V(0, DIM.headR * 0.9, 0.01).applyQuaternion(qHd0)).applyQuaternion(qCi0), qr = qCi0.multiply(qHd0); headE = { off: [ec.x, ec.y, ec.z], q: [qr.x, qr.y, qr.z, qr.w] }; }
+  let headE = null; if (K.T && K.T.tq && linkOn(S) && !globalThis.NOHELDCLR) { const T0 = K.T, qC0 = T0.qC, qN0 = qC0.clone().multiply(T0.tq.neck), qHd0 = qN0.clone().multiply(T0.tq.head), qCi0 = qC0.clone().invert(), E0 = headEll(), ec = V(...DIM.oNeck).applyQuaternion(qC0).add(V(...DIM.oHead).applyQuaternion(qN0)).add(V(...E0.c).applyQuaternion(qHd0)).applyQuaternion(qCi0), qr = qCi0.multiply(qHd0); headE = { off: [ec.x, ec.y, ec.z], q: [qr.x, qr.y, qr.z, qr.w], r: E0.r }; }
   const c = { pos, yaw: b.yaw, boxes, headE, ARM: CL.ARM, LEG: CL.LEG, LEGMIN: 0.30, kneeClr: DIM.kneeClr, axis: a3(ax), pitch: -0.12 * clamp(K.pz.tuck, 0, 1), twist, yawT,
     arms: K.hands.map(h => ({ st: h.st === 'hold' ? 1 : h.st === 'reach' ? 2 : 0, goal: a3(h.goal), w: 1, clr: 0, clr0: null, pole: h.st === 'hold' && h.elPole ? a3(h.elPole) : null, low: h.st === 'hold' && h.low && !globalThis.NOLINKSOLVE ? 1 : 0, cone: h.st === 'hold' && h.low && !globalThis.NOLINKSOLVE ? (planted.some(f => f.kind === 'top' && f.box && f.box.kind !== 'floor') ? 1 : globalThis.FLOORROOM && !globalThis.NOFLOORCONE && (fb.hang || 0) < 0.3 && (held.length === 2 || globalThis.FLOORCONE1) && planted.some(f => f.kind === 'top' && f.box) ? (globalThis.FLOORCONE ?? 2) : 0) : 0 })),
     legs: K.feet.map(f => ({ st: f.st === 'plant' || (f.st === 'move' && f.outT > 0 && poseAssistOn(S)) ? 1 : f.st === 'move' ? 2 : 0, ank: a3(f.ank), w: 1, pole: S.poleS && S.poleS['kn' + f.s + 'p'] ? a3(S.poleS['kn' + f.s + 'p']) : null, aW: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE ? kneeWant(S, f.i ? -1 : 1, K.T.hj[f.i], f.ank, b.yaw + K.po.yaw) : null, kw: f.st !== 'free' && K.T && !globalThis.OLDFBKNEE && !globalThis.OLDCROSSKNEE ? 1 + CL.CROSS_KW * (K.crS ? K.crS[f.i] : 0) : 1, load: f.st === 'plant' && f.box && f.box.kind !== 'floor' ? clamp(f.F ? f.F.y / BW : f.load || 0, 0, 1) : 0 })),
