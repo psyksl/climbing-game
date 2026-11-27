@@ -46,12 +46,15 @@ loadKeys();
 const input = makeInput(renderer.domElement);
 const pending = []; // 다음 계산 걸음에 한 번만 들어갈 명령(손발 보내기·놓기)
 // 고를 수 있는 조작 설정(저장됨). handMode 1 = 눌러 보내기, 2 = 누르는 동안 뻗기(떼면 잡기). footAssist = 발 보조(간편 조작). diag = 진단 정보. helpAll = 조작표 모두 보기
-const OPT = { handMode: 1, grabAssist: true, poseAssist: true, easy: true, autoBody: true, keepHold: false, press: true, linkPose: false, footAssist: true, wallRest: false, diag: false, helpAll: false, helpFold: false, dev: false, oldPose: false };
-try { Object.assign(OPT, JSON.parse(localStorage.getItem('p3dOpt_v1') || '{}')); } catch (e) { OPT.handMode = 1; }
+const OPT = { handMode: 1, grabAssist: true, poseAssist: true, easy: true, autoBody: true, keepHold: false, press: true, linkPose: false, planReach: false, footAssist: true, wallRest: false, diag: false, helpAll: false, helpFold: true, dev: false, oldPose: false };
+// 조작표 접힘(p3d-0.15.5: 새 프로필의 기본 = 접힘). 저장된 값은 사용자가 K로 직접 고른 것(helpFoldSet)일 때만 따른다 — 0.15.3·0.15.4는 고르지 않아도 기본값(펼침)을 저장했다
+try { const sv = JSON.parse(localStorage.getItem('p3dOpt_v1') || '{}'); if (!sv.helpFoldSet) delete sv.helpFold; Object.assign(OPT, sv); } catch (e) { OPT.handMode = 1; }
 // 비교 후보(p3d-0.15.2): ?keep=1 = 보조가 먼저 잡은 손을 놓지 않음(기본 끔. 키를 새로 두지 않는다 — GPT의 0.15.1 재검토). 저장된 설정보다 주소가 먼저다
 if (params.has('keep')) OPT.keepHold = params.get('keep') !== '0';
 // 전신 연결(p3d-0.15.3 — **비교 후보, 화면 기본 끔**. 닿는 범위·버티는 범위가 달라지는 변경이라 사용자·GPT의 결정 전에는 기본으로 두지 않는다): ?link=1 = 켬(개발 모드의 9 키로도). 저장된 설정보다 주소가 먼저다
 if (params.has('link')) OPT.linkPose = params.get('link') !== '0';
+// 뻗기 전 검사(p3d-0.15.5, 비교 후보 — 기본 끔, 키 없음): ?plan=1
+if (params.has('plan')) OPT.planReach = params.get('plan') !== '0';
 // 비교 스위치(p3d-0.15.4, 견주는 영상·시험용): ?sw=NOHELDCLR,FOLD_KEEP=0.3 → 계산의 전역 비교 스위치를 켠다(시험의 환경 변수와 같은 이름). 화면 위쪽에 켠 스위치를 적는다
 const SW_URL = (params.get('sw') || '').split(',').filter(Boolean); for (const k of SW_URL) { const [a, v] = k.split('='); if (/^[A-Z][A-Z0-9_]*$/.test(a)) globalThis[a] = v === undefined ? 1 : +v; }
 // 개발 모드(p3d-0.15.3): F2 또는 ?dev — 개발 키(잡기 보정 U·자세 보조 Y·누르기 P·전신 연결 9·벽 딛기 J·몸 자세 O·진단 I·뼈대 B·느리게 N·모션 M·동작 보기 G)는 이때만 듣는다. 진단 정보도 이때만 보인다
@@ -65,7 +68,7 @@ const OLDRISE_URL = /[?&]oldrise\b/.test(location.search); if (OLDRISE_URL) glob
 const FOOTX = /[?&]footx\b/.test(location.search); if (FOOTX) setKeys('footMod', ['KeyX'], false);
 const saveOpt = () => { if (MANUAL) return; try { localStorage.setItem('p3dOpt_v1', JSON.stringify(OPT)); } catch (e) { return; } };
 // 계산이 읽는 설정은 이 한곳에서만 옮긴다(p3d-0.15.3: 다섯 군데에 흩어져 있어 새 설정을 빠뜨리기 쉬웠다)
-function syncOpt() { for (const k of ['footAssist', 'grabAssist', 'poseAssist', 'easy', 'autoBody', 'keepHold', 'press', 'linkPose', 'wallRest']) sim.opt[k] = OPT[k]; sim.climb.oldPose = OPT.oldPose; DIAG = !!(OPT.dev && DIAG); input.setDev(OPT.dev); }
+function syncOpt() { for (const k of ['footAssist', 'grabAssist', 'poseAssist', 'easy', 'autoBody', 'keepHold', 'press', 'linkPose', 'planReach', 'wallRest']) sim.opt[k] = OPT[k]; sim.climb.oldPose = OPT.oldPose; DIAG = !!(OPT.dev && DIAG); input.setDev(OPT.dev); }
 syncOpt();
 let viewMode = false, cxSign = 1; // viewMode = 시점 보기 모드(조작 멈춤). cxSign = 몸 좌우 입력을 화면에서 보이는 쪽으로 맞추는 부호
 const aim = { world: null, held: [null, null], foot: [false, false], tap: [false, false] }; // 겨눈 자리(세계 좌표). 마우스를 움직이지 않는 동안에는 화면이 저절로 움직여도 이 자리를 그대로 겨눈다
@@ -236,7 +239,10 @@ function drawTags() {
   const nearF = K.feet.every(f => f.st !== 'free') && (() => { const a = screenOf(K.feet[0].p), b = screenOf(K.feet[1].p); return Math.abs(a.y - b.y) < 22 && Math.abs(a.x - b.x) < 150; })();
   K.feet.forEach((f, i) => { const n = i ? '오른발' : '왼발', dx = nearF && !i ? -112 : 10; if (f.st === 'plant' && !(f.auto && f.box.kind === 'floor' && !DIAG)) put(tags[2 + i], f.p, (f.loadS || 0) > 0.05 ? `▲ ${n} 디딤${LOADT(f, false)}` : `△ ${n} 닿아만 있음`, i ? 'R' : 'L', dx); else if (f.st === 'move') put(tags[2 + i], f.p, `→ ${n} 보내는 중${f.byAssist ? '(보조)' : ''}`, i ? 'R' : 'L', dx); });
   // 미리보기: 겨눈 자리를 지금 자세에서 잡을(디딜) 수 있는지. 실제 판정과 같은 함수. 몸이 움직이는 중이면 확정처럼 보이지 않게 "?"를 붙인다
-  const tip = (html, x, y) => { const d = tags[4]; d.style.display = 'block'; d.className = 'tag pv'; d.innerHTML = html; const w = d.offsetWidth, h = d.offsetHeight, maxX = innerWidth - (help.offsetWidth + 22) - w; d.style.left = `${Math.max(6, Math.min(x + 16, maxX > 6 ? maxX : innerWidth - w - 6))}px`; d.style.top = `${Math.max(6, Math.min(y - h - 26 > 6 ? y - h - 26 : y + 22, innerHeight - h - 6))}px`; };
+  const tip = (html, x, y) => { const d = tags[4]; d.style.display = 'block'; d.className = 'tag pv'; d.innerHTML = html; const w = d.offsetWidth, h = d.offsetHeight, maxX = innerWidth - (help.offsetWidth + 22) - w; d.style.left = `${Math.max(6, Math.min(x + 16, maxX > 6 ? maxX : innerWidth - w - 6))}px`; d.style.top = `${Math.max(6, Math.min(y - h - 26 > 6 ? y - h - 26 : y + 22, innerHeight - h - 6))}px`;
+    // 상태 판·조작표와 겹치면(p3d-0.15.5) 꼬리표만 옮긴다 — 겨눈 자리·판정은 그대로다. 먼저 겨눈 점의 아래쪽, 그래도 겹치면 판의 오른쪽·아래
+    const ov = el => { const a = d.getBoundingClientRect(), b = el.getBoundingClientRect(); return el.style.display !== 'none' && a.left < b.right + 6 && a.right > b.left - 6 && a.top < b.bottom + 6 && a.bottom > b.top - 6; };
+    if (ov(hud) || ov(help)) { d.style.top = `${Math.min(y + 22, innerHeight - h - 6)}px`; if (ov(hud)) { const b = hud.getBoundingClientRect(); if (b.right + 10 + w < innerWidth - 6) d.style.left = `${b.right + 10}px`; else d.style.top = `${Math.min(b.bottom + 10, innerHeight - h - 6)}px`; } if (ov(help)) { const b = help.getBoundingClientRect(); d.style.top = `${Math.min(b.bottom + 10, innerHeight - h - 6)}px`; } } };
   if (viewMode) { if (input.st.has) tip('시점 보기 모드 · 조작 멈춤', input.st.mx, input.st.my); return; }
   const foot = wantsFoot(), a = foot ? aimPoint() : handPoint(); if (!a) return;
   const sa = screenOf(a), P = [0, 1].map(i => (foot ? probeFoot : probeHand)(sim, i, a)), g = P.find(x => x.grip);
@@ -263,7 +269,7 @@ function stateName() {
 }
 // 개발 항목의 설정(잡기 보정·자세 보조·누르기·전신 연결): 개발 모드에서는 모두 보인다. 그 밖에는 기본값(앞의 셋 켬·전신 연결 끔)과 다른 것만 굵게 보인다 — 키가 숨어 있어도 기본이 아닌 상태로 하고 있다는 것은 알 수 있게(p3d-0.15.3, 임시)
 // p3d-0.15.4(GPT의 0.15.3 검토 M4·UI 시안 — 사용자 확정 아님): 저장한 설정이 아니라 **실제로 적용되는 것**을 보인다(sim.effect = 계산과 같은 식). 전신 연결은 누르기를 포함하므로 누르기 설정이 꺼져 있어도 "누르기 끔"이라고 쓰지 않는다
-const DEV_OPT = [['grabAssist', '잡기 보정', true], ['poseAssist', '자세 보조', true], ['press', '누르기', true], ['linkPose', '전신 연결(시험)', false]];
+const DEV_OPT = [['grabAssist', '잡기 보정', true], ['poseAssist', '자세 보조', true], ['press', '누르기', true], ['linkPose', '전신 연결(시험)', false], ['planReach', '뻗기 전 검사(시험)', false]];
 const devState = k => { const e = sim.effect(); return k === 'linkPose' ? (e.link ? '켬 · 누르기 포함' : OPT.linkPose ? '끔(자세 보조가 꺼져 있어 적용되지 않음)' : '끔') : k === 'press' ? (e.pressByLink ? '· 전신 연결에 포함' : e.press ? '켬' : '끔') : OPT[k] ? '켬' : '끔'; };
 const devDiff = ([k, , d]) => (k === 'press' ? sim.effect().press !== d : k === 'linkPose' ? !!OPT.linkPose !== d : !!OPT[k] !== d);
 const devLine = () => (OPT.dev ? DEV_OPT.map(([k, n]) => ` &nbsp; ${n} ${devState(k)}`).join('') + ' &nbsp; <span class=badge>개발 모드</span>' : DEV_OPT.filter(devDiff).map(([k, n]) => ` &nbsp; <b>${n} ${devState(k)}</b>`).join(''));
@@ -280,14 +286,16 @@ function drawHud(fps) {
   if (gal.on) { const c = galClip(); hud.innerHTML = `<div class=ver>3D 모션 시제품 ${VERSION} · ${BODY === 'old' ? '옛 몸(자작)' : '사람형 몸(Quaternius 마네킹, CC0)'}</div><div><b>동작 보기</b> ${gal.i + 1} / ${gal.names.length} &nbsp; <b>${gal.names[gal.i]}</b></div><div><b>분류</b> ${c.cat} &nbsp; <b>지형</b> ${KIND_KO[c.kind] || '-'}${gal.props ? '' : '(숨김)'}${gal.built && gal.built.info.removed ? ` · 맞지 않아 뺀 조각 ${gal.built.info.removed}개` : c.kind !== 'ground' && gal.built && !gal.built.info.pieces ? ' · 조각 없음(손발 자리로는 지형을 정하지 못함)' : ''} &nbsp; <b>시각</b> ${Math.min(gal.t, c.dur).toFixed(2)} / ${c.dur.toFixed(2)}초</div><div class=slow>시연 · 물리 판정 없음</div><div class=dim>받은 동작을 이 캐릭터로 옮겨 지형에 맞춰 튼 것입니다. 잡을 수 있는지·버티는지는 따지지 않습니다(게임 계산은 멈춤).<br>지형은 이 동작에서 손발이 닿는 자리로 만든 임시 조각입니다. 점 = 닿아 있는 손발(붉은색 왼쪽, 푸른색 오른쪽)</div><div class=${slow ? 'slow' : 'real'}>${slow ? '느리게 ×0.25' : '실제 속도'}</div>`; return; }
   const v = Math.hypot(body.vel.x, body.vel.z), st = sim.motion.stats, K = sim.climb;
   const C = sim.clip, cap = C && C.w > 0.5, footName = (L, i) => cap ? (C.feet[i].step ? '고쳐 디딤' : C.feet[i].lock ? (C.feet[i].kind === 'heel' ? '디딤(뒤꿈치)' : '디딤(발끝)') : '옮기는 중') : L.mode === 'plant' ? (L.heel > 0 ? '디딤(뒤꿈치 듦)' : '디딤') : L.mode === 'swing' ? '옮기는 중' : '공중';
-  hud.innerHTML = `<div class=ver>3D 모션 시제품 ${VERSION}${OLDRISE_URL ? ' · W 옛 빠르기(?oldrise)' : ''} · ${BODY === 'old' ? '옛 몸(자작)' : '사람형 몸(Quaternius 마네킹, CC0) · 자세 ' + ({ fb: '전신 자세 풀이(O = 옛 규칙과 바꾸기)', rule: '옛 규칙 0.10.4(O = 전신 자세 풀이)', base: '0.10.0', solve: '함께 고르기(실험)', ref: '참고 자세(실험)' })[POSTURE] + (globalThis.GRIP_FRAME ? ' · 손 접촉 틀(실험)' : '')}</div>`
-    + (K.on ? `<div><b>동작</b> 벽 등반(IK) <span class=dim>· 지상 동작: ${sim.clipSet && sim.useClip ? '캡처' : '자작'}</span></div>` : `<div><b>모션</b> ${!sim.clipSet ? '자작(코드로 만든 동작)' : sim.useClip ? `캡처 동작${cap ? '' : ' → 지금은 자작(웅크림·점프·착지)'}` : '자작(코드로 만든 동작)'}</div>`)
+  // p3d-0.15.5(GPT의 0.15.4 화면 검토 — 시범 값, 사용자 확정 아님): 일반 화면의 상태 판은 폭 320px, 판 번호 · 코스 줄 · 문맥과 접촉 · 중요한 안내 · 마지막 기록 한 줄만. 몸·자세 방식·동작·설정 전체·기록 다섯 줄은 개발 모드(F2)에서 본다
+  hud.classList.toggle('dev', !!OPT.dev);
+  hud.innerHTML = (!OPT.dev ? `<div class=ver>${VERSION}${SW_URL.length ? ' · 비교 스위치 ' + SW_URL.join(',') : ''}</div>` : `<div class=ver>3D 모션 시제품 ${VERSION}${OLDRISE_URL ? ' · W 옛 빠르기(?oldrise)' : ''} · ${BODY === 'old' ? '옛 몸(자작)' : '사람형 몸(Quaternius 마네킹, CC0) · 자세 ' + ({ fb: '전신 자세 풀이(O = 옛 규칙과 바꾸기)', rule: '옛 규칙 0.10.4(O = 전신 자세 풀이)', base: '0.10.0', solve: '함께 고르기(실험)', ref: '참고 자세(실험)' })[POSTURE] + (globalThis.GRIP_FRAME ? ' · 손 접촉 틀(실험)' : '')}${SW_URL.length ? ' · 비교 스위치 ' + SW_URL.join(',') : ''}</div>`)
+    + (!OPT.dev ? '' : K.on ? `<div><b>동작</b> 벽 등반(IK) <span class=dim>· 지상 동작: ${sim.clipSet && sim.useClip ? '캡처' : '자작'}</span></div>` : `<div><b>모션</b> ${!sim.clipSet ? '자작(코드로 만든 동작)' : sim.useClip ? `캡처 동작${cap ? '' : ' → 지금은 자작(웅크림·점프·착지)'}` : '자작(코드로 만든 동작)'}</div>`)
     + gymLine() + `<div><b>문맥</b> <span class=ctx>${viewMode ? '시점 보기 · 조작 멈춤' : K.on ? '벽 등반' : '지상 조작'}</span> &nbsp; <b>상태</b> ${stateName()}${DIAG ? ` &nbsp; <b>속도</b> ${(K.on ? body.vel.length() : v).toFixed(2)} m/s` : ''}</div>`
-    + `<div class=dim>손 조작 ${OPT.handMode === 2 ? '2 · 누르는 동안 뻗고 떼면 잡기' : '1 · 눌러 보내기'} &nbsp; 발 보조 ${OPT.footAssist ? '켬' : '끔'} &nbsp; 쉬운 조작 ${OPT.easy ? '켬' : '끔'} &nbsp; 자동 몸 맞추기 ${OPT.easy && OPT.autoBody ? '켬' : '끔'}${devLine()}${OPT.keepHold ? ' &nbsp; <b>비교: 보조가 잡은 손을 놓지 않음</b>' : ''}${OPT.wallRest ? ' &nbsp; <b>실험: 벽 딛기 켬</b>' : ''}${OPT.oldPose ? ' &nbsp; <b>비교: 옛 몸 자세(0.8.8)</b>' : ''}${FOOTX ? ' &nbsp; <b>발 선택 = X(시범 프로필)</b>' : ''}${MANUAL ? ' &nbsp; <b>수동 발 프로필</b>(저장하지 않음)' : ''}</div>`
+    + `<div class=dim>${OPT.dev ? `손 조작 ${OPT.handMode === 2 ? '2 · 누르는 동안 뻗고 떼면 잡기' : '1 · 눌러 보내기'} &nbsp; 발 보조 ${OPT.footAssist ? '켬' : '끔'} &nbsp; 쉬운 조작 ${OPT.easy ? '켬' : '끔'} &nbsp; 자동 몸 맞추기 ${OPT.easy && OPT.autoBody ? '켬' : '끔'}` : [OPT.handMode === 2 ? '손 조작 2' : '', OPT.footAssist ? '' : '발 보조 끔', OPT.easy ? '' : '쉬운 조작 끔', OPT.easy && !OPT.autoBody ? '자동 몸 맞추기 끔' : ''].filter(Boolean).join(' &nbsp; ')}${devLine()}${OPT.keepHold ? ' &nbsp; <b>비교: 보조가 잡은 손을 놓지 않음</b>' : ''}${OPT.wallRest ? ' &nbsp; <b>실험: 벽 딛기 켬</b>' : ''}${OPT.oldPose ? ' &nbsp; <b>비교: 옛 몸 자세(0.8.8)</b>' : ''}${FOOTX ? ' &nbsp; <b>발 선택 = X(시범 프로필)</b>' : ''}${MANUAL ? ' &nbsp; <b>수동 발 프로필</b>(저장하지 않음)' : ''}</div>`
     + (K.on && K.upWhy && UP_KO[K.upWhy] ? `<div class=warn>${UP_KO[K.upWhy][0]} <span class=dim>${UP_KO[K.upWhy][1]}</span></div>` : '')
     + (K.on ? `<div><b>손</b> ${K.hands.map((h, i) => `${i ? '오른손' : '왼손'} ${h.st === 'hold' ? `잡음(${h.edge.box.name}${DIAG ? `, 몸무게의 ${(h.loadS || 0).toFixed(1)}배` : ''})` : h.st === 'reach' ? '보내는 중' : '놓음'}`).join(' · ')}</div><div><b>발</b> ${K.feet.map((f, i) => `${i ? '오른발' : '왼발'} ${f.st === 'plant' ? ((f.loadS || 0) > 0.05 ? `디딤(${f.box.name}${DIAG ? `, ${(f.loadS || 0).toFixed(1)}배` : ''})` : `닿아만 있음(${f.box.name})`) : f.st === 'move' ? '보내는 중' : '떠 있음'}`).join(' · ')}</div>`
       : `<div><b>발</b> ${sim.motion.legs.map((L, i) => `${L.s === 'L' ? '왼발' : '오른발'} ${footName(L, i)}`).join(' · ')}</div>`)
-    + `<div class=log>${K.log.filter(e => e.type !== 'try' && !(e.box === '바닥' && e.auto) && !(e.type === 'lift' && /범위/.test(e.why) && e.placed !== 'user')).slice(-5).map(e => `<span class=t>${e.t.toFixed(2)}초</span> ${footLog(e) || `${LOG_KO[e.type] || e.type}${e.name ? ' ' + e.name : ''}${e.box ? ' · ' + e.box : ''}${e.why ? ' · ' + (e.type === 'wstop' ? (UP_KO[e.why] ? UP_KO[e.why][0] : e.why) : e.why) : ''}${e.keptGrip ? ' 현재 잡기를 유지했어요.' : ''}`}`).join('<br>')}</div>`
+    + `<div class=log>${K.log.filter(e => e.type !== 'try' && !(e.box === '바닥' && e.auto) && !(e.type === 'lift' && /범위/.test(e.why) && e.placed !== 'user')).slice(OPT.dev ? -5 : -1).map(e => `<span class=t>${e.t.toFixed(2)}초</span> ${footLog(e) || `${LOG_KO[e.type] || e.type}${e.name ? ' ' + e.name : ''}${e.box ? ' · ' + e.box : ''}${e.why ? ' · ' + (e.type === 'wstop' ? (UP_KO[e.why] ? UP_KO[e.why][0] : e.why) : e.why) : ''}${e.keptGrip ? ' 현재 잡기를 유지했어요.' : ''}`}`).join('<br>')}</div>`
     + (DIAG ? perfLine() : '')
     + (DIAG ? `<div class=dim>지지 구간 최대 이탈 ${(st.stanceMaxDev * 1000).toFixed(2)} mm · 다리 뻗음 최대 ${(st.maxRatio * 100).toFixed(0)}% · ${fps.toFixed(0)} fps</div>` : '')
     + `<div class=${slow ? 'slow' : 'real'}>${slow ? '느리게 ×0.25' : '실제 속도'}</div>`;
@@ -326,7 +334,7 @@ function frame(now) {
   if (input.wasPressed('diag')) { OPT.diag = !OPT.diag; syncOpt(); saveOpt(); }
   // 실험 비교(p3d-0.9.0): 몸통 자세의 층을 끄면 0.8.8의 몸통·무릎·발의 길 그대로다. 붙은 손발은 건드리지 않는다(골반과 무릎이 스프링으로 옮겨 간다)
   if (input.wasPressed('poseMode')) { POSTURE = POSTURE === 'fb' ? 'rule' : 'fb'; applyPosture(); }
-  if (input.wasPressed('helpAll')) { OPT.helpFold = !OPT.helpFold; saveOpt(); }
+  if (input.wasPressed('helpAll')) { OPT.helpFold = !OPT.helpFold; OPT.helpFoldSet = true; saveOpt(); }
   if (input.wasPressed('devMode')) { OPT.dev = !OPT.dev; syncOpt(); saveOpt(); }
   if (input.wasPressed('linkPose')) { OPT.linkPose = !OPT.linkPose; syncOpt(); saveOpt(); }
   // 몸 좌우 입력의 기준: 화면에서 보이는 오른쪽. 시점이 몸의 옆(벽과 나란한 쪽)에 가까워 불안정할 때는 마지막 부호를 그대로 쓴다

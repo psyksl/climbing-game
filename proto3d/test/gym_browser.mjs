@@ -36,6 +36,8 @@ if (!OLD) { const o0 = await pg.evaluate(() => __p3.opt().autoBody); await pg.ke
   check('⑥ Z 키: 자동 몸 맞추기만 꺼지고 화면에 보인다', o0 === true && o1 === false && /자동 몸 맞추기 끔/.test(t), `${o0} → ${o1} · "${t}"`); }
 // ⑦~⑨ p3d-0.15.3(GPT의 0.15.2 검토 — 화면 정리): 개발 키는 개발 모드(F2)에서만 듣는다 · 조작표 접기(K) · T는 코스를 다 돈 다음 누르기 시험 조각 앞
 if (!OLD) { const opt = () => pg.evaluate(() => __p3.opt()), help = () => pg.evaluate(() => document.getElementById('help').innerText);
+  // p3d-0.15.5: 새 프로필의 조작표는 접힌 채 시작한다 → 먼저 그것을 보고, 펼친 뒤에 ⑦·⑧을 전과 같은 조건(펼친 조작표)으로 본다
+  const hs = await help(), os = await opt(); check('⑧ 새 프로필: 조작표가 접힌 한 줄로 시작한다', os.helpFold === true && hs.length < 60 && /펼치기/.test(hs), `"${hs.replace(/\n/g, ' ')}"`); await pg.keyboard.press('KeyK'); await pg.waitForTimeout(200);
   const a0 = await opt(); await pg.keyboard.press('KeyU'); await pg.keyboard.press('KeyP'); await pg.keyboard.press('KeyY'); await pg.waitForTimeout(200); const a1 = await opt(), h0 = await help();
   check('⑦ 개발 모드 밖: U·P·Y를 눌러도 잡기 보정·누르기·자세 보조가 바뀌지 않고, 조작표에 그 줄이 없다', a1.grabAssist === a0.grabAssist && a1.press === a0.press && a1.poseAssist === a0.poseAssist && !a0.dev && !/잡기 보정 켬·끔/.test(h0), `개발 모드 ${a0.dev} · 조작표에 "잡기 보정" 줄 ${/잡기 보정 켬·끔/.test(h0)}`);
   await pg.keyboard.press('F2'); await pg.waitForTimeout(200); const d1 = await opt(), h1 = await help(); await pg.keyboard.press('KeyU'); await pg.waitForTimeout(200); const d2 = await opt(); await pg.keyboard.press('KeyU'); await pg.waitForTimeout(150);

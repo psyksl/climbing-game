@@ -11,7 +11,7 @@ const bundle = withClips => esbuild.buildSync({ entryPoints: [path.join(src, 'ma
   alias: { 'clip-data': withClips ? clipFile : path.join(src, 'noclips.json'), 'gallery-data': withClips && fs.existsSync(galFile) ? galFile : path.join(src, 'noclips.json'), 'ref-data': withClips && fs.existsSync(refFile) ? refFile : path.join(src, 'noclips.json') } }).outputFiles[0].text;
 const js = bundle(false), three = JSON.parse(fs.readFileSync(path.join(__dirname, 'node_modules/three/package.json'), 'utf8')).version;
 const css = `html,body{margin:0;height:100%;overflow:hidden;background:#cfd6dc;font-family:system-ui,'Noto Sans KR',sans-serif}
-#hud{position:fixed;left:10px;top:8px;background:rgba(28,35,29,.86);color:#f3ecd6;padding:7px 10px;border-radius:7px;font-size:13px;line-height:1.55;pointer-events:none;max-width:60vw}
+#hud{position:fixed;left:16px;top:16px;background:rgba(28,35,29,.86);color:#f3ecd6;padding:7px 10px;border-radius:7px;font-size:13px;line-height:1.55;pointer-events:none;width:320px;max-width:calc(100vw - 32px);box-sizing:border-box}#hud.dev{width:auto;max-width:44vw}
 #hud .ver{font-size:11px;color:#bbc4b2}#hud .dim{font-size:11.5px;color:#bbc4b2}
 #help{position:fixed;right:10px;top:8px;background:rgba(28,35,29,.80);color:#f3ecd6;padding:7px 10px;border-radius:7px;font-size:12px;line-height:1.6;pointer-events:none}
 #help .k{display:inline-block;min-width:54px;padding:0 5px;margin-right:4px;border-radius:4px;background:#e9e3cf;color:#1c231d;font-weight:700;font-size:11px;text-align:center}

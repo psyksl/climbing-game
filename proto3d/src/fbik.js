@@ -162,6 +162,8 @@ export function stepFB(fb, c, dt) {
   fb.cost = solveStep(fb.xs, c, c.iters || 1);
   for (let i = 0; i < NF; i++) follow(fb, i, fb.xs[i], FBW.hl[i], dt);
 }
+// 쓰는 값(fb.x·fb.v)만 한 걸음 뒤따르게 한다(풀지 않는다) — climb.js의 뻗기 전 검사가 풀이 값이 갈 자리를 정해 놓고 지연만 따라가 보는 데 쓴다. stepFB의 뒤따르기와 같은 식
+export function fbFollow(fb, xsT, dt) { for (let i = 0; i < NF; i++) follow(fb, i, xsT[i], FBW.hl[i], dt); }
 // 풀이 값 xs에서 잡은 팔 i의 걸린 깊이 [몸통, 머리](climb.js가 손을 뻗기 시작할 때의 값을 적어 두는 데 쓴다)
 export const fbHeldPen = (xs, c, i) => { const A = c.arms[i]; if (!A || !A.pole) return null; const g = fk(xs, c.pos, c.yaw); return heldPen(g, g.sh[i], A.goal, A.pole, c.headE); };
 // 시험·진단용: 풀이 값 xs에서의 잔차와 몸의 자리
