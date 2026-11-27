@@ -32,8 +32,9 @@ await pg.evaluate(() => __p3.perf(true)); await pg.waitForTimeout(3000);
     for (const i of [0, 1]) { const pr = await pg.evaluate(([i, p]) => __p3.probe('hand', i, p), [i, front(x.q)]); if (!pr.ok) continue; const r = await send(i, x.q, 4000); if (!r.ok) continue; const g = await gym();
       check(`④ 다른 홀드(${x.q.name})를 잡음 → 선택 코스는 초록 그대로, 색 지킴만 꺼짐`, g.course === 'green' && (OLD || (!g.clean && g.live && g.tryId === 1)), JSON.stringify(g)); console.log('   화면: ' + await hud()); done = true; break; } if (done) break; }
   if (!done) check('④ 닿는 다른 홀드를 찾아 잡음', false, '닿는 다른 홀드가 없었다(이 시험의 조건이 서지 않음)'); }
-if (!OLD) { const o0 = await pg.evaluate(() => __p3.opt().autoBody); await pg.keyboard.press('KeyZ'); await pg.waitForTimeout(200); const o1 = await pg.evaluate(() => __p3.opt().autoBody), t = await pg.evaluate(() => document.body.innerText.match(/쉬운 조작 [^\n]{0,34}/)?.[0] || '');
-  check('⑥ Z 키: 자동 몸 맞추기만 꺼지고 화면에 보인다', o0 === true && o1 === false && /자동 몸 맞추기 끔/.test(t), `${o0} → ${o1} · "${t}"`); }
+if (!OLD) { const o0 = await pg.evaluate(() => __p3.opt().autoBody); await pg.keyboard.press('KeyZ'); await pg.waitForTimeout(200); const o1 = await pg.evaluate(() => __p3.opt().autoBody), e1 = await pg.evaluate(() => __p3.opt().easy), t = await pg.evaluate(() => document.getElementById('hud').innerText.match(/[^\n]*자동 몸 맞추기 [^\n]{0,10}/)?.[0] || '');
+  // p3d-0.15.5: 일반 화면의 설정 줄은 기본과 다른 것만 보인다("쉬운 조작 켬"은 더 나오지 않는다) → 상태 판에서 "자동 몸 맞추기 끔"을 찾고, 쉬운 조작이 그대로 켬인지는 설정 값으로 본다
+  check('⑥ Z 키: 자동 몸 맞추기만 꺼지고 화면에 보인다', o0 === true && o1 === false && e1 === true && /자동 몸 맞추기 끔/.test(t), `${o0} → ${o1} · 쉬운 조작 ${e1} · "${t}"`); }
 // ⑦~⑨ p3d-0.15.3(GPT의 0.15.2 검토 — 화면 정리): 개발 키는 개발 모드(F2)에서만 듣는다 · 조작표 접기(K) · T는 코스를 다 돈 다음 누르기 시험 조각 앞
 if (!OLD) { const opt = () => pg.evaluate(() => __p3.opt()), help = () => pg.evaluate(() => document.getElementById('help').innerText);
   // p3d-0.15.5: 새 프로필의 조작표는 접힌 채 시작한다 → 먼저 그것을 보고, 펼친 뒤에 ⑦·⑧을 전과 같은 조건(펼친 조작표)으로 본다
