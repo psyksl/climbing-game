@@ -46,7 +46,8 @@ export const DIM = { ...(BODY === 'old' ? BODY_OLD : BODY_HUMAN) };
 DIM.hipZ ??= 0; DIM.oSpine ??= [0, DIM.spine, 0]; DIM.oChest ??= [0, DIM.chest, 0]; DIM.oClav ??= [DIM.clavX, DIM.clavY, 0]; DIM.oSh ??= [DIM.shoulderX, 0, 0]; DIM.oNeck ??= [0, DIM.neck, 0]; DIM.oHead ??= [0, DIM.head, 0];
 DIM.oHip = [DIM.hipW, -DIM.hipDrop, DIM.hipZ]; DIM.oToe = [0, -(DIM.ankleY - 0.02), DIM.ballZ];
 // 팔–머리 판정의 타원 하나를 물리(climb.js headShape)·풀이(fbik.js heldPen)·진단(test/replay_trace.mjs)이 함께 읽는다. 0.15.4까지는 사람형 몸에서도 옛 몸의 그려진 머리(가운데 [0, 0.9R, 0.01], 반지름 0.9R·1.05R·R)를 썼다 — 실제 머리보다 옆으로 1.7cm 넓고 위로 3.6cm 짧고 가운데가 2.5cm 어긋났다. OLDHEADE = 옛 타원
-export const headEll = () => (DIM.headE && !globalThis.OLDHEADE ? DIM.headE : { c: [0, DIM.headR * 0.9, 0.01], r: [DIM.headR * 0.9, DIM.headR * 1.05, DIM.headR] });
+// HEADE_K = 반지름을 그 배수로(대조 실험용: 1.001처럼 뜻 없는 크기 차이에도 봇의 결과가 얼마나 갈리는지 — p3d-0.15.5)
+export const headEll = () => { const E = DIM.headE && !globalThis.OLDHEADE ? DIM.headE : { c: [0, DIM.headR * 0.9, 0.01], r: [DIM.headR * 0.9, DIM.headR * 1.05, DIM.headR] }, k = globalThis.HEADE_K; return k ? { c: E.c, r: E.r.map(v => v * k) } : E; };
 DIM.headCT = DIM.headC ?? [0, DIM.headR * 0.9, 0]; DIM.headC ??= [0, DIM.headR * 0.9, 0.01]; // headCT = 몸통 계산(torso)의 머리 중심. 옛 몸은 0.9.1까지 torso에서만 앞쪽 1cm를 빼고 썼다(그대로 둔다)
 DIM.boxChest ??= { c: [0, 0.11, 0.005], h: [0.18, 0.12, 0.105] }; DIM.boxHip ??= { c: [0, 0.07, 0], h: [0.15, 0.17, 0.095] };
 DIM.armR ??= { upper: [0.055, 0.045], fore: [0.045, 0.036] }; DIM.kneeClr ??= 0.06; DIM.palm ??= 0.08;
