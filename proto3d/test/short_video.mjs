@@ -10,14 +10,16 @@ const build = path.join(HERE, '..', R.clip ? 'climb3d_mocap.html' : 'climb3d.htm
 const CAMS = { back: { off: Math.PI + 0.30, dist: 4.2, pitch: 0.10, dy: 0.45 }, side: { off: -Math.PI / 2 - 0.12, dist: 4.0, pitch: 0.06, dy: 0.45 }, feet: { off: Math.PI + 0.35, dist: 2.1, pitch: 0.16, dy: -0.55 }, hands: { off: Math.PI + 0.30, dist: 2.0, pitch: 0.02, dy: 0.80 } };
 fs.mkdirSync(out, { recursive: true }); for (const v of VIEWS) { fs.rmSync(path.join(out, 'f_' + v), { recursive: true, force: true }); fs.mkdirSync(path.join(out, 'f_' + v), { recursive: true }); }
 const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }), pg = await b.newPage({ viewport: { width: +(E.VW || 960), height: +(E.VH || 640) } }), errs = []; pg.on('pageerror', e => errs.push(e.message));
-await pg.goto('file://' + build + (R.shadow === false || E.SHADOW === '0' ? '?noshadow' : '')); await pg.waitForTimeout(2500);
+await pg.goto('file://' + build + '?v=1' + (R.shadow === false || E.SHADOW === '0' ? '&noshadow' : '') + (R.sw ? '&sw=' + R.sw : '')); await pg.waitForTimeout(2500);
 const ver = await pg.evaluate(([st, yaw, opts]) => { __p3.pause(true); for (const i of ['help', 'hud']) { const d = document.getElementById(i); if (d) d.style.display = 'none'; }
   const d = document.createElement('div'); d.id = 'lbl'; d.style.cssText = 'position:fixed;left:8px;top:8px;right:8px;background:rgba(28,35,29,.85);color:#f3ecd6;padding:6px 9px;border-radius:6px;font:14px/1.45 sans-serif;white-space:pre-wrap;z-index:99'; document.body.appendChild(d);
   __p3.opt(opts); __p3.wallStart(); __p3.reset({ pos: st, yaw }); return __p3.VERSION; }, [R.startPos, R.startYaw, { handMode: R.opts.handMode, footAssist: R.opts.footAssist, grabAssist: R.opts.grabAssist, poseAssist: R.opts.poseAssist, easy: R.opts.easy, autoBody: R.opts.autoBody, keepHold: R.opts.keepHold, press: R.opts.press, linkPose: !!R.opts.linkPose, wallRest: R.opts.wallRest, diag: false }]);
 if (ver !== R.version) console.log(`주의: 기록한 판(${R.version})과 지금 빌드(${ver})가 다르다`);
 const keys = x => [x.cy > 0 ? 'W(몸 위로)' : '', x.cy < 0 ? 'S' : '', x.cx > 0 ? 'D' : '', x.cx < 0 ? 'A' : '', x.jump ? 'Space' : ''].filter(Boolean).join(' + ') || '—';
 let n = 0, lastCmd = '', cmdK = -999, last = null; const I = R.inputs, K0 = Math.round(T0 * 120), K1 = Math.min(I.length, Math.round(T1 * 120));
-const optTxt = `발 보조 ${R.opts.footAssist ? '켬' : '끔'} · 잡기 보정 ${R.opts.grabAssist ? '켬' : '끔'} · 자세 보조 ${R.opts.poseAssist ? '켬' : '끔'} · 쉬운 조작 ${R.opts.easy ? '켬' : '끔'} · 자동 몸 맞추기 ${R.opts.autoBody ? '켬' : '끔'} · 누르기 ${R.opts.press ? '켬' : R.opts.linkPose && R.opts.poseAssist ? '켬(전신 연결에 포함)' : '끔'}${R.opts.keepHold ? ' · 비교: 잡은 손 유지' : ''} · 전신 연결 ${R.opts.linkPose ? '켬' : '끔'}${R.shadow === false || process.env.SHADOW === '0' ? ' · 그림자 끔(찍는 시간 때문)' : ''}`;
+// DIST = 카메라 거리의 배수, DY = 겨누는 높이를 더 내리거나 올림(전신이 잘리지 않게 — p3d-0.15.4, GPT의 0.15.3 검토: 옆 영상에서 발이 잘렸다)
+const DIST = +(E.DIST || 1), DY = +(E.DY || 0);
+const optTxt = `발 보조 ${R.opts.footAssist ? '켬' : '끔'} · 잡기 보정 ${R.opts.grabAssist ? '켬' : '끔'} · 자세 보조 ${R.opts.poseAssist ? '켬' : '끔'} · 쉬운 조작 ${R.opts.easy ? '켬' : '끔'} · 자동 몸 맞추기 ${R.opts.autoBody ? '켬' : '끔'} · 누르기 ${R.opts.press ? '켬' : R.opts.linkPose && R.opts.poseAssist ? '켬(전신 연결에 포함)' : '끔'}${R.opts.keepHold ? ' · 비교: 잡은 손 유지' : ''} · 전신 연결 ${R.opts.linkPose ? '켬' : '끔'}${R.shadow === false || process.env.SHADOW === '0' ? ' · 그림자 끔(찍는 시간 때문)' : ''}${R.sw ? ' · 비교 스위치 ' + R.sw : ''}`;
 // 입력의 출처(p3d-0.15.4, GPT의 0.15.3 검토 M5): 기록에 source가 없으면 끝 접촉 기록(end)이 있는 것 = 브라우저에서 기록한 키·마우스, 없는 것 = 명령 수준. 둘 다 사람 손이 아니다
 const SRC = R.source || (R.end ? 'keymouse' : 'command'), srcTxt = SRC === 'keymouse' ? '스크립트가 넣은 키·마우스 이벤트의 기록을 다시 재생(사람 손 아님)' : '명령 입력 재생(키·마우스를 거치지 않음, 사람 손 아님)', title = R.title || (/^stand_|누르기/.test(R.route) ? `장면 ${R.route}` : `짧은 구간(초록 시작 → 6) 경로 ${R.route}`);
 for (let k = 0; k < K1; k += EVERY) {
@@ -27,7 +29,7 @@ for (let k = 0; k < K1; k += EVERY) {
   last = await pg.evaluate(([xs, lbl]) => { for (const x of xs) { for (const c of x.cmd || []) __p3.cmd(c); __p3.run(1, { ...x, cmd: [] }); } document.getElementById('lbl').textContent = lbl;
     const L = __p3.climb(); return { h: L.hands.map(h => h.st + (h.st === 'hold' ? ':' + h.box : '')), f: L.feet.map(f => f.st + (f.st === 'plant' ? ':' + f.box : '')) }; }, [part, lbl]);
   if (k < K0) continue;
-  for (const v of VIEWS) { const c = CAMS[v]; await pg.evaluate(([c, v]) => { const e = __p3.rig.bones.hips.matrixWorld.elements; __p3.shot({ off: c.off, dist: c.dist, pitch: c.pitch, at: [e[12], e[13] + c.dy, e[14]] }); const d = document.getElementById('lbl'); d.dataset.base = d.dataset.base || ''; }, [c, v]);
+  for (const v of VIEWS) { const c = CAMS[v]; await pg.evaluate(([c, v]) => { const e = __p3.rig.bones.hips.matrixWorld.elements; __p3.shot({ off: c.off, dist: c.dist * c.k, pitch: c.pitch, at: [e[12], e[13] + c.dy + c.d, e[14]] }); const d = document.getElementById('lbl'); d.dataset.base = d.dataset.base || ''; }, [{ ...c, k: DIST, d: DY }, v]);
     await pg.screenshot({ path: path.join(out, 'f_' + v, String(n).padStart(5, '0') + '.jpg'), type: 'jpeg', quality: 86 }); }
   n++;
 }

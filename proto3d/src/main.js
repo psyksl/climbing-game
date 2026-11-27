@@ -52,6 +52,8 @@ try { Object.assign(OPT, JSON.parse(localStorage.getItem('p3dOpt_v1') || '{}'));
 if (params.has('keep')) OPT.keepHold = params.get('keep') !== '0';
 // 전신 연결(p3d-0.15.3 — **비교 후보, 화면 기본 끔**. 닿는 범위·버티는 범위가 달라지는 변경이라 사용자·GPT의 결정 전에는 기본으로 두지 않는다): ?link=1 = 켬(개발 모드의 9 키로도). 저장된 설정보다 주소가 먼저다
 if (params.has('link')) OPT.linkPose = params.get('link') !== '0';
+// 비교 스위치(p3d-0.15.4, 견주는 영상·시험용): ?sw=NOHELDCLR,FOLD_KEEP=0.3 → 계산의 전역 비교 스위치를 켠다(시험의 환경 변수와 같은 이름). 화면 위쪽에 켠 스위치를 적는다
+const SW_URL = (params.get('sw') || '').split(',').filter(Boolean); for (const k of SW_URL) { const [a, v] = k.split('='); if (/^[A-Z][A-Z0-9_]*$/.test(a)) globalThis[a] = v === undefined ? 1 : +v; }
 // 개발 모드(p3d-0.15.3): F2 또는 ?dev — 개발 키(잡기 보정 U·자세 보조 Y·누르기 P·전신 연결 9·벽 딛기 J·몸 자세 O·진단 I·뼈대 B·느리게 N·모션 M·동작 보기 G)는 이때만 듣는다. 진단 정보도 이때만 보인다
 if (params.has('dev')) OPT.dev = params.get('dev') !== '0';
 let DIAG = false;

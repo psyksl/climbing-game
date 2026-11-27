@@ -1198,7 +1198,8 @@ function fbUpdate(S, inp, dt, held, planted, left, fwd) {
   c.boxesHead = boxes.map(x => (heldBox.has(x.src) ? { min: x.min, max: x.max } : { min: [x.min[0], x.min[1] - 0.15, x.min[2]], max: x.max }));
   // 전신 연결(p3d-0.15.4): 한 손을 뻗는 동안 **버티는 손의 팔이 실제로 제 몸통·머리에 걸리기 시작하면**(물리의 걸림 h.jam이 HELD_JAM초 넘게 이어짐 — 0.15초가 되면 놓친다) 그때부터 그 뻗기가 끝날 때까지 풀이가 그 팔을 겹치기 4mm 앞까지 빼낸다(fbik heldPen).
   //   처음에는 뻗는 동안 늘 걸었다(걸리기 전부터 막았다). 표본에서는 버티던 손이 풀리는 것이 18 → 4였지만 클라이밍장 봇의 완등이 20 → 13이 됐다 — 팔이 머리 옆을 스치며 지나가 잡던 뻗기(물리는 0.15초 안의 걸림을 놓침으로 세지 않는다)까지 "닿지 않음"이 됐다. 고치려는 것은 "걸린 채 0.15초가 지나 놓치는 것"뿐이다. NOHELDCLR = 끔
-  { const rch2 = K.hands.some(h => h.st === 'reach'), on = rch2 && linkOn(S) && !globalThis.NOHELDCLR; for (const h of K.hands) { const A = c.arms[h.i]; if (!on || h.st !== 'hold' || !A.pole) { h.clrOn = false; continue; } if ((h.jam || 0) > (globalThis.HELD_JAM ?? 0.025)) h.clrOn = true; if (h.clrOn) { A.clr = 1; A.clr0 = [-9, -9]; } } }
+  //   켜진 뒤에는 그 손을 놓거나 몸 위로(W)를 누를 때까지 둔다(W에서는 0.12.0의 걸림 멈춤이 맡는다). 처음에는 뻗기가 끝나면 껐는데, 쉬운 조작(화면 기본)에서는 모자란 손이 잡던 자리로 돌아가 다시 잡는 순간 항이 꺼져 자세가 되돌아가며 다시 걸려 놓쳤다. HELD_REACHONLY = 뻗는 동안에만(처음 넣은 방식)
+  { const rch2 = K.hands.some(h => h.st === 'reach'), up2 = (inp.cy || 0) > 0, on = linkOn(S) && !globalThis.NOHELDCLR && !up2 && !K.push; for (const h of K.hands) { const A = c.arms[h.i]; if (!on || h.st !== 'hold' || !A.pole || (globalThis.HELD_REACHONLY && !rch2)) { h.clrOn = false; continue; } if ((h.jam || 0) > (globalThis.HELD_JAM ?? 0.025) && (rch2 || !globalThis.HELD_REACHTRIG)) h.clrOn = true; if (h.clrOn) { A.clr = 1; A.clr0 = [-9, -9]; } } }
   stepFB(fb, c, dt); fb.ctx = c;
   K.po.x = 0; K.po.z = 0; K.po.yaw = fb.x[FBI.YH]; K.po.xV = 0; K.po.zV = 0; K.po.yawV = 0;
 }
