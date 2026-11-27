@@ -2,6 +2,8 @@
 // 손: 시도 → 잡음/거부 → 유지 → 놓기. 발: 누르는 힘과 마찰로만 버틴다(벽에 붙지 않는다). 놓는 걸음에 속도가 이어지는지, 접촉 오차·관통·거부 까닭을 적는다.
 // 사용: node test/wall_check.mjs [결과 JSON]   캡처 동작으로: MODE=clip (assets_local/clips.json이 있을 때)
 import { prov, provLine } from './provenance.mjs'; // 실행 출처(p3d-0.10.3) — 소스보다 먼저 불러와 설정 스위치를 켠다
+// [실제 설정] 한 줄(p3d-0.15.5, GPT의 0.15.4 검토: 회귀 파일에 실제 설정이 없었다): 이 시험이 마지막으로 만든 sim의 설정을 끝날 때 적는다(계산이 읽는 값 — provenance.mjs provOptLine)
+import { provOptLine } from './provenance.mjs'; let lastSim__ = null; process.on('exit', () => { if (lastSim__) console.log(provOptLine(lastSim__)); });
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -9,6 +11,7 @@ import * as THREE from 'three';
 const __P = prov(); console.log(provLine(__P));
 const HERE = path.dirname(fileURLToPath(import.meta.url)), SRC = path.resolve(HERE, '../src'), imp = f => import(pathToFileURL(path.join(SRC, f)).href);
 const { buildCharacter, DIM, headEll } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { limbState, CL, probeHand, FSTAT } = await imp('climb.js'), { PHY } = await imp('controller.js'), clamp = THREE.MathUtils.clamp;
+const mkSim__ = (...a) => (lastSim__ = makeSim(...a));
 const CLP = path.resolve(HERE, '../assets_local/clips.json'), useClip = process.env.MODE === 'clip';
 if (useClip && !fs.existsSync(CLP)) { console.log('clips.json 없음 → 건너뜀'); process.exit(0); }
 const clips = useClip ? JSON.parse(fs.readFileSync(CLP, 'utf8')) : null, rig = buildCharacter(), DT = PHY.DT, G = PHY.G;
@@ -18,7 +21,7 @@ const out = { note: '스크립트 입력(사람 손 아님). 모션 = ' + (useCl
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${detail}`); out.checks.push({ name, ok, detail }); if (!ok) fails++; };
 // p3d-0.10.3(GPT의 0.10.2 검토 5번): 옛 몸 치수에 묶인 숫자 기대는 새 몸에서 "이력"으로 옮긴다(결과는 그대로 적고 실패로 세지 않는다). 그 요구는 새 몸의 실제 경계에서 대체 시험(아래 '새 몸 경계')으로 지킨다. 옛 몸에서는 그대로 시험이다
 const OLDBODY = process.env.BODY === 'old', histOrCheck = (name, ok, detail = '') => { if (OLDBODY) return check(name, ok, detail); console.log(`이력  ${name} — 새 몸에서는 이력(옛 몸 치수의 숫자 기대. 대체 시험: 새 몸 경계) — ${ok ? '통과' : '실패'} ${detail}`); out.checks.push({ name, ok, detail, 이력: true }); };
-const start = (pos, yaw = Math.PI, extra = []) => { const w = makeWorld(); for (const [name, min, max] of extra) w.boxes.push({ name, min: new THREE.Vector3(...min), max: new THREE.Vector3(...max), kind: 'block' }); sim = makeSim(rig, w, clips); if (process.env.VARIANT) sim.opt.posture = process.env.VARIANT; sim.reset({ pos, yaw }); rec = []; run(30); };
+const start = (pos, yaw = Math.PI, extra = []) => { const w = makeWorld(); for (const [name, min, max] of extra) w.boxes.push({ name, min: new THREE.Vector3(...min), max: new THREE.Vector3(...max), kind: 'block' }); sim = mkSim__(rig, w, clips); if (process.env.VARIANT) sim.opt.posture = process.env.VARIANT; sim.reset({ pos, yaw }); rec = []; run(30); };
 function run(n, inp = {}, cmd = null) {
   for (let i = 0; i < n; i++) {
     const v0 = sim.body.vel.clone(), on0 = sim.climb.on;
@@ -424,7 +427,7 @@ check('벽 동작 전체(위의 모든 장면): 뼈의 한 걸음 회전량이 �
   check('발을 보내는 중에 그 발을 놓으면(0.2초 뒤) 디디지 않고 돌아오며, 왼손과 남은 발은 그대로다. 닿지 않는 발판으로 보내면 거부되고(자동으로 디디지 않는다) 왼손과 남은 발은 그대로다', cancel.디딘_때_초 === null && cancel.왼손 && /plant:바닥/.test(cancel.발) && cancel.관통 === 0 && /reject 오른발\(발이 닿지 않음/.test(far.사건) && far.손 === 'hold/free' && /^plant:바닥/.test(far.발), `취소: ${cancel.사건} · 발 ${cancel.발} | 닿지 않음: ${far.사건} · 손 ${far.손} · 발 ${far.발}`); }
 // 힘의 한계(p3d-0.8.4): LOOSE=1이면 p3d-0.8.3까지처럼 섞은 뒤 한계를 다시 걸지 않는다(견주기용). 아래 숫자는 "걸기 전에 넘어 있던" 횟수다
 // 새 몸 경계(p3d-0.10.3, 위 두 이력의 대체 시험 — 같은 요구를 새 몸의 실제 경계에서): 대표 장면 h4의 입력. 올라서다 만 자리(W 0.12초)에서 턱 F는 "닿지 않음"으로 거부되고 손발은 그대로, 몸을 더 올리면(W 0.8초) 같은 턱 F를 잡는다. 층을 끈 경우(OLDPOSE)도 같은 자리에서 거부된다
-if (!OLDBODY) { const { SCENES_H, START: ST } = await import('./scenes_foot.mjs'), h4 = SCENES_H[3], runScene = (oldPose) => { const s2 = makeSim(buildCharacter(), makeWorld(), null); s2.reset({ pos: ST, yaw: Math.PI }); s2.opt.wallRest = false; s2.opt.footAssist = false; if (oldPose) globalThis.OLDPOSE = 1;
+if (!OLDBODY) { const { SCENES_H, START: ST } = await import('./scenes_foot.mjs'), h4 = SCENES_H[3], runScene = (oldPose) => { const s2 = mkSim__(buildCharacter(), makeWorld(), null); s2.reset({ pos: ST, yaw: Math.PI }); s2.opt.wallRest = false; s2.opt.footAssist = false; if (oldPose) globalThis.OLDPOSE = 1;
     const inputs = [], put = (inp = {}, cmd = []) => inputs.push({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd }), rep = (n, inp, cmd) => { for (let i = 0; i < n; i++) put(inp, i ? [] : cmd); }; h4[1](s2, put, rep); const ev = []; let before = null;
     for (let k = 0; k < inputs.length; k++) { s2.step(inputs[k]); for (const e of s2.climb.events) if (e.limb === 'hand' && e.i === 1 && (e.type === 'grab' || e.type === 'reject')) { ev.push(e.type + (e.why ? '(' + e.why + ')' : '')); if (e.type === 'reject') before = s2.climb.hands[0].st + '/' + s2.climb.feet.map(f => f.st).join('/'); } }
     if (oldPose) delete globalThis.OLDPOSE; return { ev, before }; };

@@ -1,6 +1,8 @@
 // 사용자 플레이 영상(0.11.1, 8편 4분 34초)에서 찾은 문제의 점검(p3d-0.11.2). 스크립트 입력(사람 손 아님). 사용: node test/play_fix_check.mjs [JSON]   자세: VARIANT=fb(기본)|rule · 캡처 동작: MODE=clip
 // ① 점프하며 잡기: 점프를 누른 때 기준으로 클릭이 언제까지 잡히는가 ② 한 손 매달림에서 다른 손을 바로 옆에 모으기 ③ 옆으로 팽팽하게 당겨지는 잡기는 잡자마자 놓치지 않고 잡기 전에 거부 ④ 발 없이 매달린 다리의 무릎 간격
 import { prov, provLine } from './provenance.mjs';
+// [실제 설정] 한 줄(p3d-0.15.5, GPT의 0.15.4 검토: 회귀 파일에 실제 설정이 없었다): 이 시험이 마지막으로 만든 sim의 설정을 끝날 때 적는다(계산이 읽는 값 — provenance.mjs provOptLine)
+import { provOptLine } from './provenance.mjs'; let lastSim__ = null; process.on('exit', () => { if (lastSim__) console.log(provOptLine(lastSim__)); });
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -8,11 +10,12 @@ const __P = prov(); console.log(provLine(__P));
 const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pathToFileURL(path.join(HERE, '../src', f)).href);
 const THREE = await import('three');
 const { buildCharacter } = await imp('rig.js'), W = await imp('world.js'), { makeSim } = await imp('sim.js');
+const mkSim__ = (...a) => (lastSim__ = makeSim(...a));
 const CLP = path.join(HERE, '../assets_local/clips.json'); if (process.env.MODE === 'clip' && !fs.existsSync(CLP)) { console.log('clips.json 없음 → 건너뜀'); process.exit(0); }
 const clips = process.env.MODE === 'clip' ? JSON.parse(fs.readFileSync(CLP, 'utf8')) : null, POST = process.env.VARIANT || 'fb';
 const hand = (i, p) => ({ type: 'hand', i, p }), out = { 자세: POST, 동작: clips ? '캡처' : '자작', checks: [], cases: {} }; let fail = 0;
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${detail}`); out.checks.push({ name, ok, detail }); if (!ok) fail++; };
-const mk = pos => { const rig = buildCharacter(), sim = makeSim(rig, W.makeWorld(), clips); sim.opt.posture = POST; sim.reset({ pos, yaw: Math.PI }); sim.opt.posture = POST; sim.opt.footAssist = false; sim.opt.wallRest = false; const ev = [];
+const mk = pos => { const rig = buildCharacter(), sim = mkSim__(rig, W.makeWorld(), clips); sim.opt.posture = POST; sim.reset({ pos, yaw: Math.PI }); sim.opt.posture = POST; sim.opt.footAssist = false; sim.opt.wallRest = false; const ev = [];
   const run = (n, inp = {}, cmd = []) => { for (let k = 0; k < n; k++) { sim.step({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd: k ? [] : cmd }); for (const e of sim.climb.events) if (e.type !== 'try' && e.limb === 'hand') ev.push({ i: e.i, type: e.type, why: e.why || '' }); } }; return { rig, sim, run, ev }; };
 // ① 점프하며 잡기(턱 B, 왼손 하나). 점프 0.5초 누름. 클릭 = 점프를 누른 때 기준 −0.4 ~ +0.45초
 { const rows = [];
@@ -37,7 +40,7 @@ for (let off = -48; off <= 54; off += 6) { const T = mk([0.62, 0, -2.65]); const
   out.cases['늘어뜨린 다리'] = { 무릎_간격_cm: +(kn * 100).toFixed(1), 엉덩이_폭_cm: +(hp * 100).toFixed(1), 발_간격_cm: +(ft * 100).toFixed(1) };
   check('발 없이 매달린 다리: 무릎 간격이 엉덩이 폭 + 6cm 안(0.11.1: 무릎 29cm · 엉덩이 18cm — O자 다리)', T.sim.climb.feet.every(f => f.st === 'free') && kn <= hp + 0.06, `무릎 ${(kn * 100).toFixed(1)}cm · 엉덩이 ${(hp * 100).toFixed(1)}cm · 발 ${(ft * 100).toFixed(1)}cm`); }
 // ⑤ 매달린 팔의 그림(p3d-0.11.3, 사용자 지적 "편 것도 굽힌 것도 아닌 팔"): 한 손 매달림에서 마네킹의 팔꿈치가 계산 쪽 팔보다 더 굽지 않고, 계산 쪽이 다 펴졌으면 곧게(170° 넘게) 그려진다
-{ const { buildHuman, makeRetarget } = await imp('human.js'), world = W.makeWorld(), rig = buildCharacter(), sim = makeSim(rig, world, clips); sim.opt.posture = POST; sim.reset({ pos: [0.62, 0, -2.65], yaw: Math.PI }); sim.opt.posture = POST; sim.opt.footAssist = false; const Hm = buildHuman(), R = makeRetarget(rig, Hm);
+{ const { buildHuman, makeRetarget } = await imp('human.js'), world = W.makeWorld(), rig = buildCharacter(), sim = mkSim__(rig, world, clips); sim.opt.posture = POST; sim.reset({ pos: [0.62, 0, -2.65], yaw: Math.PI }); sim.opt.posture = POST; sim.opt.footAssist = false; const Hm = buildHuman(), R = makeRetarget(rig, Hm);
   const run = (n, inp = {}, cmd = []) => { for (let k = 0; k < n; k++) sim.step({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd: k ? [] : cmd }); }, P = o => o.getWorldPosition(new THREE.Vector3()), ang = (a, b, c) => a.clone().sub(b).angleTo(c.clone().sub(b)) * 180 / Math.PI;
   run(30); run(1, { jump: true }, [hand(1, [0.9, 2.32, -2.86])]); run(59, { jump: true }); const rows = [];
   for (let k = 0; k < 6; k++) { run(30); R.apply(sim.fing, sim.pron, sim.climb, world, sim.gw); rig.root.updateMatrixWorld(true); const c = ang(P(rig.bones['upperArm.R']), P(rig.bones['foreArm.R']), P(rig.bones['hand.R'])), h = ang(P(Hm.bones.upperarm_r), P(Hm.bones.lowerarm_r), P(Hm.bones.hand_r)); rows.push([+c.toFixed(0), +h.toFixed(0)]); }

@@ -2,6 +2,8 @@
 // ① 땅에서 손을 뻗어 조금 모자람: 보정 끔이면 "닿지 않음", 켬이면 8cm 안은 잡고 그보다 멀면 거부 ② 한 손 매달림에서 흔들어(A/D) 옆의 먼 턱: 켬일 때 흔드는 때에 따라 잡히고, 흔들지 않으면 거부
 // 잡은 뒤 몸이 끌려가는 빠르기(한 걸음에 몸 자리가 가장 크게 옮겨진 거리)를 함께 잰다 ③ 점프하며 잡기의 클릭 시각 범위(끔 / 켬)
 import { prov, provLine } from './provenance.mjs';
+// [실제 설정] 한 줄(p3d-0.15.5, GPT의 0.15.4 검토: 회귀 파일에 실제 설정이 없었다): 이 시험이 마지막으로 만든 sim의 설정을 끝날 때 적는다(계산이 읽는 값 — provenance.mjs provOptLine)
+import { provOptLine } from './provenance.mjs'; let lastSim__ = null; process.on('exit', () => { if (lastSim__) console.log(provOptLine(lastSim__)); });
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -9,11 +11,12 @@ const __P = prov(); console.log(provLine(__P));
 const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pathToFileURL(path.join(HERE, '../src', f)).href);
 const THREE = await import('three');
 const CLM = await imp('climb.js'), { buildCharacter } = await imp('rig.js'), W = await imp('world.js'), { makeSim } = await imp('sim.js');
+const mkSim__ = (...a) => (lastSim__ = makeSim(...a));
 const CLP = path.join(HERE, '../assets_local/clips.json'); if (process.env.MODE === 'clip' && !fs.existsSync(CLP)) { console.log('clips.json 없음 → 건너뜀'); process.exit(0); }
 const clips = process.env.MODE === 'clip' ? JSON.parse(fs.readFileSync(CLP, 'utf8')) : null, POST = process.env.VARIANT || 'fb';
 const hand = (i, p) => ({ type: 'hand', i, p }), out = { 자세: POST, 동작: clips ? '캡처' : '자작', checks: [], cases: {} }; let fail = 0;
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${detail}`); out.checks.push({ name, ok, detail }); if (!ok) fail++; };
-const mk = (pos, assist) => { const rig = buildCharacter(), sim = makeSim(rig, W.makeWorld(), clips); sim.opt.posture = POST; sim.reset({ pos, yaw: Math.PI }); sim.opt.posture = POST; sim.opt.footAssist = false; sim.opt.wallRest = false; sim.opt.grabAssist = assist; const ev = []; let pop = 0, gap = 0, t = 0;
+const mk = (pos, assist) => { const rig = buildCharacter(), sim = mkSim__(rig, W.makeWorld(), clips); sim.opt.posture = POST; sim.reset({ pos, yaw: Math.PI }); sim.opt.posture = POST; sim.opt.footAssist = false; sim.opt.wallRest = false; sim.opt.grabAssist = assist; const ev = []; let pop = 0, gap = 0, t = 0;
   const run = (n, inp = {}, cmd = []) => { for (let k = 0; k < n; k++) { const p0 = sim.body.pos.clone(), on0 = sim.climb.on; sim.step({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd: k ? [] : cmd }); t++; if (on0 && sim.climb.on) pop = Math.max(pop, sim.body.pos.distanceTo(p0)); for (const e of sim.climb.events) if (e.type !== 'try' && (e.limb === 'hand' || e.type === 'assist')) ev.push({ t: +(t / 120).toFixed(2), i: e.i, type: e.type, why: e.why || '' });
     for (const h of sim.climb.hands) if (h.st === 'hold') { rig.root.updateMatrixWorld(true); const w = rig.bones[`hand.${h.s}`].getWorldPosition(new THREE.Vector3()); gap = Math.max(gap, w.distanceTo(h.goal) - 0.10); } } };
   return { rig, sim, run, ev, st: () => ({ pop: +(pop * 100).toFixed(1), gap: +(Math.max(0, gap) * 100).toFixed(1) }) }; };

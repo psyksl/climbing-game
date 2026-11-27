@@ -9,6 +9,8 @@
 // 자세 규칙 비교: VARIANT=base|rule|ref(사람형 몸의 자세 규칙 — rule이 기본)
 // 옛 몸과 견주기: BODY=old — 옛 몸의 메시(제어 뼈대에 바로 붙은 것)로 ③④만 잰다(①②는 옮기는 단계가 없어 0)
 import { prov, provLine } from './provenance.mjs'; // 실행 출처(p3d-0.10.3) — 소스보다 먼저 불러와 설정 스위치를 켠다
+// [실제 설정] 한 줄(p3d-0.15.5, GPT의 0.15.4 검토: 회귀 파일에 실제 설정이 없었다): 이 시험이 마지막으로 만든 sim의 설정을 끝날 때 적는다(계산이 읽는 값 — provenance.mjs provOptLine)
+import { provOptLine } from './provenance.mjs'; let lastSim__ = null; process.on('exit', () => { if (lastSim__) console.log(provOptLine(lastSim__)); });
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -16,6 +18,7 @@ const __P = prov(); console.log(provLine(__P));
 const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pathToFileURL(path.resolve(HERE, '../src', f)).href);
 const THREE = await import('three');
 const { buildCharacter } = await imp('rig.js'), { makeWorld } = await imp('world.js'), { makeSim } = await imp('sim.js'), { CL } = await imp('climb.js'), { buildHuman, makeRetarget, humanPoints } = await imp('human.js');
+const mkSim__ = (...a) => (lastSim__ = makeSim(...a));
 const { SCENES_FOOT, SCENES, SCENES_H, SCENES_HV = [], START } = await import('./scenes_foot.mjs');
 const clip = process.env.MODE === 'clip', clips = clip ? JSON.parse(fs.readFileSync(path.resolve(HERE, '../assets_local/clips.json'), 'utf8')) : null;
 if (process.env.PO_FAST) globalThis.PO_FAST = 1; // 비교 스위치: 골반 층 0.15초
@@ -41,7 +44,7 @@ const PEN_EVERY = +(process.env.PEN_EVERY || 6);
 const ATTD = {};
 const out = { mode: clip ? 'clip' : 'proc', body: OLD ? 'old' : 'human', scenes: {} }, tot = { palm: 0, ankle: 0, gap: 0, att: [], fast: [], penBody: { d: 0 }, penContact: { d: 0 }, part: {}, coord: 0 };
 for (const [id, title, fn, assist, mode, st0] of all) {
-  const world = makeWorld(), sim = makeSim(rig, world, clips); sim.reset({ pos: st0 || START, yaw: Math.PI }); sim.opt.wallRest = false; sim.opt.footAssist = !!assist;
+  const world = makeWorld(), sim = mkSim__(rig, world, clips); sim.reset({ pos: st0 || START, yaw: Math.PI }); sim.opt.wallRest = false; sim.opt.footAssist = !!assist;
   if (process.env.VARIANT) { sim.opt.posture = process.env.VARIANT; if (process.env.VARIANT === 'ref') sim.ref = JSON.parse(fs.readFileSync(path.resolve(HERE, '../assets_local/ref_index.json'), 'utf8')); }
   const inputs = [], put = (inp = {}, cmd = []) => inputs.push({ mx: 0, mz: 0, cxSign: 1, ...inp, cmd }), rep = (n, inp, cmd) => { for (let i = 0; i < n; i++) put(inp, i ? [] : cmd); };
   fn(sim, put, rep);
@@ -89,7 +92,7 @@ console.log(`기록  전환(잡기·놓기·디딤·뗌 뒤 0.3초, 매 걸음) 
 // 좌표 확인: 정점의 세계 자리가 몸 근처에 있는가(0.10.0처럼 지역 좌표로 재면 옛 몸은 2.65m 떨어진다)
 ok(tot.coord < 0.4, `메시 정점을 세계 좌표로 잰다: 첫 걸음의 메시 중심이 몸 원점에서 수평 ${tot.coord.toFixed(3)}m(0.4m 안)`);
 // 변환 확인(새 몸만): 새 몸 전체를 다른 부모(옮기고 돌린 것) 아래에 두고 다시 옮겨도 정점의 세계 자리가 같아야 한다
-if (!OLD) { const world = makeWorld(), sim = makeSim(rig, world, clips); sim.reset({ pos: START, yaw: Math.PI }); sim.opt.wallRest = false; for (let k = 0; k < 400; k++) sim.step({ mx: 0, mz: 0, cxSign: 1, cmd: k === 60 ? [{ type: 'hand', i: 0, p: [-0.72, 1.92, -2.84] }] : [] });
+if (!OLD) { const world = makeWorld(), sim = mkSim__(rig, world, clips); sim.reset({ pos: START, yaw: Math.PI }); sim.opt.wallRest = false; for (let k = 0; k < 400; k++) sim.step({ mx: 0, mz: 0, cxSign: 1, cmd: k === 60 ? [{ type: 'hand', i: 0, p: [-0.72, 1.92, -2.84] }] : [] });
   R.apply(sim.fing, sim.pron); const snap = () => H.meshes.flatMap(m => { m.updateMatrixWorld(true); const v = new THREE.Vector3(), o = []; for (let j = 0; j < m.geometry.attributes.position.count; j += 11) o.push(worldVert(m, j, v).clone()); return o; });
   const a = snap(), par = new THREE.Group(); par.position.set(1.3, 0.4, -2.1); par.rotation.set(0.2, 0.9, -0.1); par.add(H.root); par.updateMatrixWorld(true); R.apply(sim.fing, sim.pron); const b = snap(); par.remove(H.root); R.apply(sim.fing, sim.pron);
   const dmax = Math.max(...a.map((p, i) => p.distanceTo(b[i])));
