@@ -118,7 +118,12 @@ export function makeGym(opt = {}) { const COURSES = opt.courses || GYM_COURSES; 
     const p = c.clone().addScaledVector(n, -c.clone().sub(V3(...F.o)).dot(n) + surfOff(F, 0.1) + (F.tilt < 0 ? 0.24 : 0.42)); p.y = 0; cs.startPos = p.toArray(); cs.startYaw = Math.atan2(-n.x, -n.z); }
   // opt.filler = 재기용: 정면 벽 오른쪽(x 0.5~8)에 작은 홀드 n개를 흩어 둔다(상자 수에 따른 계산 빠르기 재기)
   if (opt.filler) { let a = 12345; const r = () => ((a = (a * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff); for (let k = 0; k < opt.filler; k++) { const x = 0.5 + r() * 7.5, y = 0.3 + r() * 3.7; B(`채움 ${k}`, [x, y - 0.05, -7], [x + 0.14, y, -6.88], 'ledge'); } }
-  return { boxes, courses, gym: true, faces: GYM_FACES, spawn: { pos: [-2.0, 0, 0.5], yaw: Math.PI } };
+  // 누르기 시험 조각(p3d-0.15.3, GPT의 0.15.2 검토 작업 D: "기존 초록 구간은 유지하고, 낮은 턱 하나의 별도 시험 조각을 추가하여 매달리기 → 손바닥 누르기 → 발로 올라서기를 확인한다").
+  //   벽에서 떨어져 혼자 선 대(臺): 윗면 높이 1.55m(어깨보다 조금 위 — 낮은 턱), 깊이 0.9m(올라설 수 있는 윗면), 앞면(+z)에 발판 둘(0.45m·0.95m). 기존 벽·코스·홀드는 그대로다(맨 끝에 더해 앞의 상자 순서도 같다).
+  //   모양·자리·이름은 임시. opt.press === false면 넣지 않는다
+  if (opt.press !== false) { B('누르기 대', [0.6, 0, -2.6], [2.4, 1.55, -1.7], 'block', { color: '#b9b2a2', piece: 'press' });
+    B('누르기 대 발판1', [1.25, 0.40, -1.7], [1.75, 0.45, -1.56], 'foothold', { color: '#6d6a62', piece: 'press', face: V3(0, 0, 1) }); B('누르기 대 발판2', [1.25, 0.90, -1.7], [1.75, 0.95, -1.56], 'foothold', { color: '#6d6a62', piece: 'press', face: V3(0, 0, 1) }); }
+  return { boxes, courses, gym: true, faces: GYM_FACES, spawn: { pos: [-2.0, 0, 0.5], yaw: Math.PI }, pressPiece: opt.press !== false ? { startPos: [1.5, 0, -1.28], startYaw: Math.PI } : null };
 }
 
 // 다른 벽으로 옮겨 가기 시험용 지형(p3d-0.10.4, GPT의 0.10.3 검토 "다른 벽으로 이동하는 시험용 조각은 바로 만든다 — 기존 코스는 그대로").

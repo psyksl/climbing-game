@@ -43,7 +43,11 @@ const DEFAULT = [
   { id: 'poseMode', ctx: ['any'], keys: ['KeyO'], dev: true, label: '비교: 몸 자세(전신 자세 풀이 ↔ 옛 규칙 0.10.4) · 기본 전신 자세 풀이' },
   { id: 'wallStart', ctx: ['any'], keys: ['KeyT'], label: '코스 시작 자리로(누를 때마다 다음 코스 · 옛 벽에서는 작은 벽 앞)' },
   { id: 'reset', ctx: ['any'], keys: ['KeyR'], label: '처음 자리로' },
-  { id: 'helpAll', ctx: ['any'], keys: ['KeyK'], label: '조작표 모두 보기·접기' },
+  // p3d-0.15.3(GPT의 0.15.2 검토 "숨긴 개발 키가 일반 플레이에서 계속 동작하는 것은 정리한다. 도움말 접힘·펼침은 접근 가능하게 남긴다" — 임시 배치): K = 조작표 접기·펼치기, F2 = 개발 모드.
+  //   dev 표시가 붙은 동작(잡기 보정·자세 보조·누르기·전신 연결·벽 딛기·몸 자세·진단·뼈대·느리게·모션·동작 보기)은 개발 모드에서만 듣는다(makeInput의 active). 조작표도 개발 모드에서만 그 줄을 보인다 — 보이는 것과 듣는 것이 같다
+  { id: 'helpAll', ctx: ['any'], keys: ['KeyK'], label: '조작표 접기·펼치기' },
+  { id: 'devMode', ctx: ['any'], keys: ['F2'], label: '개발 모드 켬·끔(개발 키·진단 정보)' },
+  { id: 'linkPose', ctx: ['any'], keys: ['Digit9'], dev: true, label: '전신 연결 켬·끔(몸의 깊이·팔 힘을 손발 접촉에서 함께 정함 · 실험)' },
   { id: 'diag', ctx: ['any'], keys: ['KeyI'], dev: true, label: '진단 정보(하중·오차·실행 성능)' },
   { id: 'bones', ctx: ['any'], keys: ['KeyB'], dev: true, label: '뼈대 보기' },
   { id: 'slow', ctx: ['any'], keys: ['KeyN'], dev: true, label: '느리게(0.25배)' },
@@ -68,12 +72,12 @@ export const TAP = { PX: 6, T: 0.35 };
 
 export function makeInput(el) {
   // down: 키 → 누른 순간의 { mode, x, y, t, moved }. pressed·released: 이번 화면 프레임에 새로 눌린·떼어진 키
-  const down = new Map(), pressed = new Map(), released = new Map(), st = { mdx: 0, mdy: 0, wheel: 0, mx: 0, my: 0, moved: false, mode: 'ground', has: false };
+  const down = new Map(), pressed = new Map(), released = new Map(), st = { mdx: 0, mdy: 0, wheel: 0, mx: 0, my: 0, moved: false, mode: 'ground', has: false, dev: false };
   // fresh = 실제로 새로 도착한 누름(마우스 단추의 mousedown, 반복이 아닌 keydown). 그 키가 아직 "눌린 채"로 남아 있으면(밖에서 떼어 뗌을 듣지 못했거나, 취소로 버린 누름이 남아 있거나)
   // 옛 기록을 치우고 새 누름으로 받는다(p3d-0.8.4, GPT P1: 취소 뒤 화면 밖에서 떼고 돌아와 누른 첫 클릭이 사라졌다). 키보드의 자동 반복(e.repeat)은 새 누름이 아니다
   const press = (code, fresh = false) => { const old = down.get(code); if (old && fresh) { if (!old.dead) { old.dur = (performance.now() - old.t) / 1000; released.set(code, old); } down.delete(code); } if (!down.has(code)) { const rec = { mode: st.mode, x: st.mx, y: st.my, t: performance.now(), moved: 0, with: new Map([...down].map(([c, r]) => [c, r.mode])) }; pressed.set(code, rec); down.set(code, rec); } }; // with = 이 키를 누른 순간(이벤트 시각)에 눌려 있던 다른 키와 그 키를 누른 문맥
   const lift = code => { const rec = down.get(code); if (rec) { rec.dur = (performance.now() - rec.t) / 1000; released.set(code, rec); down.delete(code); } };
-  addEventListener('keydown', e => { if (e.code === 'Space' || e.code === 'Tab') e.preventDefault(); press(e.code, !e.repeat); });
+  addEventListener('keydown', e => { if (e.code === 'Space' || e.code === 'Tab' || e.code === 'F2') e.preventDefault(); press(e.code, !e.repeat); });
   addEventListener('keyup', e => { lift(e.code); });
   const drop = () => { down.clear(); pressed.clear(); released.clear(); };
   addEventListener('blur', drop); document.addEventListener('visibilitychange', () => { if (document.hidden) drop(); });
@@ -87,7 +91,7 @@ export function makeInput(el) {
   el.addEventListener('contextmenu', e => e.preventDefault());
   el.addEventListener('wheel', e => { e.preventDefault(); st.wheel += Math.sign(e.deltaY); }, { passive: false });
   // 그 키 누름이 이 동작을 일으키는가: 문맥이 맞고, 누른 뒤로 문맥이 바뀌지 않았을 때
-  const active = (b, rec) => !!rec && !rec.dead && (b.ctx.includes('any') || (b.ctx.includes(st.mode) && rec.mode === st.mode));
+  const active = (b, rec) => !!rec && !rec.dead && (!b.dev || st.dev) && (b.ctx.includes('any') || (b.ctx.includes(st.mode) && rec.mode === st.mode));
   const find = id => BIND.find(q => q.id === id);
   const isDown = id => { const b = find(id); return !!b && b.keys.some(k => active(b, down.get(k))); };
   const wasPressed = id => { const b = find(id); return !!b && b.keys.some(k => active(b, pressed.get(k))); };
@@ -103,7 +107,7 @@ export function makeInput(el) {
   const kill = id => { const b = find(id); let n = 0; if (b) for (const k of b.keys) for (const m of [down, pressed, released]) { const r = m.get(k); if (r && !r.dead) { r.dead = true; n++; } } return n > 0; };
   return {
     down, isDown, wasPressed, wasReleased, pressedWith, dragging, tapped, kill, st,
-    setMode(m) { st.mode = m; },
+    setMode(m) { st.mode = m; }, setDev(v) { st.dev = !!v; },
     endFrame() { pressed.clear(); released.clear(); st.mdx = 0; st.mdy = 0; st.wheel = 0; st.moved = false; },
   };
 }

@@ -64,7 +64,7 @@ function climbCourse(courseId, seed) {
   const approach = (i, q, h, jump) => { let z;
     for (let r = 0; r < 2 && (jump || !okNow(i, q)); r++) { if (stepUp(h) === 'fell') return 'fell';
       const lat = uOf(q) - bodyU(); if (Math.abs(lat) > 0.18) { inp = { cx: Math.sign(lat) }; for (let k = 0; k < 10 && !okNow(i, q) && !z; k++) z = step(10); inp = {}; if (z) return z; z = step(20); if (z) return z; }
-      inp = { cy: 1 }; for (let k = 0; k < 12 && (jump || !okNow(i, q)) && !z; k++) z = step(10); inp = {}; if (z) return z; z = step(30); if (z) return z; }
+      { const y0 = sim.body.pos.y; let why = ''; inp = { cy: 1 }; for (let k = 0; k < 12 && (jump || !okNow(i, q)) && !z; k++) { z = step(10); why = sim.climb.upWhy || why; } inp = {}; if (E.TRACEW) say(`  W: 몸 ${f2(y0)} → ${f2(sim.body.pos.y)}m · 벽에서 ${f2(sim.body.pos.clone().sub(V3(...C.frame.o)).dot(V3(...C.frame.n)))}m${why ? ' · 멈춘 까닭 ' + why : ''} · 미리보기 ${(probeHand(sim, i, q).why || '됨')}`); if (z) return z; z = step(30); if (z) return z; } }
     const pr = probeHand(sim, i, q); if (!jump && pr.ok && (pr.assist || 0) > 0.03) { inp = { cy: 1 }; for (let k = 0; k < 6 && (probeHand(sim, i, q).assist || 0) > 0.03 && !z; k++) z = step(10); inp = {}; if (z) return z; z = step(20); if (z) return z; }
     return ''; };
   // 발 올리기: 다음 손 홀드가 닿지 않을 때, 아래쪽 발부터 코스의 발판 가운데 디딜 수 있는(미리보기 = 같은 판정) 더 높은 곳으로. 다음 손 홀드보다 1m 넘게 낮은 것만
