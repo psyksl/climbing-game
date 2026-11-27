@@ -380,8 +380,11 @@ export const optEffect = opt => { const o = opt || {}, poseAssist = (!!o.poseAss
   const plan = (!!o.planReach || !!globalThis.PLANREACH) && !globalThis.NOPLANREACH && poseAssist;
   // easy·autoBody(p3d-0.15.5): 자동 몸 맞추기는 값을 주지 않으면 켬이다(쉬운 조작 켬일 때). 기록이 !!opt.autoBody로 읽어 "끔"이라고 적던 것을 계산과 같은 식으로
   const easy = !!o.easy && !globalThis.NOARMREACH, autoBody = easy && o.autoBody !== false && !globalThis.NOAUTOBODY;
-  return { poseAssist, link, pressSet, press: pressSet || link, pressByLink: link && !pressSet, plan, easy, autoBody }; };
+  // guard = 자동 이동이 버티는 팔을 봄(p3d-0.15.6, S.opt.autoGuard — 화면·시험 모두 기본 끔, 비교 후보. AUTOGUARD = 시험 전체 켬, NOAUTOGUARD = 끔). 새 자세 방식 + 자세 보조에서만
+  const guard = (!!o.autoGuard || !!globalThis.AUTOGUARD) && !globalThis.NOAUTOGUARD && poseAssist;
+  return { poseAssist, link, pressSet, press: pressSet || link, pressByLink: link && !pressSet, plan, easy, autoBody, guard }; };
 const planOn = S => optEffect(S.opt).plan && fbOn(S.climb);
+const guardOn = S => optEffect(S.opt).guard && fbOn(S.climb);
 const poseAssistOn = S => optEffect(S.opt).poseAssist && fbOn(S.climb);
 const outDir = S => V(-Math.sin(S.body.yaw), 0, -Math.cos(S.body.yaw)); // 벽에서 멀어지는 쪽(몸이 보는 쪽의 반대)
 // 지금보다 더 뺄 수 있는 거리: OUT_MAX까지, 그리고 잡은 손마다 당기는 방향(어깨 → 손의 반대)이 아래에서 OUT_GRIP 안에 남고 팔이 다 펴지지 않는 만큼. 잡은 손이 없으면 0(기댈 데가 없다)
@@ -827,8 +830,11 @@ export function command(S, c) {
     //   잡고 있을 때는 그 턱이 "잡는 턱"이라 1mm였다가 놓는 걸음에 보통 여유(4mm)로 바뀌어, 같은 자세의 팔뚝이 그 턱에 3~5mm 겹친 것으로 세어져 손이 첫 걸음부터 나아가지 못했다
     //   (완등 홀드 바로 아래 26cm의 홀드에서 손을 모으러 올릴 때 "팔이 턱에 걸려 닿지 않음"). 손목이 놓은 자리에서 20cm 넘게 떠나면 보통 여유로 돌아간다. OLDLEFTPAD = 전처럼
     const leftBox = H.st === 'hold' && H.edge && !globalThis.OLDLEFTPAD ? H.edge.box : null;
+    // 자동 이동 보호(p3d-0.15.6): 떠나는 자리를 적어 둔다 — 이 뻗기 때문에 버티는 팔이 걸리기 시작하면 뻗기를 그만두고 이 자리로 돌아간다(아래 limbsStep). 돌아가는 뻗기(c.back)는 다시 그만두지 않는다
+    const prevGrip = H.st === 'hold' && !c.back ? H.grip.clone() : null;
     if (H.st === 'hold') releaseHand(S, c.i, '옮기려고 놓음');
     H.leftBox = leftBox;
+    H.prevGrip = prevGrip; H.noAbort = !!c.back;
     Object.assign(H, { st: 'reach', drag: false, edge: g.edge, t: 0, T: 2.5, wait: 0, best: undefined, lastFar: undefined, stall: 0, lock: null, lockN: 0, lockBest: undefined, selfTot: 0, armTot: 0, blockT: 0, sp: 0, shPrev: null, ov: 1, why: '', auto: false, autoT: 0, autoDone: false });
     H.from.copy(H.w); H.goal.copy(goal); H.grip.copy(g.p); H.n.copy(g.n);
   }
@@ -893,6 +899,11 @@ function limbsStep(S, dt) {
     else A.jump = jn; }
   for (const H of K.hands) {
     if (H.st !== 'reach') continue;
+    // 자동 이동 보호(p3d-0.15.6, 옵션 autoGuard) — 위험해진 요청의 중단: 손을 보내는 동안 **버티던 다른 손의 팔이 제 몸에 걸리기 시작하면**(물리의 걸림이 GUARD_JAM초 넘게 이어짐. 0.15초가 되면 놓친다) 그 뻗기를 그만두고 잡던 자리로 돌아간다.
+    //   거부는 놓기가 아니다 — 새 요청이 유효한 지지를 망가뜨리기 전에 요청 쪽을 거둔다. 누르는 동안 끄는 손(drag)·돌아가는 뻗기에는 걸지 않는다. 뛰는 중에도 걸지 않는다(움직이며 잡는 것은 그대로)
+    if (guardOn(S) && K.on && !H.drag && !H.noAbort && !jumping(S)) { const o = K.hands.find(h => h !== H && h.st === 'hold' && (h.jam || 0) > (globalThis.GUARD_JAM ?? 0.04));
+      if (o) { const bk = H.prevGrip; note(S, 'guard', 'hand', H.i, '버티는 팔이 걸려 뻗기를 그만둠', { other: o.i, jam: o.jam, why: o.jamWhy }); reject(S, H, 'hand', '지금 자세에서는 팔이 막힘'); H.arm = null; H.armP = null; H.back = null;
+        if (bk) command(S, { type: 'hand', i: H.i, p: bk.toArray(), armed: true, planned: true, back: true }); continue; } }
     const sh = J.sh[H.i];
     if (H.drag && S.inp && S.inp.reach && S.inp.reach[H.i]) aimHand(S, H, V(...S.inp.reach[H.i]));
     H.t += dt;
@@ -1605,6 +1616,18 @@ export function stepClimb(S, inp, dt) {
     // 잡은 팔이 다 접힐수록(어깨–손이 FOLD에 다가갈수록) 줄인다 — 맨틀(누르기)이 없어서, 접힌 팔로 빨리 오르면 "몸이 손을 지나 올라가 놓음"(초속 0.3m 넘게)이 걸려 손을 놓쳤다(다른 벽 시험 A→B→A)
     if ((inp.cy || 0) > 0 && K.T) for (const h of held) upK = Math.min(upK, clamp((K.T.sh[h.i].distanceTo(h.goal) - CL.FOLD - 0.03) / 0.10, 0, 1)); }
   const vCmd = !K.push && !globalThis.OLDRISE ? V(0, (inp.cy || 0) * Math.min(upV * (globalThis.OLDBRAKE ? upK : 1), upLim), 0).addScaledVector(left, hanging || !globalThis.RISE_SIDE ? 0 : side * CL.SHIFT_V) : V(); // 옆(A·D)은 옛 방식 그대로(RISE_SIDE = 시험용: 옆에도 건다 — 다른 벽 시험이 9개 깨졌다)
+  // 자동 이동이 버티는 팔을 본다(p3d-0.15.6, 옵션 autoGuard — GPT의 0.15.5 검토 3절 "자동 몸 맞추기·발 보조·몸 깊이 변경이 유지할 접촉을 미리 본다. 다음 작은 이동이 충돌하면 원인이 된 자동 성분을 줄이거나 멈춘다").
+  //   사용자가 W·A·D·점프를 누르지 않는 동안(자동 몸 맞추기가 대신 누르는 것은 자동이다)에만 본다. 사용자가 직접 누르는 이동은 건드리지 않는다(W에는 0.12.0의 걸림 멈춤이 있다). 몸을 되감거나 손을 붙들어 두지 않는다 — 기준 자리(바람)만 줄인다.
+  //   ㉠ 버티는 팔이 **실제로 걸리기 시작했으면**(물리의 h.jam > 0): 몸을 더 끌지 않고 오던 쪽으로 조금 물러난다(초속 GUARD_BACK, W의 걸림 멈춤과 같은 방식) + 자동 몸 맞추기를 멈춘다
+  //   ㉡ 자동 몸 맞추기가 몸을 옮기는 중이면: 기준 자리가 끌고 가려는 곳에서 걸리는지 물리와 같은 판정으로 미리 보고(몸 전체를 그만큼 옮겨 놓고 잰다) 걸리지 않는 데까지만 보낸다(3/4 · 1/2 · 1/4 · 0)
+  //   처음에는 ㉡을 모든 자동 이동(몸의 깊이 등)에 걸었다 — 짧은 구간(전신 연결 켬)의 경로 a가 실패로 바뀌었다: 자세를 그대로 둔 채 잰 "걸릴 자리"는 몸이 옮겨 가며 자세가 따라 바뀌는 것을 몰라 걸리지 않을 이동까지 줄였고, 벽에서 떨어진 채 남은 몸 때문에 다음 턱에서 당기는 방향이 벗어나 미끄러졌다. GUARD_ALL = 처음처럼
+  if (guardOn(S) && !K.push && held.length && K.T && !(((inp.cx || 0) || (inp.cy || 0) || inp.jump) && !inp.auto)) { const off = K.ref.clone().sub(b.pos), now = held.some(h => (h.jam || 0) > 0), autoH = K.hands.some(h => h.st === 'reach' && h.auto);
+    let act = '';
+    if (now) { const v = b.vel.clone(), back = v.length() > 0.02 ? v.normalize() : off.length() > 1e-4 ? off.clone().normalize() : null; if (back) { K.ref.copy(b.pos).addScaledVector(back, -(globalThis.GUARD_BACK ?? 0.25) * dt * 8); act = '버티는 팔이 걸려 자동 이동을 멈춤'; } }
+    else if ((autoH || globalThis.GUARD_ALL) && off.length() > (globalThis.GUARD_MIN ?? 0.003)) { const p0 = b.pos.clone(), T0 = K.T, jamAt = k => { b.pos.copy(p0).addScaledVector(off, k); K.T = torso(b, K); let w = ''; for (const h of held) { w = armCheck(S, h.i, K.T.sh[h.i], h.goal); if (w) break; } b.pos.copy(p0); K.T = T0; return w; };
+      if (jamAt(1)) { let k = 0; for (const q of [0.75, 0.5, 0.25]) if (!jamAt(q)) { k = q; break; } K.ref.copy(p0).addScaledVector(off, k); act = '버티는 팔이 걸릴 자리라 자동 이동을 줄임'; } }
+    if (act) { for (const h of K.hands) if (h.st === 'reach' && h.auto) { h.auto = false; h.autoDone = true; } if (!(K.guardT > 0)) note(S, 'guard', '', -1, act); K.guardT = 0.5; K.guardN = (K.guardN || 0) + 1; } }
+  if (K.guardT > 0) K.guardT -= dt;
   const aDes = K.push ? K.push.dir.clone().multiplyScalar(CL.PUSH_A) : K.ref.clone().sub(b.pos).multiplyScalar(CL.KP).addScaledVector(b.vel.clone().sub(vCmd), -CL.KD).clampLength(0, CL.ACC_MAX);
   if (hanging && !K.push) { aDes.x = 0; aDes.z = 0; }
   const T = torso(b, K), Fd = aDes.add(V(0, PHY.G, 0)).multiplyScalar(m), C = [], who = [], com = V(b.pos.x, b.pos.y + CL.COM_H, b.pos.z);
