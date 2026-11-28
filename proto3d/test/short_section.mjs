@@ -9,6 +9,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pat
 const { buildCharacter } = await imp('rig.js'), { makeGym } = await imp('world.js'), { makeSim } = await imp('sim.js'), { limbState } = await imp('climb.js'), { FBI } = await imp('fbik.js'), THREE = await import('three');
 // HANDWAIT = 손 명령마다 겨눈 뒤 그만큼(걸음) 더 기다렸다가 누른다(p3d-0.15.6: 명령이 몇 걸음 늦어지는 것만으로 경로의 결과가 갈리는지 — 뻗기 전 검사의 기다림과 견준다)
 const HANDWAIT = +(process.env.HANDWAIT || 0);
+// WSCALE = W를 누르는 길이의 배수(p3d-0.15.7: 실제 시간으로 넣는 브라우저 시험에서는 누르는 길이가 실행마다 달라 결과가 갈렸다 — 누르는 길이로도 여유를 잰다)
+const WSCALE = +(process.env.WSCALE || 1);
 const E = process.env; for (const k of (E.SW || '').split(',').filter(Boolean)) { const [a, v] = k.split('='); globalThis[a] = v === undefined ? 1 : +v; }
 const CLIPS = E.MODE === 'clip' ? JSON.parse(fs.readFileSync(path.join(HERE, '../assets_local/clips.json'), 'utf8')) : null, rig = buildCharacter(), world = makeGym();
 const C = world.courses.find(c => c.id === 'green'), n = new THREE.Vector3(...C.frame.n), box = nm => world.boxes.find(b => b.name === nm);
@@ -48,7 +50,7 @@ export function runRoute(steps, opt = {}) {
       const h = K.hands[a]; res = h.st === 'hold' && h.edge && h.edge.box.name === b2 ? '잡음' : `못 잡음(${h.why || (h.arm ? '예약 중' : '-')})`; }
     else if (kind === 'foot') { const p = top(box(b2)); look = p.toArray(); step(24); manual[a] = null; step(1, {}, [{ type: 'foot', i: a, p: p.toArray() }]); let k = 0; for (; k < 300; k++) { step(1); const f = K.feet[a]; if (f.st === 'plant' && f.box && f.box.name === b2) break; if (f.st !== 'move' && k > 20) break; } step(36);
       const f = K.feet[a]; if (f.st === 'plant' && f.box && f.box.name === b2) { manual[a] = b2; res = '디딤'; } else res = `못 디딤(${f.why || '-'} · 지금 ${feetNow()[a]})`; }
-    else if (kind === 'W') { step(Math.round(a * 120), { cy: 1 }); step(36); res = `몸 높이 ${sim.body.pos.y.toFixed(2)}m`; }
+    else if (kind === 'W') { step(Math.round(a * WSCALE * 120), { cy: 1 }); step(36); res = `몸 높이 ${sim.body.pos.y.toFixed(2)}m`; }
     else if (kind === 'wait') { step(Math.round(a * 120)); res = `기다림 · 몸 높이 ${sim.body.pos.y.toFixed(2)}m`; }
     for (let i = 0; i < 2; i++) if (manual[i] && feetNow()[i] !== manual[i] && !moved.some(m => m.includes(`${i ? '오른발' : '왼발'}`) && m.includes(manual[i]))) moved.push(`${(sim.tick / 120).toFixed(2)}초 ${i ? '오른발' : '왼발'}이 ${manual[i]}에 있지 않음(지금 ${feetNow()[i]})`);
     for (let i = 0; i < 2; i++) if (manual[i] && feetNow()[i] !== manual[i]) manual[i] = null;
