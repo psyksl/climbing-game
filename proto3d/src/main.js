@@ -15,7 +15,7 @@ import GALLERY from 'gallery-data'; // 동작 보기용 자료(받은 동작 전
 import { poseRaw } from './clipmotion.js';
 import { buildProps, makeSwingRope, applyGrips } from './demo.js'; // 캡처 동작 자료(빌드할 때 assets_local/clips.json이 있으면 들어온다. 없으면 null)
 
-export const VERSION = 'p3d-0.15.6';
+export const VERSION = 'p3d-0.15.7';
 // p3d-0.15.7: 한 파일로 주는 시험 빌드는 설정을 파일 안에 적어 둔다(P3D_PROFILE = 주소의 ? 뒤와 같은 글. 예: "link=1&plan=1&guard=1&foot=0"). 주소에 적은 값이 그보다 먼저다.
 //   0.15.6의 "해 보기" 파일은 기본 빌드를 주소만 바꿔 여는 작은 파일이라 기본 빌드가 같은 폴더에 있어야 했고, 주소로 켠 설정이 저장되어 다른 파일을 열 때 섞일 수 있었다(GPT의 0.15.6 검토)
 const params = new URLSearchParams(globalThis.P3D_PROFILE || ''); for (const [k, v] of new URLSearchParams(location.search)) params.set(k, v);
