@@ -1309,13 +1309,32 @@ function heldPole(S, s, sh, goal, yaw, sx, qC, nG) {
   //   이 값에는 지형이 "팔꿈치가 상자 안이면 0.05"로만 들어 있어 어깨 범위를 21° 넘는 방향(0.044) 대신 **팔뚝이 벽 속으로 71mm 든 방향**이 골라졌다. 그 팔꿈치가 방금 잡았던 홀드 밑에 끼어, 손을 놓고 위로 보내면 "팔이 턱에 걸려"로 거부됐다.
   //   지형에 든 깊이(3.5cm보다 깊은 몫만 — 얕게 스치는 겹침까지 세면 후보가 걸음마다 오가 붙은 팔이 초속 300°를 넘는 걸음이 596 → 2,153번이 됐다. 2cm 문턱은 foot2·foot8에 남았다. HELD_DB)도 값에 넣는다(뻗는 팔의 고르기와 같은 1m = 10 — 단단한 조건이 부드러운 조건(관절 범위)에 가려지지 않게). 자세 보조 켬(새 자세 방식)에서만. OLDHELDTERR = 전처럼
   const HT = poseAssistOn(S) && DIM.boxCollide && !globalThis.OLDHELDTERR, tbH = HT ? (() => { const Hh = S.climb.hands[s === 'L' ? 0 : 1]; return Hh && Hh.edge ? Hh.edge.box : null; })() : null;
-  const WH = HT ? (() => { const r = DIM.upperArm + DIM.foreArm + 0.08; return { boxes: S.world.boxes.filter(x => x.kind !== 'floor' && sh.x > x.min.x - r && sh.x < x.max.x + r && sh.y > x.min.y - r && sh.y < x.max.y + r && sh.z > x.min.z - r && sh.z < x.max.z + r) }; })() : null;
+  // p3d-0.15.7(성능 — 등반 중 계산의 56%가 이 함수였다: 벽에서 한 걸음에 9.3번 불리고 그 가운데 4.8번이 아래의 둘레 24방향을 다 훑었다). **고르는 결과는 그대로 두고** 계산만 줄인다(OLDPOLESCAN = 전처럼):
+  //   ① 팔이 닿을 수 있는 거리 안의 상자만 본다(WL — 팔꿈치·팔뚝은 어깨에서 팔 길이 안에 있으므로 그 밖의 상자는 결과에 들지 않는다. 바닥도 넣는다 — 광선·팔꿈치 검사는 바닥을 본다)
+  //   ② 값의 항은 모두 0 이상이다 → 싼 항(관절 범위·날개·손목·벗어난 각)의 합이 이미 "이길 수 없는 값"이면 비싼 항(제 몸·지형·광선)을 재지 않는다
+  //   ③ 앞 걸음에 고른 방향을 먼저 다 재서 그 값(U)을 위의 한도로 쓴다(U + 1e-5보다 큰 후보는 끝내 뽑히지 못한다 — 차례대로 훑는 규칙 "앞의 것보다 1e-7 넘게 작아야 바꾼다"와 같은 결과)
+  const FAST = !globalThis.OLDPOLESCAN, rr = DIM.upperArm + DIM.foreArm + 0.08, nearB = x => sh.x > x.min.x - rr && sh.x < x.max.x + rr && sh.y > x.min.y - rr && sh.y < x.max.y + rr && sh.z > x.min.z - rr && sh.z < x.max.z + rr;
+  const WL = FAST ? { boxes: S.world.boxes.filter(nearB) } : S.world;
+  const WH = HT ? (FAST ? { boxes: WL.boxes.filter(x => x.kind !== 'floor') } : { boxes: S.world.boxes.filter(x => x.kind !== 'floor' && nearB(x)) }) : null;
   const terr = ik => { if (!HT) return 0; const h = armHit(WH, sh, ik, tbH); return h ? 10 * Math.max(0, h.d - (globalThis.HELD_DB ?? 0.035)) : 0; };
-  for (let j = 0; j < 24; j++) { const a = j * Math.PI / 12, an = a > Math.PI ? a - 2 * Math.PI : a, pl = e0.clone().multiplyScalar(Math.cos(a)).addScaledVector(e1, Math.sin(a)), ik = twoBone(sh, goal, DIM.upperArm, DIM.foreArm, pl), sf = armSelf(B, ik, sh), sm = XA ? armSelf(B, ik, sh, 0, XA) : sf;
+  if (!FAST) { for (let j = 0; j < 24; j++) { const a = j * Math.PI / 12, an = a > Math.PI ? a - 2 * Math.PI : a, pl = e0.clone().multiplyScalar(Math.cos(a)).addScaledVector(e1, Math.sin(a)), ik = twoBone(sh, goal, DIM.upperArm, DIM.foreArm, pl), sf = armSelf(B, ik, sh), sm = XA ? armSelf(B, ik, sh, 0, XA) : sf;
     let dp = Math.abs(an - pa); if (dp > Math.PI) dp = 2 * Math.PI - dp;
     // 실제 겹침(머리·몸통, 여유 밖의 다른 팔)이 먼저다. 다른 팔과의 여유(6cm 안)는 가볍게만 본다 — 여유를 벌리려고 팔꿈치를 머리 쪽으로 돌리면 머리에 닿는다(0.8.6 작업 중에, 그것을 윗몸이 비키느라 엇갈려 잡은 몸이 36cm 옆으로 밀려갔다)
     const cost = 3 * sd(sf, 'body') + 3 * sd(sf, 'arm') + (globalThis.MW ?? 0.2) * Math.max(0, sd(sm, 'arm') - sd(sf, 'arm')) + (elbowIn(S.world, ik.mid) ? 0.05 : 0) + (e0hi > 0.004 && (sd(sf, 'body') > 0.005 || rayHit(S.world, sh.clone().lerp(ik.mid, 0.2), ik.mid) < 1 || rayHit(S.world, ik.mid, ik.mid.clone().lerp(ik.end, 0.9)) < 1) ? 0.5 : 0) + ARM_AW * armOver(sh, ik, sx, qC, yaw) + ehi(ik) + ein(ik) + wr(ik) + terr(ik) + 0.004 * Math.abs(an) + (prev ? 0.006 * dp : 0);
     if (!best || cost < best.cost - 1e-7) best = { cost, pole: pl, ik, self: sf }; }
+    return best; }
+  // 후보 하나의 값. lim = 이 값 이상이면 뽑힐 수 없다(그때는 null). 다 잰 값은 전과 같은 순서로 더한다(같은 수가 나오게)
+  const MWv = globalThis.MW ?? 0.2, evalJ = (j, lim) => { const a = j * Math.PI / 12, an = a > Math.PI ? a - 2 * Math.PI : a, pl = e0.clone().multiplyScalar(Math.cos(a)).addScaledVector(e1, Math.sin(a)), ik = twoBone(sh, goal, DIM.upperArm, DIM.foreArm, pl);
+    let dp = Math.abs(an - pa); if (dp > Math.PI) dp = 2 * Math.PI - dp;
+    const cAn = 0.004 * Math.abs(an), cDp = prev ? 0.006 * dp : 0, cOver = ARM_AW * armOver(sh, ik, sx, qC, yaw), cHi = ehi(ik), cIn = ein(ik), cWr = wr(ik); let lb = cAn + cDp + cOver + cHi + cIn + cWr; if (lb >= lim) return null;
+    const cElb = elbowIn(WL, ik.mid) ? 0.05 : 0; lb += cElb; if (lb >= lim) return null;
+    const sf = armSelf(B, ik, sh), sB = sd(sf, 'body'), sA = sd(sf, 'arm'); lb += 3 * sB + 3 * sA; if (lb >= lim) return null;
+    const cT = terr(ik); lb += cT; if (lb >= lim) return null;
+    const sm = XA ? armSelf(B, ik, sh, 0, XA) : sf, cM = MWv * Math.max(0, sd(sm, 'arm') - sA); lb += cM; if (lb >= lim) return null;
+    const cRay = e0hi > 0.004 && (sB > 0.005 || rayHit(WL, sh.clone().lerp(ik.mid, 0.2), ik.mid) < 1 || rayHit(WL, ik.mid, ik.mid.clone().lerp(ik.end, 0.9)) < 1) ? 0.5 : 0;
+    return { cost: 3 * sB + 3 * sA + cM + cElb + cRay + cOver + cHi + cIn + cWr + cT + cAn + cDp, pole: pl, ik, self: sf }; };
+  const jS = prev ? ((Math.round(pa / (Math.PI / 12)) % 24) + 24) % 24 : -1, seed = jS >= 0 ? evalJ(jS, Infinity) : null, U = seed ? seed.cost + 1e-5 : Infinity;
+  for (let j = 0; j < 24; j++) { const r = j === jS ? seed : evalJ(j, Math.min(U, best ? best.cost - 1e-7 : Infinity) + 1e-12); if (r && (!best || r.cost < best.cost - 1e-7)) best = r; }
   return best;
 }
 
