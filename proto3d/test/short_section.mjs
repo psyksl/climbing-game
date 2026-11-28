@@ -11,6 +11,8 @@ const { buildCharacter } = await imp('rig.js'), { makeGym } = await imp('world.j
 const HANDWAIT = +(process.env.HANDWAIT || 0);
 // WSCALE = W를 누르는 길이의 배수(p3d-0.15.7: 실제 시간으로 넣는 브라우저 시험에서는 누르는 길이가 실행마다 달라 결과가 갈렸다 — 누르는 길이로도 여유를 잰다)
 const WSCALE = +(process.env.WSCALE || 1);
+// PICK=1 = 손 명령을 손 조작 2의 "붙은 손을 떼어 보낸 명령"(c.pick, p3d-0.15.8)으로 넣는다 — 떼는 순간 닿는지 먼저 보고 닿지 않으면 손을 떼지 않는 길. 빈손에는 차이가 없다
+const PICK = process.env.PICK === '1';
 const E = process.env; for (const k of (E.SW || '').split(',').filter(Boolean)) { const [a, v] = k.split('='); globalThis[a] = v === undefined ? 1 : +v; }
 const CLIPS = E.MODE === 'clip' ? JSON.parse(fs.readFileSync(path.join(HERE, '../assets_local/clips.json'), 'utf8')) : null, rig = buildCharacter(), world = makeGym();
 const C = world.courses.find(c => c.id === 'green'), n = new THREE.Vector3(...C.frame.n), box = nm => world.boxes.find(b => b.name === nm);
@@ -46,7 +48,7 @@ export function runRoute(steps, opt = {}) {
   const feetNow = () => K.feet.map(f => (f.st === 'plant' && f.box ? f.box.name : f.st === 'move' ? '(가는 중)' : '-')), handsNow = () => K.hands.map(h => (h.st === 'hold' && h.edge ? h.edge.box.name : h.st === 'reach' ? '(뻗는 중)' : '-'));
   step(20);
   for (const [kind, a, b2, du = 0] of steps) { const t0 = sim.tick; let res = '';
-    if (kind === 'hand') { const p = front(box(b2)).add(new THREE.Vector3(du, 0, 0)); look = p.toArray(); step(24 + HANDWAIT); step(1, {}, [{ type: 'hand', i: a, p: p.toArray() }]); let k = 0; for (; k < 420; k++) { step(1); const h = K.hands[a]; if (h.st === 'hold' && h.edge && h.edge.box.name === b2) break; if (h.st === 'free' && !h.arm && k > 30) break; if (h.st === 'hold' && h.arm && k > 300) break; } step(36);
+    if (kind === 'hand') { const p = front(box(b2)).add(new THREE.Vector3(du, 0, 0)); look = p.toArray(); step(24 + HANDWAIT); step(1, {}, [{ type: 'hand', i: a, p: p.toArray(), ...(PICK ? { pick: true } : {}) }]); let k = 0; for (; k < 420; k++) { step(1); const h = K.hands[a]; if (h.st === 'hold' && h.edge && h.edge.box.name === b2) break; if (h.st === 'free' && !h.arm && k > 30) break; if (h.st === 'hold' && h.arm && k > 300) break; } step(36);
       const h = K.hands[a]; res = h.st === 'hold' && h.edge && h.edge.box.name === b2 ? '잡음' : `못 잡음(${h.why || (h.arm ? '예약 중' : '-')})`; }
     else if (kind === 'foot') { const p = top(box(b2)); look = p.toArray(); step(24); manual[a] = null; step(1, {}, [{ type: 'foot', i: a, p: p.toArray() }]); let k = 0; for (; k < 300; k++) { step(1); const f = K.feet[a]; if (f.st === 'plant' && f.box && f.box.name === b2) break; if (f.st !== 'move' && k > 20) break; } step(36);
       const f = K.feet[a]; if (f.st === 'plant' && f.box && f.box.name === b2) { manual[a] = b2; res = '디딤'; } else res = `못 디딤(${f.why || '-'} · 지금 ${feetNow()[a]})`; }
