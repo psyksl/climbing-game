@@ -130,7 +130,7 @@ function resid(x, c, out) {
       gp = Math.min(gp, segDist(sh0, sh1, tA, KN[j]) - 0.12, segDist(sh0, sh1, KN[j], c.legs[j].ank) - 0.10); }
     r[n++] = W.legX * hp(0.015 - gp); } else r[n++] = 0;
   // ⑥ 몸통·머리가 지형에 들지 않게(가슴 세 곳, 골반 두 곳, 머리)
-  { const R = 0.105, m = 0.025; for (const o of [[0, 0.03, 0.03], [0.10, 0.03, 0.02], [-0.10, 0.03, 0.02]]) r[n++] = W.body * hp(R + m - sdBoxes(c.boxes, add(g.chest, qrot(g.qC, o))));
+  { const R = 0.105, m = 0.025; for (const o of [[0, 0.03, 0.03], [0.10, 0.03, 0.02], [-0.10, 0.03, 0.02]]) r[n++] = W.body * hp(R + m - sdBoxes(c.boxesB || c.boxes, add(g.chest, qrot(g.qC, o))));
     for (const o of [[0.07, 0.07, 0.04], [-0.07, 0.07, 0.04]]) r[n++] = W.body * hp(0.10 + m - sdBoxes(c.boxes, add(g.hip, qrot(g.qH, o))));
     const hd = add(g.chest, qrot(g.qC, [DIM.oNeck[0] + DIM.oHead[0] + DIM.headCT[0], DIM.oNeck[1] + DIM.oHead[1] + DIM.headCT[1], DIM.oNeck[2] + DIM.oHead[2] + DIM.headCT[2]])); r[n++] = W.head * hp(DIM.headR + 0.04 - sdBoxes(c.boxesHead, hd));
     // p3d-0.11.9: 잡지 않은 팔(늘어뜨린 팔·뻗는 팔)의 어깨도 지형에 들지 않게(위팔 뿌리 굵기 + 여유 3cm). 잡은 팔의 어깨까지 보면 다른 벽 c1에서 골반이 돌아 넓적다리가 98° 비틀렸다(anat_check, FBSH_HELD=1). 없을 때는 가슴이 돌며 한쪽 어깨가 벽면 4cm 앞까지 나가, 늘어뜨린 손이 벽 속에서 출발해 턱 F가 "팔이 턱에 걸려"로 거부됐다(h1 fb). OLDFBSH = 이 항목 없음

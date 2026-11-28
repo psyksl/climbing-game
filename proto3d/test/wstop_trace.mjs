@@ -11,12 +11,16 @@ const CLIPS = E.MODE === 'clip' ? JSON.parse(fs.readFileSync(path.join(HERE, '..
 const on = (k, d) => (E[k] !== undefined ? E[k] === '1' : d);
 const SCN = { r1: { course: '빨강', steps: [['hand', 0, '빨강 2'], ['foot', 1, '빨강 발2'], ['W']] },
   r2: { course: '빨강', steps: [['hand', 0, '빨강 시작'], ['hand', 1, '빨강 시작'], ['foot', 0, '빨강 발1'], ['W', 1.0], ['foot', 1, '빨강 발2'], ['W']] },
-  r3: { course: '빨강', steps: [['hand', 0, '빨강 2'], ['hand', 1, '빨강 시작'], ['foot', 1, '빨강 발2'], ['W']] } }[E.SCN || 'r1'];
+  b7: { course: '파랑', stand: ['파랑 5', '파랑 6'], steps: [['hand', 0, '파랑 5'], ['hand', 1, '파랑 6'], ['foot', 1, '파랑 발6'], ['foot', 0, '파랑 발5'], ['W', 1.2], ['hand', 0, '파랑 7'], ['hand', 1, '파랑 8'], ['foot', 0, '파랑 발8'], ['foot', 1, '파랑 발7'], ['W']] },
+  // b7p(p3d-0.15.8): 사용자 녹화 162~171초의 지지 상태(왼손 파랑 7 · 오른손 파랑 8 · 왼발 파랑 발8 · 오른발 파랑 발7)를 **시험용 발판 위에 서서 잡은 뒤 발판을 치워** 세운다 — 봇·명령으로는 그 자리까지 가지 못했다.
+  //   사용자가 간 길(입력)의 재현이 아니라 같은 손발 지지의 대표 상태다. PLAT = 발판 윗면 높이(m)
+  b7p: { course: '파랑', stand: ['파랑 7', '파랑 8'], plat: +(E.PLAT || 0.55), steps: [['hand', 0, '파랑 7'], ['hand', 1, '파랑 8'], ['foot', 0, '파랑 발8'], ['foot', 1, '파랑 발7'], ['unplat'], ['W']] },
+  r3: { course: '빨강', steps: [['hand', 0, '빨강 2'], ['hand', 1, '빨강 시작'], ['foot', 1, '빨강 발2'], ['W']] } }[E.SCN || 'r1']; if (E.STEPS) SCN.steps = JSON.parse(E.STEPS);
 const C = world.courses.find(c => c.name === SCN.course || c.id === SCN.course) || world.courses.find(c => world.boxes.some(b => b.course === c.id && b.name.startsWith(SCN.course)));
 if (!C) { console.log('코스 없음', world.courses.map(c => c.id + '/' + c.name).join(' ')); process.exit(1); }
 const n = new THREE.Vector3(...C.frame.n), box = nm => world.boxes.find(b => b.name === nm);
 const front = b => { const c = b.min.clone().add(b.max).multiplyScalar(0.5), half = Math.abs(n.x) * (b.max.x - b.min.x) / 2 + Math.abs(n.z) * (b.max.z - b.min.z) / 2; return c.addScaledVector(n, half).setY(b.max.y); }, top = b => b.min.clone().add(b.max).multiplyScalar(0.5).setY(b.max.y);
-const sim = makeSim(rig, world, CLIPS); { const p0 = [...C.startPos], dx = +(E.DX || 0); p0[0] += dx * n.z; p0[2] -= dx * n.x; sim.reset({ pos: p0, yaw: C.startYaw }); } const K = sim.climb, b = sim.body;
+let PB = null; const sim = makeSim(rig, world, CLIPS); { const p0 = [...C.startPos], dx = +(E.DX || 0); if (SCN.plat) p0[1] = SCN.plat; if (SCN.stand) { const d0 = p0[0] * n.x + p0[2] * n.z, lat = SCN.stand.map(nm => { const x = box(nm), c = x.min.clone().add(x.max).multiplyScalar(0.5); return c.x * n.z - c.z * n.x; }).reduce((u, v) => u + v, 0) / SCN.stand.length; p0[0] = d0 * n.x + lat * n.z; p0[2] = d0 * n.z - lat * n.x; } p0[0] += dx * n.z; p0[2] -= dx * n.x; if (SCN.plat) { PB = { name: '시험 발판', min: new THREE.Vector3(p0[0] - 1.2, 0, p0[2] - 1.2), max: new THREE.Vector3(p0[0] + 1.2, SCN.plat, p0[2] + 1.2), kind: 'floor' }; const wz = C.frame.n; PB.min.addScaledVector(new THREE.Vector3(...wz), 0); world.boxes.push(PB); world.edges = null; world.edgesN = -1; } sim.reset({ pos: p0, yaw: C.startYaw }); } const K = sim.climb, b = sim.body;
 Object.assign(sim.opt, { posture: 'fb', grabAssist: true, poseAssist: true, easy: true, press: true, autoBody: true, footAssist: false, wallRest: false, keepHold: false, linkPose: on('LINK', true), planReach: on('PLAN', true), autoGuard: on('GUARD', true) });
 let look = null, nlog = 0; const f2 = v => (v == null ? '  -  ' : v.toFixed(3));
 const logs = () => { const o = []; for (; nlog < K.log.length; nlog++) { const e = K.log[nlog]; o.push(`${e.t.toFixed(2)} ${e.type} ${e.name || ''} ${e.why || e.hold || ''}`); } return o; };
@@ -27,6 +31,7 @@ step(20);
 for (const [kind, a, nm] of SCN.steps) {
   if (kind === 'hand') { const p = front(box(nm)); look = p.toArray(); step(24); step(1, {}, [{ type: 'hand', i: a, p: p.toArray() }]); for (let k = 0; k < 420; k++) { step(1); const h = K.hands[a]; if (h.st === 'hold' && h.edge && h.edge.box.name === nm) break; if (h.st === 'free' && !h.arm && k > 30) break; } step(36); console.log(`손${a} → ${nm}: ${hn()}  | ${logs().join(' ; ')}`); }
   else if (kind === 'foot') { const p = top(box(nm)); look = p.toArray(); step(24); step(1, {}, [{ type: 'foot', i: a, p: p.toArray() }]); for (let k = 0; k < 300; k++) { step(1); const f = K.feet[a]; if (f.st === 'plant' && f.box && f.box.name === nm) break; if (f.st !== 'move' && k > 30) break; } step(24); console.log(`발${a} → ${nm}: ${fn()}  | ${logs().join(' ; ')}`); }
+  else if (kind === 'unplat') { for (const w of [world, sim.world]) { const j = w.boxes.indexOf(PB); if (j >= 0) w.boxes.splice(j, 1); w.edges = null; w.edgesN = -1; } step(90); console.log(`발판을 치움(0.75초 뒤): 몸 높이 ${f2(b.pos.y)} · 손 ${hn()} · 발 ${fn()}  | ${logs().join(' ; ')}`); }
   else { const sec = a || +(E.WSEC || 3.5), N = Math.round(sec * 120); const y0 = b.pos.y; let stuckAt = -1, ymax = -9, nl2 = K.log.length; const why = {}, ev = [];
     console.log(`W ${sec}초 — 걸음  몸높이  빠르기  머리꼭대기  빼기(wout) 청함(clearNeed) 멈춘 까닭  손 / 발`);
     for (let k = 0; k < N; k++) { let inp = { cy: 1 }; if (E.CX && k >= 240) inp = { cy: 1, cx: +E.CX }; if (E.AD === '1' && stuckAt >= 0) inp = { cy: 1, cx: Math.floor((k - stuckAt) / 60) % 2 ? 1 : -1 };
