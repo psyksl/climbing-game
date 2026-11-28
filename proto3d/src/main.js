@@ -153,8 +153,12 @@ function readCommands() {
 // 작은 벽 앞에서 시작(턱 A 아래, 벽을 보고 선다. 시점은 등 뒤)
 // 클라이밍장에서는 코스의 시작 자리로(누를 때마다 다음 코스). 시점은 등 뒤에서 벽을 본다(옛 벽과 같은 0.25rad 비스듬히)
 let courseI = -1;
+const courseAway = () => { if (!world.gym || courseI < 0 || courseI >= world.courses.length) return false; const C = world.courses[courseI], p = sim.body.pos; return sim.climb.on || Math.hypot(p.x - C.startPos[0], p.z - C.startPos[2]) > 0.8 || Math.abs(p.y - C.startPos[1]) > 0.3; };
 function wallStart() { if (gal.on) galOpen(false);
   // p3d-0.15.3: 코스를 다 돈 다음 한 번은 누르기 시험 조각(혼자 선 대) 앞이다(코스 선택 없음 = 자유 등반)
+  // p3d-0.15.7(임시 — 키의 뜻은 GPT·사용자 결정): 코스의 시작 자리에서 떠나 있으면(벽에 붙었거나 0.8m 넘게 떨어져 있으면) T는 **같은 코스의 시작 자리로** 돌아간다. 시작 자리에 서 있을 때만 다음 코스로 넘어간다.
+  //   전에는 T가 늘 다음 코스였다 — 떨어진 뒤 같은 코스를 다시 하려면 T를 열한 번 눌러야 했다(실패하고 빠르게 다시 시도하는 길이 없었다). 0.15.6의 안내문에 "실패하면 바로 T"라고 잘못 적었다
+  if (world.gym && courseAway()) { const C = world.courses[courseI], n = C.frame.n; reset({ pos: C.startPos, yaw: C.startYaw }); cam.yaw = Math.atan2(n[0], n[2]) + 0.25; cam.pitch = 0.12; cam.dist = cam.eff = 3.6; cam.follow = null; cam.dirEff = null; cam.target.set(C.startPos[0], 1.3, C.startPos[2]); courseSelect(gym, C, sim.tick); return; }
   if (world.gym) { courseI = (courseI + 1) % (world.courses.length + (world.pressPiece ? 1 : 0)); if (courseI === world.courses.length) { const P = world.pressPiece; reset({ pos: P.startPos, yaw: P.startYaw }); cam.yaw = 0.25; cam.pitch = 0.12; cam.dist = cam.eff = 3.6; cam.follow = null; cam.dirEff = null; cam.target.set(P.startPos[0], 1.3, P.startPos[2]); courseSelect(gym, null, sim.tick); return; }
     const C = world.courses[courseI], n = C.frame.n; reset({ pos: C.startPos, yaw: C.startYaw }); cam.yaw = Math.atan2(n[0], n[2]) + 0.25; cam.pitch = 0.12; cam.dist = cam.eff = 3.6; cam.follow = null; cam.dirEff = null; cam.target.set(C.startPos[0], 1.3, C.startPos[2]); courseSelect(gym, C, sim.tick); return; }
   reset({ pos: world.fixture ? [-0.45, 0, -2.58] : [-0.9, 0, -2.58], yaw: Math.PI }); cam.yaw = 0.25; cam.pitch = 0.12; cam.dist = cam.eff = 3.6; cam.follow = null; cam.dirEff = null; cam.target.set(-0.9, 1.3, -2.58); }
@@ -210,7 +214,7 @@ const gymLine = () => { if (!world.gym) return ''; const v = courseView(gym), C 
   const now = !T ? '' : T.done ? ` · <b>완등!</b> ${sec(T.doneT)}` : v.live ? ` · 시도 ${T.id} · ${sec((sim.tick - T.t0) / 120)}${v.phase === 'air' ? ' · 공중' : ''}` : '';
   const best = T && T.done && R && R.tops ? ` <span class=dim>· 가장 빠른 기록 ${sec(R.free)}</span>` : '';
   const dev = DIAG && T ? ` <span class=dim>· 손 홀드 색 준수(실험): ${T.done ? (T.doneClean ? '지킴' : '안 지킴') : T.clean ? '지키는 중' : `안 지킴(${T.cleanWhy})`}${R && R.clean !== null ? ` · 지킨 기록 ${sec(R.clean)}` : ''}</span>` : '';
-  return `<div><b>자유 등반</b> ${C ? `· <span style="color:${C.color === '#2a2a2e' ? '#000' : C.color}">■</span> ${C.name}${now}${best}${dev}` : ''} <span class=dim>· T = 다음 코스</span></div>`; };
+  return `<div><b>자유 등반</b> ${C ? `· <span style="color:${C.color === '#2a2a2e' ? '#000' : C.color}">■</span> ${C.name}${now}${best}${dev}` : ''} <span class=dim>· T = ${courseAway() ? '이 코스 처음으로' : '다음 코스'}</span></div>`; };
 // 화면 안내(임시. 모양·문구는 GPT 검토 대상)
 const hud = document.createElement('div'); hud.id = 'hud'; document.body.appendChild(hud);
 const banner = document.createElement('div'); banner.id = 'banner'; document.body.appendChild(banner); // 영상용 장면 이름(시험이 정한다)
