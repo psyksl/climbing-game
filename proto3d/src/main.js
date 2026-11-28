@@ -36,6 +36,8 @@ const human = BODY === 'human' ? buildHuman() : null, retarget = human ? makeRet
 if (human) { scene.add(human.root); rig.mesh.visible = false; }
 const draw = () => { if (human) retarget.apply(sim.fing, sim.pron, sim.climb, sim.world, sim.gw); renderer.render(scene, camera); };
 const sim = makeSim(rig, world, CLIPS); let body = sim.body;
+// p3d-0.15.7(성능): 그려진 자세의 통계(팔이 제 몸·지형을 지나간 걸음 수 — 시험이 읽는다)는 화면에서 재지 않는다. 계산의 상태와는 무관하다. 브라우저 시험 프로필(?test·?manual)과 ?stat 에서는 잰다
+sim.noStat = !(params.has('test') || params.has('manual') || params.has('stat'));
 // 자세 규칙(p3d-0.10.1, 비교용): 주소에 ?posture=rule(기본) | base(0.10.0) | ref(참고 자세 — 캡처 빌드에만 색인이 있다) | solve(p3d-0.10.2 함께 고르는 자세 실험)
 // 잡는 손의 접촉 틀(p3d-0.10.2, 비교용): ?grip=frame = 첫 마디를 턱 모서리에 두는 손목 자리(닿는 거리가 약 6cm 는다 — 기획 결정 대기). 기본 = 0.10.1의 손목 자리. climb.js가 부를 때마다 읽는다
 if (params.get('grip') === 'frame') globalThis.GRIP_FRAME = 1;

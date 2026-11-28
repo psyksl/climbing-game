@@ -522,7 +522,11 @@ function legIK0(S, hj, ank, yaw, sx, placed = true, fixed = false) {
     const oL = DIM.boxCollide && !globalThis.OLDLEGX && !globalThis.NOLX_KNEE && K.feet[sx > 0 ? 0 : 1].st === 'move' ? otherLeg(S, sx > 0 ? 1 : 0) : null; // 가는 다리만(디딘 무릎까지 다른 다리를 보게 하면 가는 발이 돌아가는 동안 디딘 무릎이 22mm 오갔다 — motion_scan v2)
     const WK = globalThis.OLDKNEEBOX ? S.world : kneeBoxes(S, hj);
     const evalA = a => { const c = kneeEval(S, hj, ank, sx, py, a, WK), sc = Math.abs(a - a0) + 0.6 * Math.abs(a - aCur) + (K.post !== 'base' && DIM.boxCollide ? 2000 : 800) * Math.max(0, DIM.kneeClr - c.dist) + (qH ? 4 * Math.max(0, kneeExcess(qH, hjA, vArr(c.ik.mid), anA, sx)) / deg : 0) + (oL ? 1500 * Math.max(0, CL.LEGX_CLR - legGap(hj, c.ik.mid, ank, oL)) : 0); return { ...c, sc, a }; };
-    for (let a = -50; a <= 115; a += 5) { const c = evalA(a); if (globalThis.__KT) globalThis.__KT.push({ sx, a, sc: c.sc, dist: c.dist }); if (!best || c.sc < best.sc) best = c; }
+    // p3d-0.15.7(성능): 값의 앞 두 항(바라는 각·지금 각에서 먼 만큼)은 재지 않고도 알고 나머지 항은 0 이상이다. 그 두 항이 가장 작은 격자점을 먼저 재서(U), 두 항만으로 이미 U를 넘는 격자점은 재지 않는다
+    //   (그런 점은 가장 싼 점이 될 수 없다 — 고르는 결과는 같다. 다리마다 걸음마다 34번 재던 것이 대개 몇 번. OLDKNEEGRID = 전처럼. 진단 기록 __KT를 켜면 전처럼 다 잰다)
+    if (globalThis.OLDKNEEGRID || globalThis.__KT) { for (let a = -50; a <= 115; a += 5) { const c = evalA(a); if (globalThis.__KT) globalThis.__KT.push({ sx, a, sc: c.sc, dist: c.dist }); if (!best || c.sc < best.sc) best = c; } }
+    else { const lbA = a => Math.abs(a - a0) + 0.6 * Math.abs(a - aCur); let aS = -50, lS = Infinity; for (let a = -50; a <= 115; a += 5) { const l = lbA(a); if (l < lS) { lS = l; aS = a; } }
+      const seed = evalA(aS), U = seed.sc; for (let a = -50; a <= 115; a += 5) { let c; if (a === aS) c = seed; else { if (lbA(a) > U) continue; c = evalA(a); } if (!best || c.sc < best.sc) best = c; } }
     // p3d-0.10.2(GPT의 0.10.1 검토 1번 — h3의 디딘 무릎 흔들림): 5° 격자에서 고른 각을 그대로 쓰면, 골반의 틀이 돌 때(손이 턱의 옆면을 잡아 몸이 초속 172°로 돈다) 세계 좌표의 바람이 +1.5°·+1.5°·−3.5°의 톱니가 되어
     //   무릎이 3걸음마다 ±15mm 왕복했다(knee_trace). 고른 격자점 둘레 ±5°에서 값이 가장 낮은 각을 연속으로 찾아 쓴다(황금 분할 10번 → 0.1° 안). 새 규칙에만(0.10.0 규칙과 옛 몸은 그대로)
     //   그리고 지금 굽은 쪽(aCur) 둘레에서도 같은 방법으로 찾는다. 두 벽 사이의 좁은 여유(능선)에 무릎이 끼어 있다가 능선이 낮아지면 격자의 가장 싼 점이 다른 쪽(9° 떨어진 곳)으로 넘어가 바람이 한 걸음에 뛰었다(v3, 초속 318°).
@@ -2069,8 +2073,9 @@ export function afterPose(S) {
   S.pw = S.pw || {}; for (const x of S.rig.list) x.getWorldQuaternion(S.pw[x.name] || (S.pw[x.name] = Q()));
   for (const H of K.hands) { const w = worldPos(B[`hand.${H.s}`]); if (H.st === 'hold') st.palmErr = Math.max(st.palmErr, B[`hand.${H.s}`].localToWorld(V(0, -palmLen(), 0)).distanceTo(H.grip)); else if (H.st === 'free' && !K.on) H.w.copy(w); }
   for (const F of K.feet) { if (F.st === 'plant') st.footErr = Math.max(st.footErr, worldPos(B[`toe.${F.s}`]).distanceTo(F.ball)); else if (!K.on) F.a.copy(worldPos(B[`foot.${F.s}`])); }
-  for (const H of K.hands) if (H.st === 'hold') { const sh = worldPos(B[`upperArm.${H.s}`]), c = armCheck(S, H.i, sh, H.goal); if (c && c !== '어깨가 돌아가지 않는 방향(등 뒤)') { st.selfPen++; st.penWhat = `${c} @${K.tick}`; } }
-  if (K.on) for (const n of ['hand.L', 'hand.R', 'foreArm.L', 'foreArm.R', 'leg.L', 'leg.R', 'foot.L', 'foot.R', 'toe.L', 'toe.R', 'chest', 'head', 'hips']) { const p = worldPos(B[n]), x = S.world.boxes.find(x => p.x > x.min.x + 0.01 && p.x < x.max.x - 0.01 && p.y > x.min.y + 0.01 && p.y < x.max.y - 0.01 && p.z > x.min.z + 0.01 && p.z < x.max.z - 0.01); if (x) { if (K.tick === K.enterTick) { st.penEnter = (st.penEnter || 0) + 1; st.penEnterWhat = `${n} → ${x.name}`; } else { st.pen++; st.penWhat = `${n} → ${x.name} @${K.tick}`; } } }
+  // p3d-0.15.7(성능): 아래 둘은 시험이 읽는 통계다(그려진 팔이 제 몸·지형을 지나간 걸음 수). 계산의 상태를 바꾸지 않는다. 화면은 읽지 않으므로 끈다(S.noStat — main.js. 시험은 그대로 잰다)
+  if (!S.noStat) for (const H of K.hands) if (H.st === 'hold') { const sh = worldPos(B[`upperArm.${H.s}`]), c = armCheck(S, H.i, sh, H.goal); if (c && c !== '어깨가 돌아가지 않는 방향(등 뒤)') { st.selfPen++; st.penWhat = `${c} @${K.tick}`; } }
+  if (K.on && !S.noStat) for (const n of ['hand.L', 'hand.R', 'foreArm.L', 'foreArm.R', 'leg.L', 'leg.R', 'foot.L', 'foot.R', 'toe.L', 'toe.R', 'chest', 'head', 'hips']) { const p = worldPos(B[n]), x = S.world.boxes.find(x => p.x > x.min.x + 0.01 && p.x < x.max.x - 0.01 && p.y > x.min.y + 0.01 && p.y < x.max.y - 0.01 && p.z > x.min.z + 0.01 && p.z < x.max.z - 0.01); if (x) { if (K.tick === K.enterTick) { st.penEnter = (st.penEnter || 0) + 1; st.penEnterWhat = `${n} → ${x.name}`; } else { st.pen++; st.penWhat = `${n} → ${x.name} @${K.tick}`; } } }
 }
 export const limbState = K => ({
   on: K.on,

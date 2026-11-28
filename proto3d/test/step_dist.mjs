@@ -2,13 +2,15 @@
 // 그리기 없음 — 화면이 부드러운지를 재는 것이 아니다(그것은 브라우저에서 따로). **기록한 입력의 다시 틀기다(사람 손 아님).** node의 다시 틀기는 브라우저 기록의 재현이 아니다(길이 조금 달라질 수 있다).
 // 걸음을 그때의 상태로 나눠 적는다: 지상 / 정지(매달림) / 몸 이동(W·A·D) / 발 옮기기 / 손 뻗기 / 맞잡기(다른 손이 잡은 턱으로 뻗는 중). 겹치면 뒤의 것.
 // 같은 입력·같은 설정의 두 판이 같은 계산을 하는지 견주려고 걸음마다의 상태 요약(digest)을 함께 낸다(DUMP=파일이면 걸음마다 한 줄).
+// 화면처럼 자세 통계(S.noStat)는 재지 않는다 — 0.15.6까지의 화면은 쟀다(STAT=1이면 잰다. 0.15.6 이전의 소스에는 이 스위치가 없어 늘 잰다).
 // 사용: IN=기록.json [REP=3(첫 번은 예열, 나머지를 합침)] [LINK=0|1 PLAN=0|1 GUARD=0|1 FOOT=0|1(기록의 설정 대신)] [SW=스위치,...] [DUMP=파일] [TAG=이름] node test/step_dist.mjs
 import { prov, provLine, provOptLine } from './provenance.mjs';
 import fs from 'fs'; import path from 'path'; import { fileURLToPath, pathToFileURL } from 'url';
 const HERE = path.dirname(fileURLToPath(import.meta.url)), imp = f => import(pathToFileURL(path.join(HERE, '../src', f)).href);
 const E = process.env; for (const k of (E.SW || '').split(',').filter(Boolean)) { const [a, v] = k.split('='); globalThis[a] = v === undefined ? 1 : +v; }
 const { buildCharacter } = await imp('rig.js'), { makeGym } = await imp('world.js'), { makeSim } = await imp('sim.js');
-const R = JSON.parse(fs.readFileSync(E.IN, 'utf8')), CLIPS = R.clip ? JSON.parse(fs.readFileSync(path.join(HERE, '../assets_local/clips.json'), 'utf8')) : null;
+const R = JSON.parse(fs.readFileSync(E.IN, 'utf8')); if (R.clip) process.env.MODE = 'clip';
+const CLIPS = R.clip ? JSON.parse(fs.readFileSync(path.join(HERE, '../assets_local/clips.json'), 'utf8')) : null;
 const pick = (k, d) => (E[k] !== undefined ? E[k] === '1' : !!d), REP = Math.max(1, +(E.REP || 3)), PH = ['지상', '정지(매달림)', '몸 이동(W·A·D)', '발 옮기기', '손 뻗기', '맞잡기'];
 const phase = (sim, x) => { const K = sim.climb; if (!K.on) return 0; const rh = K.hands.filter(h => h.st === 'reach');
   if (rh.some(h => { const o = K.hands[1 - h.i]; return o.st === 'hold' && o.edge && h.edge && o.edge.box === h.edge.box; })) return 5;
@@ -19,7 +21,7 @@ const mix = v => { f64[0] = v; H = Math.imul(H ^ u32[0], 16777619) >>> 0; H = Ma
 const digest = sim => { const b = sim.body, K = sim.climb; for (const v of [b.pos.x, b.pos.y, b.pos.z, b.vel.x, b.vel.y, b.vel.z, b.yaw]) mix(v);
   for (const h of K.hands) { mix(h.st === 'hold' ? 1 : h.st === 'reach' ? 2 : 0); mix(h.w.x); mix(h.w.y); mix(h.w.z); } for (const f of K.feet) { mix(f.st === 'plant' ? 1 : f.st === 'move' ? 2 : 0); mix(f.w ? f.w.x : 0); mix(f.w ? f.w.y : 0); mix(f.w ? f.w.z : 0); }
   if (K.fb && K.fb.x) for (const v of K.fb.x) mix(v); return H; };
-function run(keep) { const sim = makeSim(buildCharacter(), makeGym(), CLIPS), o = R.opts; sim.reset({ pos: R.startPos, yaw: R.startYaw }); H = 2166136261;
+function run(keep) { const sim = makeSim(buildCharacter(), makeGym(), CLIPS), o = R.opts; sim.reset({ pos: R.startPos, yaw: R.startYaw }); H = 2166136261; sim.noStat = E.STAT !== '1';
   Object.assign(sim.opt, { posture: 'fb', footAssist: pick('FOOT', o.footAssist), grabAssist: o.grabAssist, poseAssist: o.poseAssist, easy: o.easy, autoBody: o.autoBody, keepHold: !!o.keepHold, press: o.press, wallRest: !!o.wallRest, linkPose: pick('LINK', o.linkPose), planReach: pick('PLAN', o.planReach), autoGuard: pick('GUARD', o.autoGuard) });
   const ms = [], ph = [], dg = []; for (const x of R.inputs) { const p = phase(sim, x), t = performance.now(); sim.step(x); ms.push(performance.now() - t); ph.push(p); if (keep) dg.push(digest(sim)); } return { ms, ph, dg, sim }; }
 const first = run(true), runs = REP > 1 ? Array.from({ length: REP - 1 }, () => run(false)) : [first], sim = first.sim;
