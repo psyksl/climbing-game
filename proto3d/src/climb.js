@@ -1738,7 +1738,9 @@ export function stepClimb(S, inp, dt) {
     const gAng = assistOn(S) && K.tick - (h.grabTick ?? -1e9) < CL.NEW_T / dt ? CL.ASSIST_GRIP_ANG : CL.GRIP_ANG;
     const bad = h.load < CL.GRIP_MIN || (h.cone && !lim.includes(h)) ? '' : h.pressK > 0 ? (Math.hypot(pull.x, pull.z) / Math.max(pull.y, 1e-3) > Math.tan(CL.GRIP_ANG) ? '누르는 방향이 턱에서 벗어남' : '') : down <= 0.05 ? '위로는 당길 수 없음(어깨가 턱보다 위)' : Math.hypot(out, lat) / down > Math.tan(gAng) ? '당기는 방향이 턱에서 벗어남' : '';
     //   넓힌 한계 안이지만 원래 한계(GRIP_ANG) 밖이고 먼저 잡던 다른 손이 있으면 그 손을 놓아 몸이 새 손 아래로 오게 한다(두 손이 함께 버티면 몸이 그 자리에 머물러 넓힌 시간이 끝나는 순간 새 손이 놓쳤다)
-    const sideBad = !bad && gAng !== CL.GRIP_ANG && h.load >= CL.GRIP_MIN && down > 0.05 && Math.hypot(out, lat) / down > Math.tan(CL.GRIP_ANG); h.sideT = sideBad ? (h.sideT || 0) + dt : 0; // 원래 놓치던 때와 같이 SLIP_T 동안 이어질 때만(잠깐 튄 하중으로 다른 손을 놓지 않게)
+    //   p3d-0.15.7: 낮은 손(h.cone — 전신 연결에서 발판을 디딘 채 어깨 가까이·아래에 있는 손. 위의 bad에서 당기는 방향의 규칙을 받지 않는다)에는 이 규칙도 걸지 않는다 — 두 발로 서서 W로 오르는 동안 막 잡은 손이 어깨 높이로 내려오면
+    //   "당기는 방향이 원래 한계 밖"이 되어 먼저 잡은 다른 손을 스스로 놓았다(짧은 구간의 길 e: 초록 6을 잡고 W를 누르는 동안 초록 5의 왼손이 명령 없이 풀림 → 맞잡기가 "몸에 막혀"로 실패). OLDSIDECONE = 전처럼
+    const sideBad = !bad && gAng !== CL.GRIP_ANG && h.load >= CL.GRIP_MIN && down > 0.05 && Math.hypot(out, lat) / down > Math.tan(CL.GRIP_ANG) && !(h.cone && !lim.includes(h) && !globalThis.OLDSIDECONE); h.sideT = sideBad ? (h.sideT || 0) + dt : 0; // 원래 놓치던 때와 같이 SLIP_T 동안 이어질 때만(잠깐 튄 하중으로 다른 손을 놓지 않게)
     if (h.sideT > CL.SLIP_T) { const o = held.find(x => x !== h && x.st === 'hold' && (x.grabTick ?? -1e9) < (h.grabTick ?? -1e9)); if (o && !keepHoldOn(S)) releaseHand(S, o.i, '옮겨 잡으려고 놓음(잡기 보정)'); h.sideT = 0; }
     h.bad = bad ? h.bad + dt : 0;
     // 잡은 채 몸이 움직여 팔이 제 몸을 지나가야 하는 자세가 되면(접힌 팔이 몸통에 걸림, 손이 등 뒤로 감) 그 손은 놓친다
