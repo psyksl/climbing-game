@@ -834,6 +834,11 @@ export function command(S, c) {
     const goal = anchorOf(g);
     if (H.st === 'hold' && g.p.distanceTo(H.grip) < 0.04) { deny(S, H, 'hand', '이미 잡고 있는 자리'); return; }
     if (handPathBlocked(S.world, H, goal, g)) { deny(S, H, 'hand', '손이 가는 길이 막힘'); return; }
+    // 손 조작 2에서 붙은 손을 떼어 보낸 명령(c.pick, p3d-0.15.8 — GPT의 0.15.7 2차 검토 "버튼을 떼는 시점에 경로와 목표를 확인하고, 가능하면 손을 옮긴다. 잘못 고른 자리로 붙은 손이 먼저 떨어지지 않게"):
+    //   미리보기와 같은 판정(probeHand)으로 지금 닿는지를 먼저 본다. 닿지 않으면 **손을 떼지 않는다** — 쉬운 조작이면 예약으로 남기고(몸을 옮겨 닿게 되면 잡는다), 아니면 거부만 한다.
+    //   눌러 보내기(손 조작 1)는 40cm 안으로 모자란 자리를 손을 떼어 뻗어 본 뒤 돌아오지만(0.13.1), 그것은 사용자가 그 순간에 보낸 것이다 — 고르는 동안 붙여 두기로 한 손에는 쓰지 않는다. OLDPICKTRY = 눌러 보내기와 똑같이
+    if (c.pick && H.st === 'hold' && !jumping(S) && !globalThis.OLDPICKTRY) { const pr = probeHand(S, c.i, pt);
+      if (!pr.ok) { if (armOn(S) && pr.short !== undefined && pr.short <= CL.ARM_MAX) { H.arm = { p: c.p.slice(), t: 0, short: pr.short, jump: false, tried: false, why: pr.why }; H.why = ''; H.armP = null; note(S, 'arm', 'hand', c.i, `닿으면 잡음(${short(pr.short)} 모자람)`); } else deny(S, H, 'hand', pr.why || '닿지 않음'); return; } }
     // 쉬운 조작 ② 예약(p3d-0.13.0, 사용자: "대충 해도 되어야 한다"): 가만히 있는데 닿지 않는 턱을 누르면, 손을 떼어 0.3초 뻗다가 거부하는 대신 지금 잡은 자리를 그대로 둔 채 ARM_T 동안 기다린다(H.arm).
     //   그사이 닿게 되면(몸을 옮김 · ③ 자동 몸 맞추기) 또는 뛰기 시작하면 그때 보낸다 — 같은 명령·같은 판정을 거친다. 시간이 지나면 원래 까닭으로 거부한다(거부는 놓기가 아니다).
     //   발판에서 뛰어 턱 C를 잡을 때 점프와 거의 동시에(−0.10 ~ +0.05초) 눌러야 했던 것이 "먼저 누르고 2초 안에 뛰기"가 된다. 움직이는 중(뛰는 중·떠 있는 중)의 누름은 전처럼 바로 보낸다. NOARMREACH = 끔

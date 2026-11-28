@@ -15,7 +15,7 @@ import GALLERY from 'gallery-data'; // 동작 보기용 자료(받은 동작 전
 import { poseRaw } from './clipmotion.js';
 import { buildProps, makeSwingRope, applyGrips } from './demo.js'; // 캡처 동작 자료(빌드할 때 assets_local/clips.json이 있으면 들어온다. 없으면 null)
 
-export const VERSION = 'p3d-0.15.7';
+export const VERSION = 'p3d-0.15.8';
 // p3d-0.15.7: 한 파일로 주는 시험 빌드는 설정을 파일 안에 적어 둔다(P3D_PROFILE = 주소의 ? 뒤와 같은 글. 예: "link=1&plan=1&guard=1&foot=0"). 주소에 적은 값이 그보다 먼저다.
 //   0.15.6의 "해 보기" 파일은 기본 빌드를 주소만 바꿔 여는 작은 파일이라 기본 빌드가 같은 폴더에 있어야 했고, 주소로 켠 설정이 저장되어 다른 파일을 열 때 섞일 수 있었다(GPT의 0.15.6 검토)
 const params = new URLSearchParams(globalThis.P3D_PROFILE || ''); for (const [k, v] of new URLSearchParams(location.search)) params.set(k, v);
@@ -50,11 +50,13 @@ loadKeys();
 const input = makeInput(renderer.domElement);
 const pending = []; // 다음 계산 걸음에 한 번만 들어갈 명령(손발 보내기·놓기)
 // 고를 수 있는 조작 설정(저장됨). handMode 1 = 눌러 보내기, 2 = 누르는 동안 뻗기(떼면 잡기). footAssist = 발 보조(간편 조작). diag = 진단 정보. helpAll = 조작표 모두 보기
-const OPT = { handMode: 1, grabAssist: true, poseAssist: true, easy: true, autoBody: true, keepHold: false, press: true, linkPose: false, planReach: false, autoGuard: false, footAssist: false, wallRest: false, diag: false, helpAll: false, helpFold: true, dev: false, oldPose: false };
+const OPT = { handMode: 1, grabAssist: true, poseAssist: true, easy: true, autoBody: true, keepHold: false, press: true, linkPose: true, planReach: true, autoGuard: true, wClear: false, footAssist: false, wallRest: false, diag: false, helpAll: false, helpFold: true, dev: false, oldPose: false };
 // 조작표 접힘(p3d-0.15.5: 새 프로필의 기본 = 접힘). 저장된 값은 사용자가 K로 직접 고른 것(helpFoldSet)일 때만 따른다 — 0.15.3·0.15.4는 고르지 않아도 기본값(펼침)을 저장했다
 // 발 보조(p3d-0.15.7, 사용자 결정 2026-11-28: **기본 끔** — 직접 디디는 것이 기본. F = 켬(초보자용 자동 발, 옵션으로 남긴다)). 저장된 값은 사용자가 F로 직접 고른 것(footAssistSet)일 때만 따른다 —
 //   0.15.6까지는 고르지 않아도 옛 기본값(켬)을 저장했으므로, 그 값이 새 기본을 덮어쓰지 않게 한다. 주소의 ?foot=1|0 이 저장된 값보다 먼저다(시험·비교 진입 파일이 켬·끔을 분명히 적는다)
-let SAVED0 = {}; try { const sv = JSON.parse(localStorage.getItem('p3dOpt_v1') || '{}'); if (!sv.helpFoldSet) delete sv.helpFold; if (!sv.footAssistSet) delete sv.footAssist; SAVED0 = { ...sv }; Object.assign(OPT, sv); } catch (e) { OPT.handMode = 1; }
+// 전신 연결·뻗기 전 검사·자동 이동 보호(p3d-0.15.8, 사용자 결정 2026-11-28: **게임의 기본으로 켠다**). 0.15.3~0.15.7은 고르지 않아도 옛 기본값(끔)을 저장했으므로 그 값이 새 기본을 덮지 않게 한다:
+//   전신 연결은 개발 모드의 9 키로 직접 고른 표시(linkPoseSet)가 있을 때만 저장된 값을 따르고, 키가 없는 둘(검사·보호)과 비교 후보(W 막힘 풀기)는 저장된 값을 따르지 않는다(주소의 ?plan=0·?guard=0·?wclear=1로만 바꾼다)
+let SAVED0 = {}; try { const sv = JSON.parse(localStorage.getItem('p3dOpt_v1') || '{}'); if (!sv.helpFoldSet) delete sv.helpFold; if (!sv.footAssistSet) delete sv.footAssist; if (!sv.linkPoseSet) delete sv.linkPose; delete sv.planReach; delete sv.autoGuard; delete sv.wClear; SAVED0 = { ...sv }; Object.assign(OPT, sv); } catch (e) { OPT.handMode = 1; }
 // 주소·파일 안의 설정으로 정한 값(URLK)은 저장하지 않는다(그 실행에만 쓴다) — 사용자가 그 뒤에 키로 직접 바꾸면 그때부터 저장한다(userSet)
 const URLK = new Set(), urlOpt = (p, k) => { if (params.has(p)) { OPT[k] = params.get(p) !== '0'; URLK.add(k); } }, userSet = k => URLK.delete(k);
 urlOpt('foot', 'footAssist');
@@ -66,6 +68,8 @@ urlOpt('link', 'linkPose');
 urlOpt('plan', 'planReach');
 // 자동 이동 보호(p3d-0.15.6, 비교 후보 — 기본 끔, 키 없음): ?guard=1
 urlOpt('guard', 'autoGuard');
+// W 막힘 풀기(p3d-0.15.8, 비교 후보 — 기본 끔, 키 없음): ?wclear=1
+urlOpt('wclear', 'wClear');
 // 비교 스위치(p3d-0.15.4, 견주는 영상·시험용): ?sw=NOHELDCLR,FOLD_KEEP=0.3 → 계산의 전역 비교 스위치를 켠다(시험의 환경 변수와 같은 이름). 화면 위쪽에 켠 스위치를 적는다
 const SW_URL = (params.get('sw') || '').split(',').filter(Boolean); for (const k of SW_URL) { const [a, v] = k.split('='); if (/^[A-Z][A-Z0-9_]*$/.test(a)) globalThis[a] = v === undefined ? 1 : +v; }
 // 개발 모드(p3d-0.15.3): F2 또는 ?dev — 개발 키(잡기 보정 U·자세 보조 Y·누르기 P·전신 연결 9·벽 딛기 J·몸 자세 O·진단 I·뼈대 B·느리게 N·모션 M·동작 보기 G)는 이때만 듣는다. 진단 정보도 이때만 보인다
@@ -79,10 +83,12 @@ const OLDRISE_URL = /[?&]oldrise\b/.test(location.search); if (OLDRISE_URL) glob
 const FOOTX = /[?&]footx\b/.test(location.search); if (FOOTX) setKeys('footMod', ['KeyX'], false);
 const saveOpt = () => { if (MANUAL) return; const o = { ...OPT }; for (const k of URLK) { if (k in SAVED0) o[k] = SAVED0[k]; else delete o[k]; } try { localStorage.setItem('p3dOpt_v1', JSON.stringify(o)); } catch (e) { return; } };
 // 계산이 읽는 설정은 이 한곳에서만 옮긴다(p3d-0.15.3: 다섯 군데에 흩어져 있어 새 설정을 빠뜨리기 쉬웠다)
-function syncOpt() { for (const k of ['footAssist', 'grabAssist', 'poseAssist', 'easy', 'autoBody', 'keepHold', 'press', 'linkPose', 'planReach', 'autoGuard', 'wallRest']) sim.opt[k] = OPT[k]; sim.climb.oldPose = OPT.oldPose; DIAG = !!(OPT.dev && DIAG); input.setDev(OPT.dev); }
+function syncOpt() { for (const k of ['footAssist', 'grabAssist', 'poseAssist', 'easy', 'autoBody', 'keepHold', 'press', 'linkPose', 'planReach', 'autoGuard', 'wClear', 'wallRest']) sim.opt[k] = OPT[k]; sim.climb.oldPose = OPT.oldPose; DIAG = !!(OPT.dev && DIAG); input.setDev(OPT.dev); }
 syncOpt();
+// 열 때 실제로 적용된 설정을 한 번 적는다(p3d-0.15.8, GPT: 예전 저장값에 새 기본이 묻히지 않는지 확인할 수 있게). 계산이 읽는 값(sim.effect) 그대로
+try { console.info('[p3d 설정] ' + VERSION + ' ' + JSON.stringify({ ...sim.effect(), 발_보조: !!OPT.footAssist, 손_조작: OPT.handMode, 저장값을_따른_항목: Object.keys(SAVED0).filter(k => !/Set$/.test(k)), 주소로_정한_항목: [...URLK] })); } catch (e) { /* 기록만 */ }
 let viewMode = false, cxSign = 1; // viewMode = 시점 보기 모드(조작 멈춤). cxSign = 몸 좌우 입력을 화면에서 보이는 쪽으로 맞추는 부호
-const aim = { world: null, held: [null, null], foot: [false, false], tap: [false, false] }; // 겨눈 자리(세계 좌표). 마우스를 움직이지 않는 동안에는 화면이 저절로 움직여도 이 자리를 그대로 겨눈다
+const aim = { world: null, held: [null, null], pick: [false, false], foot: [false, false], tap: [false, false] }; // 겨눈 자리(세계 좌표). 마우스를 움직이지 않는 동안에는 화면이 저절로 움직여도 이 자리를 그대로 겨눈다
 const cam = { yaw: Math.PI + 0.35, pitch: 0.28, dist: 4.2, target: new THREE.Vector3(0, 1.1, 2), eff: 4.2, follow: null, followOff: 0, blocked: false }; // eff = 벽에 막혀 줄인 실제 거리, follow = 영상용 따라가기(몸 방향 기준 각도)
 // 동작 보기: 받은 동작을 하나씩 이 캐릭터로 튼다(게임 계산은 멈춘다. 발 고정·IK 없이 옮긴 자세 그대로)
 const gal = { on: false, i: 0, t: 0, names: GALLERY ? Object.keys(GALLERY.clips) : [], origin: new THREE.Vector3(), yaw: 0 };
@@ -145,15 +151,23 @@ function readCommands() {
       const g = { i, tick: sim.tick, ctx: input.st.mode, onGround: !!body.onGround, limb: aim.foot[i] ? 'foot' : 'hand', tap: aim.tap[i], issued: 0, cancelled: '' }; gest.open[i] = g; gest.log.push(g); if (gest.log.length > 40) gest.log.shift(); }
     // 지상에서 떠 있는 동안(뛰거나 벽에서 놓고 떨어지는 중)은 우클릭도 누르는 순간 오른손(그동안 시점 돌리기는 쉰다)
     const foot = !!aim.foot[i], tapOnly = !!aim.tap[i], hold = OPT.handMode === 2 && !foot && !tapOnly;
-    if (tapOnly ? input.tapped(id) : input.wasPressed(id)) { pending.push({ type: foot ? 'foot' : 'hand', i, p: p(foot), hold }); aim.held[i] = hold; if (gest.open[i]) gest.open[i].issued++; }
+    // 손 조작 2에서 **이미 붙어 있는 손**(p3d-0.15.8, GPT의 0.15.7 2차 검토 — 사용자 녹화: 누르는 순간 잡던 손을 놓아, 닿지 않는 곳·발 홀드를 잘못 눌러도 손이 먼저 떨어졌다):
+    //   누르는 동안은 목표만 고르고 손은 그대로 둔다(aim.pick). 버튼을 떼는 순간에 그때 겨눈 자리로 **눌러 보내기와 같은 명령**을 낸다 — 갈 수 없으면 거부만 하고 손은 붙어 있다(거부는 놓기가 아니다).
+    //   붙어 있지 않은 손은 전처럼 누르는 동안 뻗고 떼면 잡는다. 붙은 손인지는 누르는 순간에 정한다. 취소(시점 보기·창을 벗어남·포커스)는 아무 명령도 내지 않는다. 일부러 놓기는 Q·E 그대로. OLDHOLD2 = 전처럼(누르는 순간 놓음)
+    const pickNow = hold && !tapOnly && input.wasPressed(id) && sim.climb.hands[i].st === 'hold' && !globalThis.OLDHOLD2;
+    if (pickNow) { aim.pick[i] = true; if (gest.open[i]) gest.open[i].pick = true; }
+    else if (tapOnly ? input.tapped(id) : input.wasPressed(id)) { pending.push({ type: foot ? 'foot' : 'hand', i, p: p(foot), hold }); aim.held[i] = hold; if (gest.open[i]) gest.open[i].issued++; }
     if (aim.held[i] && (input.wasReleased(id) || !input.isDown(id))) { aim.held[i] = null; pending.push({ type: 'handUp', i }); }
+    if (aim.pick[i] && !pickNow && (input.wasReleased(id) || !input.isDown(id))) { aim.pick[i] = false; pending.push({ type: 'hand', i, p: p(false), pick: true }); if (gest.open[i]) gest.open[i].issued++; }
   }
   for (const [id, i] of [['relL', 0], ['relR', 1]]) if (input.wasPressed(id)) pending.push({ type: 'release', limb: input.pressedWith(id, ground ? 'footGround' : 'footMod') ? 'foot' : 'hand', i });
 }
 // 작은 벽 앞에서 시작(턱 A 아래, 벽을 보고 선다. 시점은 등 뒤)
 // 클라이밍장에서는 코스의 시작 자리로(누를 때마다 다음 코스). 시점은 등 뒤에서 벽을 본다(옛 벽과 같은 0.25rad 비스듬히)
 let courseI = -1;
-const courseAway = () => { if (!world.gym || courseI < 0 || courseI >= world.courses.length) return false; const C = world.courses[courseI], p = sim.body.pos; return sim.climb.on || Math.hypot(p.x - C.startPos[0], p.z - C.startPos[2]) > 0.8 || Math.abs(p.y - C.startPos[1]) > 0.3; };
+// p3d-0.15.8(GPT의 0.15.7 2차 검토): T의 목적지 = **화면에 고른 코스로 나와 있는 코스**(걸어가서 다른 코스의 시작 자리에 서면 고른 코스가 바뀐다 — 그때 T가 앞에 고른 코스로 가던 것을 맞춘다). 화면의 T 안내에도 코스 이름을 적는다
+const syncCourseI = () => { if (!world.gym) return; const c = courseView(gym).course, k = c ? world.courses.indexOf(c) : -1; if (k >= 0) courseI = k; };
+const courseAway = () => { syncCourseI(); if (!world.gym || courseI < 0 || courseI >= world.courses.length) return false; const C = world.courses[courseI], p = sim.body.pos; return sim.climb.on || Math.hypot(p.x - C.startPos[0], p.z - C.startPos[2]) > 0.8 || Math.abs(p.y - C.startPos[1]) > 0.3; };
 function wallStart() { if (gal.on) galOpen(false);
   // p3d-0.15.3: 코스를 다 돈 다음 한 번은 누르기 시험 조각(혼자 선 대) 앞이다(코스 선택 없음 = 자유 등반)
   // p3d-0.15.7(임시 — 키의 뜻은 GPT·사용자 결정): 코스의 시작 자리에서 떠나 있으면(벽에 붙었거나 0.8m 넘게 떨어져 있으면) T는 **같은 코스의 시작 자리로** 돌아간다. 시작 자리에 서 있을 때만 다음 코스로 넘어간다.
@@ -165,7 +179,7 @@ function wallStart() { if (gal.on) galOpen(false);
 // 누르는 동안 뻗던 손을 거둔다(B2): 시점 보기 전환·손 조작 방식 바꾸기·창이 가려지거나 포커스를 잃음. 새로 잡지 않고 다른 접촉은 그대로 둔다
 // p3d-0.8.3(GPT P1-A): 아직 읽지 않은 누름도 버린다. 단추를 누른 뒤 첫 화면 프레임이 오기 전에 마우스가 화면을 벗어나면, 취소할 때는 아직 뻗기(aim.held)가 없어 아무것도 하지 않고
 // 바로 뒤의 readCommands가 그 누름으로 새 뻗기 명령을 만들었다. 손발 단추의 누름 자체를 버려(input.kill) 이번 프레임에도, 누른 채 돌아온 뒤에도 명령이 되지 않게 한다. 이미 붙은 손발은 건드리지 않는다
-function cancelHolds(why = '') { for (const i of [0, 1]) { const dead = input.kill(i ? 'limbR' : 'limbL'), g = gest.open[i]; if (aim.held[i]) { aim.held[i] = null; pending.push({ type: 'handCancel', i }); } if (g && dead) { g.cancelled = why || 'cancel'; gest.open[i] = null; } } }
+function cancelHolds(why = '') { for (const i of [0, 1]) { const dead = input.kill(i ? 'limbR' : 'limbL'), g = gest.open[i]; if (aim.held[i]) { aim.held[i] = null; pending.push({ type: 'handCancel', i }); } if (aim.pick[i]) { aim.pick[i] = false; if (g) { g.cancelled = why || 'cancel'; gest.open[i] = null; } } if (g && dead) { g.cancelled = why || 'cancel'; gest.open[i] = null; } } }
 // 누름 하나의 수명 기록(진단·시험용): 누른 순간의 문맥·땅/공중·손발 대상·보내는 방식, 명령이 나갔는지, 취소됐는지. 떼는 순간의 상태로 다시 해석하지 않는다는 것을 시험이 이 기록으로 본다
 const gest = { open: [null, null], log: [] };
 let lostFocus = false;
@@ -175,7 +189,7 @@ document.documentElement.addEventListener('mouseleave', () => { lostFocus = 'mou
 // 입력 기록(p3d-0.15.2, 시험·영상용): 실제 키·마우스로 넣은 입력을 계산 걸음마다(계산에 넘어간 그대로) 적어 두었다가, 같은 입력을 멈춘 화면에서 한 걸음씩 다시 틀어 영상으로 찍는다(__p3.recStart / recStop)
 let REC = null;
 function physStep(inp) { const c = pending.splice(0), x = c.length ? { ...inp, cmd: (inp.cmd || []).concat(c) } : inp; if (REC) REC.push(JSON.parse(JSON.stringify(x))); sim.step(x); }
-function reset(o) { sim.reset(o || world.spawn); courseReset(gym, sim.tick); syncOpt(); body = sim.body; pending.length = 0; aim.held[0] = aim.held[1] = null; }
+function reset(o) { sim.reset(o || world.spawn); courseReset(gym, sim.tick); syncOpt(); body = sim.body; pending.length = 0; aim.pick[0] = aim.pick[1] = false; aim.held[0] = aim.held[1] = null; }
 
 const CAM = { AIR_BOX: 0.9, WALL_DEAD: 0.12, WALL_RATE: 2.5, LAND_T: 0.8 }, lerpN = (a, b, t) => a + (b - a) * t;
 function updateCamera(dt) {
@@ -211,10 +225,13 @@ const gym = makeCourseState(world.courses || []);
 function gymStep(dt) { if (!world.gym) return; const K = sim.climb; courseStep(gym, { tick: sim.tick, on: K.on, onGround: !!body.onGround, pos: [body.pos.x, body.pos.y, body.pos.z], hands: K.hands.map(h => ({ st: h.st, box: h.st === 'hold' && h.edge ? h.edge.box : null })) }, dt); }
 // 코스 줄(p3d-0.15.2, GPT의 0.15.1 재검토 — 임시): 위에는 "자유 등반 · 코스 · 시도"만 짧게. 기록은 완등한 뒤에만, 손 홀드 색 준수(손만 검사하는 실험 규칙)는 진단(I)에서만 보인다
 const gymLine = () => { if (!world.gym) return ''; const v = courseView(gym), C = v.course, T = v.try, R = v.rec, sec = x => `${x.toFixed(1)}초`;
+  const K = sim.climb, tops = T && !T.done && T.course ? K.hands.filter(h => h.st === 'hold' && h.edge && h.edge.box.role === 'top' && h.edge.box.course === T.course.id).length : 0, away = courseAway(), nx = world.courses.length ? world.courses[(Math.max(courseI, -1) + 1) % world.courses.length] : null;
+  // 완등 조건 안내(GPT 문구): 시도를 시작한 뒤 3초 동안, 그리고 완등 홀드를 한 손만 잡고 있을 때
+  const fin = T && !T.done && v.live && T.course && (tops === 1 || (sim.tick - T.t0) / 120 < 3) ? `<div class=dim>마지막 홀드를 두 손으로 잡아야 완등돼요.</div>` : '';
   const now = !T ? '' : T.done ? ` · <b>완등!</b> ${sec(T.doneT)}` : v.live ? ` · 시도 ${T.id} · ${sec((sim.tick - T.t0) / 120)}${v.phase === 'air' ? ' · 공중' : ''}` : '';
   const best = T && T.done && R && R.tops ? ` <span class=dim>· 가장 빠른 기록 ${sec(R.free)}</span>` : '';
   const dev = DIAG && T ? ` <span class=dim>· 손 홀드 색 준수(실험): ${T.done ? (T.doneClean ? '지킴' : '안 지킴') : T.clean ? '지키는 중' : `안 지킴(${T.cleanWhy})`}${R && R.clean !== null ? ` · 지킨 기록 ${sec(R.clean)}` : ''}</span>` : '';
-  return `<div><b>자유 등반</b> ${C ? `· <span style="color:${C.color === '#2a2a2e' ? '#000' : C.color}">■</span> ${C.name}${now}${best}${dev}` : ''} <span class=dim>· T = ${courseAway() ? '이 코스 처음으로' : '다음 코스'}</span></div>`; };
+  return `<div><b>자유 등반</b> ${C ? `· <span style="color:${C.color === '#2a2a2e' ? '#000' : C.color}">■</span> ${C.name}${now}${best}${dev}` : ''} <span class=dim>· T = ${away && world.courses[courseI] ? `${world.courses[courseI].name} 처음으로` : `다음 코스${nx && courseI + 1 < world.courses.length ? `(${nx.name})` : ''}`}</span></div>${fin}`; };
 // 화면 안내(임시. 모양·문구는 GPT 검토 대상)
 const hud = document.createElement('div'); hud.id = 'hud'; document.body.appendChild(hud);
 const banner = document.createElement('div'); banner.id = 'banner'; document.body.appendChild(banner); // 영상용 장면 이름(시험이 정한다)
@@ -254,7 +271,7 @@ function drawTags() {
   const near = K.hands.every(h => h.st !== 'free') && (() => { const a = screenOf(K.hands[0].st === 'hold' ? K.hands[0].grip : K.hands[0].goal), b = screenOf(K.hands[1].st === 'hold' ? K.hands[1].grip : K.hands[1].goal); return Math.abs(a.y - b.y) < 22 && Math.abs(a.x - b.x) < 150; })();
   // 취소 알림(임시 모양·문구): 뻗던 손을 거둔 뒤 0.9초 동안 그 손 자리에 한 번만 보인다(뻗는 표시는 이미 사라졌다). 놓기·실패와 다른 기호를 쓴다
   { const now = sim.tick / 120; for (let k = K.log.length - 1; k >= 0 && now - K.log[k].t < 0.9; k--) { const e = K.log[k]; if (e.type === 'cancel' && e.limb === 'hand' && K.hands[e.i].st === 'free') { put(tags[e.i], rig.bones[`hand.${e.i ? 'R' : 'L'}`].getWorldPosition(new THREE.Vector3()), `⤺ ${e.name} 보내기 취소`, 'pv'); break; } } }
-  K.hands.forEach((h, i) => { const n = i ? '오른손' : '왼손', dx = near && !i ? -112 : 10; const ARMT = h.arm ? ' · <b>◌ 예약</b>' : ''; if (h.st === 'hold') put(tags[i], h.grip, `● ${n} 잡고 있음${LOADT(h, true)}${ARMT}`, i ? 'R' : 'L', dx); else if (h.st === 'free' && h.arm) put(tags[i], h.arm.p, `◌ ${n} 예약 · 닿으면 잡아요.`, i ? 'R' : 'L', dx); else if (h.st === 'reach') put(tags[i], h.w, (h.drag ? `◌ ${n} 뻗는 중${h.edge ? ' · 떼면 잡기' : ''}` : `→ ${n} 보내는 중`) + (h.swivel ? ` · <b>⤴ 팔꿈치 돌리는 중 ${'◜◝◞◟'[Math.floor(sim.tick / 10) % 4]}</b>` : (h.blockT || 0) > 0.12 ? ' · <b>⤬ 팔 경로 막힘</b>' : (h.stopB && (h.selfBlock || 0) > 0.12) ? ' · <b>⤬ 몸에 막힘</b>' : (h.stopA && (h.armCross || 0) > 0.12) ? ' · <b>⤬ 다른 팔에 막힘</b>' : h.auto ? ' · <b>몸을 옮겨 닿는 중</b>' : ''), i ? 'R' : 'L', dx); });
+  K.hands.forEach((h, i) => { const n = i ? '오른손' : '왼손', dx = near && !i ? -112 : 10; const ARMT = h.arm ? ' · <b>◌ 예약</b>' : ''; if (h.st === 'hold') put(tags[i], h.grip, aim.pick[i] ? `◎ ${n} 옮길 곳 고르는 중 · <b>떼면 옮겨요</b>` : `● ${n} 잡고 있음${LOADT(h, true)}${ARMT}`, i ? 'R' : 'L', dx); else if (h.st === 'free' && h.arm) put(tags[i], h.arm.p, `◌ ${n} 예약 · 닿으면 잡아요.`, i ? 'R' : 'L', dx); else if (h.st === 'reach') put(tags[i], h.w, (h.drag ? `◌ ${n} 뻗는 중${h.edge ? ' · 떼면 잡기' : ''}` : `→ ${n} 보내는 중`) + (h.swivel ? ` · <b>⤴ 팔꿈치 돌리는 중 ${'◜◝◞◟'[Math.floor(sim.tick / 10) % 4]}</b>` : (h.blockT || 0) > 0.12 ? ' · <b>⤬ 팔 경로 막힘</b>' : (h.stopB && (h.selfBlock || 0) > 0.12) ? ' · <b>⤬ 몸에 막힘</b>' : (h.stopA && (h.armCross || 0) > 0.12) ? ' · <b>⤬ 다른 팔에 막힘</b>' : h.auto ? ' · <b>몸을 옮겨 닿는 중</b>' : ''), i ? 'R' : 'L', dx); });
   // 목표 자리의 반응(p3d-0.15.6, 시안): ① 거부 = 그 손 색의 표식이 0.15초 밝게 반응하고 1초쯤 까닭을 보인다(손은 그대로 붙어 있다 — 손을 떼었다 다시 잡는 몸짓을 넣지 않는다) ② 잡은 채의 예약 = 목표에 작은 대기 표식 ③ 계산이 0.1초 넘게 걸리면 "자세 확인 중"(금방 끝나면 깜빡이지 않게 보이지 않는다)
   { const now = sim.tick / 120; let done = false;
     for (let k = K.log.length - 1; k >= 0 && now - K.log[k].t < 1.0 && !done; k--) { const e = K.log[k]; if (e.type !== 'reject' || e.limb !== 'hand') continue; const w = HAND_WHY(e.why); let tr = null; for (let j = k - 1; j >= 0 && e.t - K.log[j].t < 3; j--) if (K.log[j].type === 'try' && K.log[j].limb === 'hand' && K.log[j].i === e.i && K.log[j].p) { tr = K.log[j]; break; }
@@ -293,7 +310,7 @@ function stateName() {
 }
 // 개발 항목의 설정(잡기 보정·자세 보조·누르기·전신 연결): 개발 모드에서는 모두 보인다. 그 밖에는 기본값(앞의 셋 켬·전신 연결 끔)과 다른 것만 굵게 보인다 — 키가 숨어 있어도 기본이 아닌 상태로 하고 있다는 것은 알 수 있게(p3d-0.15.3, 임시)
 // p3d-0.15.4(GPT의 0.15.3 검토 M4·UI 시안 — 사용자 확정 아님): 저장한 설정이 아니라 **실제로 적용되는 것**을 보인다(sim.effect = 계산과 같은 식). 전신 연결은 누르기를 포함하므로 누르기 설정이 꺼져 있어도 "누르기 끔"이라고 쓰지 않는다
-const DEV_OPT = [['grabAssist', '잡기 보정', true], ['poseAssist', '자세 보조', true], ['press', '누르기', true], ['linkPose', '전신 연결(시험)', false], ['planReach', '뻗기 전 검사(시험)', false], ['autoGuard', '자동 이동 보호(시험)', false]];
+const DEV_OPT = [['grabAssist', '잡기 보정', true], ['poseAssist', '자세 보조', true], ['press', '누르기', true], ['linkPose', '전신 연결', true], ['planReach', '뻗기 전 검사', true], ['autoGuard', '자동 이동 보호', true], ['wClear', 'W 막힘 풀기(시험)', false]];
 const devState = k => { const e = sim.effect(); return k === 'linkPose' ? (e.link ? '켬 · 누르기 포함' : OPT.linkPose ? '끔(자세 보조가 꺼져 있어 적용되지 않음)' : '끔') : k === 'press' ? (e.pressByLink ? '· 전신 연결에 포함' : e.press ? '켬' : '끔') : OPT[k] ? '켬' : '끔'; };
 const devDiff = ([k, , d]) => (k === 'press' ? sim.effect().press !== d : k === 'linkPose' ? !!OPT.linkPose !== d : !!OPT[k] !== d);
 const devLine = () => (OPT.dev ? DEV_OPT.map(([k, n]) => ` &nbsp; ${n} ${devState(k)}`).join('') + ' &nbsp; <span class=badge>개발 모드</span>' : DEV_OPT.filter(devDiff).map(([k, n]) => ` &nbsp; <b>${n} ${devState(k)}</b>`).join(''));
@@ -369,7 +386,7 @@ function frame(now) {
   if (input.wasPressed('poseMode')) { POSTURE = POSTURE === 'fb' ? 'rule' : 'fb'; applyPosture(); }
   if (input.wasPressed('helpAll')) { OPT.helpFold = !OPT.helpFold; OPT.helpFoldSet = true; saveOpt(); }
   if (input.wasPressed('devMode')) { OPT.dev = !OPT.dev; syncOpt(); saveOpt(); }
-  if (input.wasPressed('linkPose')) { OPT.linkPose = !OPT.linkPose; userSet('linkPose'); syncOpt(); saveOpt(); }
+  if (input.wasPressed('linkPose')) { OPT.linkPose = !OPT.linkPose; OPT.linkPoseSet = true; userSet('linkPose'); syncOpt(); saveOpt(); }
   // 몸 좌우 입력의 기준: 화면에서 보이는 오른쪽. 시점이 몸의 옆(벽과 나란한 쪽)에 가까워 불안정할 때는 마지막 부호를 그대로 쓴다
   { const cr = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion), d = -Math.cos(body.yaw) * cr.x + Math.sin(body.yaw) * cr.z; if (Math.abs(d) > 0.3) cxSign = d > 0 ? 1 : -1; }
   updateAim();
@@ -394,7 +411,8 @@ window.__p3 = {
   perf: reset => { const r = { 프레임: PERF.frames, 실제_초: +PERF.real.toFixed(3), 게임_초: +PERF.sim.toFixed(3), 게임_실제_비: +(PERF.sim / Math.max(1e-6, PERF.real)).toFixed(4), 버린_초: +PERF.drop.toFixed(3), 평균_fps: +(PERF.frames / Math.max(1e-6, PERF.real)).toFixed(1), 가장_긴_프레임_ms: +PERF.maxMs.toFixed(1), 프레임_25ms_넘음: PERF.long, 계산_ms_프레임당: +(PERF.stepMs / Math.max(1, PERF.frames)).toFixed(3), 계산_ms_걸음당: +(PERF.stepMs / Math.max(1, PERF.steps)).toFixed(4), 그리기_ms_프레임당: +(PERF.drawMs / Math.max(1, PERF.frames)).toFixed(3), 느리게: slow }; if (reset) Object.assign(PERF, { frames: 0, real: 0, sim: 0, drop: 0, maxMs: 0, long: 0, stepMs: 0, drawMs: 0, steps: 0, win: [] }); return r; },
   // posture: 시험용 자세 규칙 바꾸기(p3d-0.10.1)
   VERSION, BIND, conflicts, PHY, rig, posture(p) { sim.opt.posture = p; sim.ref = p === 'ref' ? REFIDX : null; return !!(p !== 'ref' || (REFIDX && REFIDX.frames)); },
-  gestures: () => gest.log.map(g => ({ ...g })), aimHeld: () => aim.held.map(v => !!v),
+  effect: () => sim.effect(),
+  gestures: () => gest.log.map(g => ({ ...g })), aimHeld: () => aim.held.map(v => !!v), aimPick: () => aim.pick.slice(),
   body: () => ({ pos: body.pos.toArray(), vel: body.vel.toArray(), yaw: body.yaw, onGround: body.onGround, charge: body.charge, t: body.t, events: body.events.slice() }),
   state: stateName, stats: () => ({ ...sim.motion.stats, stances: sim.motion.stats.stances.slice() }), resetStats: () => { Object.assign(sim.motion.stats, { maxSlide: 0, slideSum: 0, slideN: 0, maxRatio: 0, kneeFlip: 0, below: 0, stances: [], stanceMaxDev: 0, stanceMaxPath: 0 }); for (const L of sim.motion.legs) L.stance = null; },
   openStances: () => sim.motion.legs.filter(L => L.stance).map(L => ({ leg: L.s, maxDev: L.stance.maxDev, path: L.stance.path, kinds: L.stance.kinds.join('>') })),
