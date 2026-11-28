@@ -741,7 +741,12 @@ function planTick(S, inp) { const K = S.climb, G = globalThis;
   if (!sameJob) { const sn = planSnap(S, want.i, want.goal), sig = planSig(S, want.i, want.goal);
     if (!sn) { const val = { act: 'go', a: null }; P.res[want.i] = { sig, goal: want.goal.clone(), val, units: 0, tick: K.tick }; P.job = null; if (want.cmd) send(want.H, want.w, val); return; }
     J = P.job = { i: want.i, goal: want.goal.clone(), sig, cmd: want.cmd, gen: planDecideG(S, want.i, want.goal, sn), units: 0 }; }
-  for (let n = want.cmd ? (G.PLAN_BUD_CMD ?? 12) : (G.PLAN_BUD ?? 4); n > 0; n--) { const r = J.gen.next(); J.units++; if (r.done) { P.res[J.i] = { sig: J.sig, goal: J.goal, val: r.value, units: J.units, tick: K.tick }; P.job = null; if (want.cmd) send(want.H, want.w, r.value); break; } } }
+  for (let n = want.cmd ? (G.PLAN_BUD_CMD ?? 12) : (G.PLAN_BUD ?? 4); n > 0; n--) { const r = J.gen.next(); J.units++; if (r.done) { P.res[J.i] = { sig: J.sig, goal: J.goal, val: r.value, units: J.units, tick: K.tick }; P.job = null;
+      // p3d-0.15.7(GPT의 0.15.6 검토 4절): 기다리던 명령의 답이 나온 걸음에, 답을 계산하기 시작한 때의 상태(몸의 자리·전신 자세·그 빠르기)가 **지금도 느슨한 범위(PLAN_LOOSE) 안**인지 본다(손발·옵션이 바뀐 것은 위의 sameJob이 걸음마다 본다).
+      //   범위 밖이면 그 답으로 보내지 않고 지금 상태로 다시 계산한다(다음 걸음에 새 작업). 끝없이 되풀이하지 않는다 — 기다림의 한도(PLAN_WAIT_MAX)를 넘으면 위에서 취소된다. 뒤늦게 몰래 보내지 않는다. OLDPLANSEND = 전처럼 확인 없이
+      if (want.cmd) { const D = K.planDrift || (K.planDrift = { n: 0, strict: 0, loose: 0 }), okS = planSame(J.sig, S, J.i, J.goal, 1), okL = okS || planSame(J.sig, S, J.i, J.goal, G.PLAN_LOOSE ?? 4); D.n++; if (!okS) D.strict++; if (!okL) D.loose++;
+        if (okL || G.OLDPLANSEND) send(want.H, want.w, r.value); else want.w.re = (want.w.re || 0) + 1; }
+      break; } } }
 // 미리보기도 같은 검사를 거친다(옵션 켬에서만): 눌렀을 때 손을 떼지 않고 거부될 자리는 "현재 자세에서 막힘"으로 보인다(미리보기와 실제 판정은 같은 함수).
 //   p3d-0.15.6: 계산하지 않고 유효한 답만 읽는다. 답이 아직 없으면 planWait = true(화면이 "자세 확인 중"을 보일 수 있다)
 export function probeHand(S, i, pt) { const r = probeHand0(S, i, pt);
