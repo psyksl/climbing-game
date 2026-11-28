@@ -244,6 +244,7 @@ function armIK(world, sh, tgt, yaw, sx, q = null, full = false, tb = null) {
 // tb = 잡으러 가는 턱(있으면): 그 턱에는 여유를 1mm만 둔다. 잡을 때의 손목 자리는 턱 앞면에서 4cm 앞이고 팔뚝 끝의 반지름이 3.6cm라, 여유 4mm를 다 두면 잡는 자리에 들어가지 못한다(표면은 겹치지 않는다)
 export const ARM_R = { fore: DIM.armR.fore, upper: DIM.armR.upper }, ARM_PAD = 0.004, ARM_PAD_GRIP = 0.001;
 export const ARM_PTS = Array.from({ length: 11 }, (_, k) => [k / 10, lerp(ARM_R.fore[0], ARM_R.fore[1], k / 10)]), ARM_UP = [0.45, 0.56, 0.67, 0.78, 0.89, 1].map(t => [t, lerp(ARM_R.upper[0], ARM_R.upper[1], t)]);
+const ARM_RMAX = Math.max(...ARM_R.fore, ...ARM_R.upper);
 // 공(가운데 p, 반지름 r)이 상자에 겹친 깊이와 빠지는 쪽. 모서리는 둥글게 잰다(상자를 r만큼 부풀린 네모로 재면 모서리 앞에서 겹치지 않는데도 겹쳤다고 본다 —
 // 당겨 올라가 어깨가 턱 앞 아래에 있을 때 위팔이 늘 "겹침"이 되어 손이 끝내 가지 못했다)
 function sphereBox(p, r, x) {
@@ -327,7 +328,10 @@ function pickPole(S, sh, target, yaw, sx, qC, tb, B) {
 // 당겨 올라간 자세에서는 몸에서 밀려난 팔뚝이 벽에 1.7cm 들어갔다. 팔꿈치 방향만으로는 풀리지 않는다 — 손이 가는 길 자체가 몸을 비켜 가야 한다(다음 판). 겹침은 test/arm_mesh.mjs가 잰다
 function armHit(world, sh, ik, tb = null, extra = 0, extraAll = 0) {
   let worst = null;
-  const isT = Array.isArray(tb) ? x => tb.includes(x) : x => x === tb, test = (p, r0, t) => { for (const x of world.boxes) { if (x.kind === 'floor') continue; const h = sphereBox(p, r0 + extraAll + (isT(x) ? ARM_PAD_GRIP : ARM_PAD), x); if (h && (!worst || h.d > worst.d)) worst = { d: h.d, n: h.n, t, box: x.name }; } };
+  // p3d-0.15.7(성능): 재는 점은 모두 어깨–팔꿈치–손목의 두 선분 위에 있다. 세 점을 싸는 상자를 가장 큰 반지름만큼 부풀려, 거기에 닿지 않는 지형 상자는 미리 뺀다(그런 상자는 어느 점에서도 반지름보다 멀다 — 결과 같음. OLDARMHITALL = 전처럼)
+  const RM = ARM_RMAX + Math.max(extra, 0) + extraAll + ARM_PAD, e = ik.end, m = ik.mid, x0 = Math.min(sh.x, m.x, e.x) - RM, x1 = Math.max(sh.x, m.x, e.x) + RM, y0 = Math.min(sh.y, m.y, e.y) - RM, y1 = Math.max(sh.y, m.y, e.y) + RM, z0 = Math.min(sh.z, m.z, e.z) - RM, z1 = Math.max(sh.z, m.z, e.z) + RM;
+  const BX = globalThis.OLDARMHITALL ? world.boxes : world.boxes.filter(x => x.kind !== 'floor' && x.max.x >= x0 && x.min.x <= x1 && x.max.y >= y0 && x.min.y <= y1 && x.max.z >= z0 && x.min.z <= z1);
+  const isT = Array.isArray(tb) ? x => tb.includes(x) : x => x === tb, test = (p, r0, t) => { for (const x of BX) { if (x.kind === 'floor') continue; const h = sphereBox(p, r0 + extraAll + (isT(x) ? ARM_PAD_GRIP : ARM_PAD), x); if (h && (!worst || h.d > worst.d)) worst = { d: h.d, n: h.n, t, box: x.name }; } };
   for (const [t, r] of ARM_PTS) test(ik.mid.clone().lerp(ik.end, t), r, t);
   const fore = worst;
   let up = null; { const keep = worst; worst = null; for (const [t, r] of ARM_UP) test(sh.clone().lerp(ik.mid, t), r + extra, -1); up = worst; worst = up && (!keep || up.d > keep.d) ? up : keep; }

@@ -34,7 +34,8 @@ const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], sub = (a, b) => [
 const nrm = a => { const l = len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
 const hp = (x, e = 0.004) => 0.5 * (x + Math.sqrt(x * x + e * e)); // 매끄러운 max(0, x)
 // 점에서 가장 가까운 상자 겉까지(안이면 음수)
-function sdBoxes(boxes, p) { let m = 9; for (const b of boxes) { const dx = Math.max(b.min[0] - p[0], 0, p[0] - b.max[0]), dy = Math.max(b.min[1] - p[1], 0, p[1] - b.max[1]), dz = Math.max(b.min[2] - p[2], 0, p[2] - b.max[2]), o = Math.hypot(dx, dy, dz);
+// p3d-0.15.7(성능 — 전신 자세 풀이 시간의 대부분이 이 함수였다): 한 축으로 이미 m보다 먼 상자는 거리를 재지 않고 넘긴다(세 축 거리의 합성은 가장 큰 축 거리보다 작을 수 없다 — climb.js boxDist와 같은 방식. OLDSDBOX = 전처럼)
+function sdBoxes(boxes, p) { let m = 9; const fast = !globalThis.OLDSDBOX; for (const b of boxes) { const dx = Math.max(b.min[0] - p[0], 0, p[0] - b.max[0]); if (fast && dx >= m) continue; const dy = Math.max(b.min[1] - p[1], 0, p[1] - b.max[1]); if (fast && dy >= m) continue; const dz = Math.max(b.min[2] - p[2], 0, p[2] - b.max[2]); if (fast && dz >= m) continue; const o = Math.hypot(dx, dy, dz);
     const d = o > 0 ? o : -Math.min(p[0] - b.min[0], b.max[0] - p[0], p[1] - b.min[1], b.max[1] - p[1], p[2] - b.min[2], b.max[2] - p[2]); if (d < m) m = d; } return m; }
 // 두 마디 IK의 가운데 관절(무릎·팔꿈치) 자리
 const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
