@@ -109,7 +109,7 @@ function resid(x, c, out) {
   const qHi = qinv(g.qH);
   const KN = [null, null];
   for (let i = 0; i < 2; i++) { const Lg = c.legs[i], sx = i ? -1 : 1;
-    if (Lg.st === 0) { r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; continue; }
+    if (Lg.st === 0) { r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; r[n++] = 0; continue; }
     const k = Lg.st === 1 ? 1 : W.moveK * Lg.w, d3 = sub(Lg.ank, g.hj[i]), d = len(d3) || 1e-6, v = qrot(qHi, mul(d3, 1 / d)), out = v[0] * sx;
     // 하중을 받는 발 위로 고관절이 간다(다리가 받치는 힘의 방향과 다리 축이 맞도록 — "엉덩이를 디딘 발 위로"). 하중만큼만
     if (Lg.st === 1) { const dl = d3[0] * g.L[0] + d3[2] * g.L[2], df = d3[0] * g.F[0] + d3[2] * g.F[2]; r[n++] = W.over * Lg.load * dl; r[n++] = W.over * 0.5 * Lg.load * df; } else { r[n++] = 0; r[n++] = 0; }
@@ -117,7 +117,14 @@ function resid(x, c, out) {
     const aw = Lg.aW !== null && Lg.aW !== undefined ? Lg.aW * Math.PI / 180 : null, pole = qrot(g.qH, nrm(aw !== null ? [sx * Math.sin(aw), 0.1, Math.cos(aw)] : [sx * 0.57, 0.1, 0.82])), kn = midJoint(g.hj[i], Lg.ank, DIM.thigh, DIM.shin, pole), th = [(g.hj[i][0] + kn[0]) / 2, (g.hj[i][1] + kn[1]) / 2, (g.hj[i][2] + kn[2]) / 2];
     r[n++] = W.knee * (Lg.kw || 1) * hp(c.kneeClr - sdBoxes(c.boxes, kn)) * k; r[n++] = W.thigh * (Lg.kw || 1) * hp(c.kneeClr * 0.8 - sdBoxes(c.boxes, th)) * k;
     // 고관절의 범위(src/anat.js): 넘으려 하면 골반이 돌거나 기울어 범위 안으로 들인다(여유 6°부터)
-    r[n++] = W.hip * hp(legExcess(g.qH, g.hj[i], kn, Lg.ank, sx) + 0.10, 0.02) * k; KN[i] = Lg.pole ? midJoint(g.hj[i], Lg.ank, DIM.thigh, DIM.shin, Lg.pole) : kn; }
+    r[n++] = W.hip * hp(legExcess(g.qH, g.hj[i], kn, Lg.ank, sx) + 0.10, 0.02) * k;
+    // p3d-0.15.7(c.hipB — 전신 연결 켬에서만): 위의 항은 골반의 틀로만 재서, 골반을 얼마든지 돌려 범위에 맞출 수 있었다. 물리의 판정(climb.js hipHold)은 **곧은 틀**(몸이 보는 쪽)로도 재고 골반이 도와줄 수 있는 몫을 12°로 본다 —
+    //   한 발로 올라서서 가만히 있는 동안 풀이가 골반을 45° 돌려(골반의 틀 −7°) 곧은 틀로는 36° 넘은 자세를 만들었고, 물리가 0.25초 뒤 그 디딘 발을 떼어 몸이 떨어졌다(발 보조가 켜져 있으면 보조가 다시 디뎌 가려졌다).
+    //   풀이도 곧은 틀의 넘침을 본다: 물리가 발을 떼는 값(골반 몫 12° + 버티는 여유 22°)보다 c.hipB만큼 앞에서부터. OLDHIPB = 끔
+    //   재는 무릎은 "바라는 무릎"(kn)이 아니라 **앞 걸음에 실제로 고른 무릎 방향**(Lg.pole)이다 — 풀이는 무릎이 바라는 각에 있다고 보고 골반을 돌려 벽과의 여유를 만들지만, 다리 IK는 벽·턱의 여유로 다른 각을 고른다
+    //   (재 보니 풀이가 본 곧은 틀의 넘침은 −11~−17°, 물리가 실제 무릎으로 잰 값은 +36°였다 — 바라는 무릎으로 재면 이 항은 아무 일도 하지 않았다)
+    KN[i] = Lg.pole ? midJoint(g.hj[i], Lg.ank, DIM.thigh, DIM.shin, Lg.pole) : kn;
+    r[n++] = c.hipB !== null && c.hipB !== undefined ? W.hip * hp(legExcess(qY(c.yaw), g.hj[i], KN[i], Lg.ank, sx) - c.hipB, 0.02) * k : 0; }
   // p3d-0.11.6: 두 다리가 서로 지나가지 않게(정강이 ↔ 다른 다리의 넓적다리·정강이). 엇갈려 디딘 다리가 있으면 골반이 돌거나 물러나 자리를 만든다 — 몸 위로(W)에 엉덩이가 벽으로 다가가며 디딘 오른쪽 넓적다리가 엇갈린 왼쪽 정강이를 12cm 지나갔다(leg_cross)
   if (KN[0] && KN[1] && !globalThis.OLDLEGX && !globalThis.NOLX_FB) { let gp = 9; for (let i = 0; i < 2; i++) { const j = 1 - i, sh0 = KN[i], sh1 = c.legs[i].ank, tA = lerp3(g.hj[j], KN[j], 0.35);
       gp = Math.min(gp, segDist(sh0, sh1, tA, KN[j]) - 0.12, segDist(sh0, sh1, KN[j], c.legs[j].ank) - 0.10); }
@@ -138,7 +145,7 @@ function solveSPD(A, b, n) { for (let i = 0; i < n; i++) { for (let j = 0; j <= 
   const y = new Float64Array(n); for (let i = 0; i < n; i++) { let s = b[i]; for (let k = 0; k < i; k++) s -= A[i * n + k] * y[k]; y[i] = s / A[i * n + i]; }
   const x = new Float64Array(n); for (let i = n - 1; i >= 0; i--) { let s = y[i]; for (let k = i + 1; k < n; k++) s -= A[k * n + i] * x[k]; x[i] = s / A[i * n + i]; } return x; }
 
-const R0 = new Float64Array(112), R1 = new Float64Array(112), JJ = new Float64Array(112 * NF), AA = new Float64Array(NF * NF), GG = new Float64Array(NF);
+const R0 = new Float64Array(120), R1 = new Float64Array(120), JJ = new Float64Array(120 * NF), AA = new Float64Array(NF * NF), GG = new Float64Array(NF);
 // 풀이 한 걸음(감쇠 최소제곱, 수치 미분). xs를 그 자리에서 고친다. 돌려주는 값 = 값(비용)
 // stepMax = 한 걸음에 옮기는 가장 큰 양(기본 FBW.step. 미리보기의 "뻗어 본 자세"는 시간에 따라 움직이는 것이 아니어서 크게 준다 — climb.js reachShift)
 export function solveStep(xs, c, iters = 1, stepMax = FBW.step) {
@@ -168,5 +175,5 @@ export function fbFollow(fb, xsT, dt) { for (let i = 0; i < NF; i++) follow(fb, 
 // 풀이 값 xs에서 잡은 팔 i의 걸린 깊이 [몸통, 머리](climb.js가 손을 뻗기 시작할 때의 값을 적어 두는 데 쓴다)
 export const fbHeldPen = (xs, c, i) => { const A = c.arms[i]; if (!A || !A.pole) return null; const g = fk(xs, c.pos, c.yaw); return heldPen(g, g.sh[i], A.goal, A.pole, c.headE); };
 // 시험·진단용: 풀이 값 xs에서의 잔차와 몸의 자리
-export const fbDebug = (xs, c) => { const r = new Float64Array(112), n = resid(xs, c, r), g = fk(xs, c.pos, c.yaw), hd = add(g.chest, qrot(g.qC, [DIM.oNeck[0] + DIM.oHead[0] + DIM.headCT[0], DIM.oNeck[1] + DIM.oHead[1] + DIM.headCT[1], DIM.oNeck[2] + DIM.oHead[2] + DIM.headCT[2]])); return { r: Array.from(r.slice(0, n)), g, hd, sdHead: sdBoxes(c.boxesHead, hd), headR: DIM.headR }; };
+export const fbDebug = (xs, c) => { const r = new Float64Array(120), n = resid(xs, c, r), g = fk(xs, c.pos, c.yaw), hd = add(g.chest, qrot(g.qC, [DIM.oNeck[0] + DIM.oHead[0] + DIM.headCT[0], DIM.oNeck[1] + DIM.oHead[1] + DIM.headCT[1], DIM.oNeck[2] + DIM.oHead[2] + DIM.headCT[2]])); return { r: Array.from(r.slice(0, n)), g, hd, sdHead: sdBoxes(c.boxesHead, hd), headR: DIM.headR }; };
 export const FBI = { PX, PY, PZ, YH, PH, RH, YC, PC, RC, SL, SR };

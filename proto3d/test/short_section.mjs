@@ -22,6 +22,10 @@ export const ROUTES = {
   c: [['hand', 0, '초록 시작1'], ['hand', 1, '초록 시작2'], ['hand', 0, '초록 3'], ['hand', 1, '초록 4'], ['W', 1.5], ['hand', 0, '초록 5'], ['hand', 1, '초록 6'], ['W', 0.8], ['hand', 0, '초록 6', -0.07]],
   // d: 시작 홀드를 잡은 채 발부터(손은 어깨 높이) — 발 하나를 디디고 W
   d: [['hand', 0, '초록 시작1'], ['hand', 1, '초록 시작2'], ['foot', 0, '초록 발1'], ['W', 0.8], ['foot', 1, '초록 발2'], ['W', 0.8], ['hand', 0, '초록 3'], ['hand', 1, '초록 4'], ['foot', 0, '초록 발3'], ['W', 0.8], ['foot', 1, '초록 발4'], ['W', 0.8], ['hand', 0, '초록 5'], ['hand', 1, '초록 6'], ['W', 0.5], ['hand', 0, '초록 6', -0.07]],
+  // p3d-0.15.7(발 보조 끔이 기본): 발을 직접 고르는 길. e = 가의 순서에서 "같은 쪽 손을 옮기기 전에 그쪽 발부터"(발4 → 오른손 6), f = 나에서 닿지 않는 높은 발(발4) 명령을 뺀 것, g = e에서 손 5·6을 먼저 잡고 발3·발4
+  e: [['hand', 0, '초록 시작1'], ['hand', 1, '초록 시작2'], ['hand', 0, '초록 3'], ['hand', 1, '초록 4'], ['foot', 0, '초록 발1'], ['W', 0.8], ['foot', 1, '초록 발2'], ['W', 0.8], ['hand', 0, '초록 5'], ['foot', 0, '초록 발3'], ['W', 0.8], ['foot', 1, '초록 발4'], ['hand', 1, '초록 6'], ['W', 0.6], ['hand', 0, '초록 6', -0.07]],
+  f: [['hand', 0, '초록 시작1'], ['hand', 1, '초록 시작2'], ['hand', 0, '초록 3'], ['hand', 1, '초록 4'], ['foot', 1, '초록 발2'], ['W', 0.8], ['foot', 0, '초록 발3'], ['W', 0.8], ['hand', 0, '초록 5'], ['hand', 1, '초록 6'], ['W', 0.6], ['hand', 0, '초록 6', -0.07]],
+  g: [['hand', 0, '초록 시작1'], ['hand', 1, '초록 시작2'], ['hand', 0, '초록 3'], ['hand', 1, '초록 4'], ['foot', 0, '초록 발1'], ['W', 0.8], ['foot', 1, '초록 발2'], ['W', 0.8], ['hand', 0, '초록 5'], ['hand', 1, '초록 6'], ['foot', 0, '초록 발3'], ['W', 0.8], ['foot', 1, '초록 발4'], ['W', 0.6], ['hand', 0, '초록 6', -0.07]],
 };
 export function runRoute(steps, opt = {}) {
   const sim = makeSim(rig, world, CLIPS), out = [], rec = []; sim.reset({ pos: C.startPos, yaw: C.startYaw }); const K = sim.climb;
@@ -45,11 +49,12 @@ export function runRoute(steps, opt = {}) {
     else if (kind === 'foot') { const p = top(box(b2)); look = p.toArray(); step(24); manual[a] = null; step(1, {}, [{ type: 'foot', i: a, p: p.toArray() }]); let k = 0; for (; k < 300; k++) { step(1); const f = K.feet[a]; if (f.st === 'plant' && f.box && f.box.name === b2) break; if (f.st !== 'move' && k > 20) break; } step(36);
       const f = K.feet[a]; if (f.st === 'plant' && f.box && f.box.name === b2) { manual[a] = b2; res = '디딤'; } else res = `못 디딤(${f.why || '-'} · 지금 ${feetNow()[a]})`; }
     else if (kind === 'W') { step(Math.round(a * 120), { cy: 1 }); step(36); res = `몸 높이 ${sim.body.pos.y.toFixed(2)}m`; }
+    else if (kind === 'wait') { step(Math.round(a * 120)); res = `기다림 · 몸 높이 ${sim.body.pos.y.toFixed(2)}m`; }
     for (let i = 0; i < 2; i++) if (manual[i] && feetNow()[i] !== manual[i] && !moved.some(m => m.includes(`${i ? '오른발' : '왼발'}`) && m.includes(manual[i]))) moved.push(`${(sim.tick / 120).toFixed(2)}초 ${i ? '오른발' : '왼발'}이 ${manual[i]}에 있지 않음(지금 ${feetNow()[i]})`);
     for (let i = 0; i < 2; i++) if (manual[i] && feetNow()[i] !== manual[i]) manual[i] = null;
-    out.push({ step: `${kind === 'W' ? 'W ' + a + '초' : (kind === 'hand' ? (a ? '오른손' : '왼손') : (a ? '오른발' : '왼발')) + ' → ' + b2}`, res, t: +((sim.tick - t0) / 120).toFixed(2), hands: handsNow(), feet: feetNow(), y: +sim.body.pos.y.toFixed(2) }); if (opt.trace) console.log(`  ${out[out.length - 1].step}: ${res} · ${((sim.tick - t0) / 120).toFixed(2)}초 · 손 ${handsNow().join('/')} · 발 ${feetNow().join('/')} · 몸 ${sim.body.pos.y.toFixed(2)}m`); }
+    out.push({ step: `${kind === 'W' ? 'W ' + a + '초' : kind === 'wait' ? a + '초 기다림' : (kind === 'hand' ? (a ? '오른손' : '왼손') : (a ? '오른발' : '왼발')) + ' → ' + b2}`, res, t: +((sim.tick - t0) / 120).toFixed(2), hands: handsNow(), feet: feetNow(), y: +sim.body.pos.y.toFixed(2) }); if (opt.trace) console.log(`  ${out[out.length - 1].step}: ${res} · ${((sim.tick - t0) / 120).toFixed(2)}초 · 손 ${handsNow().join('/')} · 발 ${feetNow().join('/')} · 몸 ${sim.body.pos.y.toFixed(2)}m`); }
   step(120); const ok = K.hands.every(h => h.st === 'hold' && h.edge && h.edge.box.name === '초록 6');
-  return { ok, out, moved, rel, relWhy, rej, st, optLine: provOptLine(sim), opts: { handMode: 1, ...sim.opt }, t: +(sim.tick / 120).toFixed(2), rec, hands: handsNow(), feet: feetNow(), audit: sim.climb.planAudit || null, waits };
+  return { ok, out, moved, rel, relWhy, rej, st, optLine: provOptLine(sim), opts: { handMode: 1, ...sim.opt }, t: +(sim.tick / 120).toFixed(2), rec, hands: handsNow(), feet: feetNow(), audit: sim.climb.planAudit || null, waits, log: K.log.slice() };
 }
 if (import.meta.url === pathToFileURL(process.argv[1]).href) { console.log(provLine(prov()));
   for (const r of (E.ROUTE || 'a,b,c,d').split(',')) { const R = runRoute(ROUTES[r], { keepHold: E.KEEP === '1', footAssist: E.FOOT !== '0', trace: !!E.TRACE, link: E.LINK === '1' });
