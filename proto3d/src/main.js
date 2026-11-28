@@ -16,7 +16,9 @@ import { poseRaw } from './clipmotion.js';
 import { buildProps, makeSwingRope, applyGrips } from './demo.js'; // 캡처 동작 자료(빌드할 때 assets_local/clips.json이 있으면 들어온다. 없으면 null)
 
 export const VERSION = 'p3d-0.15.6';
-const params = new URLSearchParams(location.search);
+// p3d-0.15.7: 한 파일로 주는 시험 빌드는 설정을 파일 안에 적어 둔다(P3D_PROFILE = 주소의 ? 뒤와 같은 글. 예: "link=1&plan=1&guard=1&foot=0"). 주소에 적은 값이 그보다 먼저다.
+//   0.15.6의 "해 보기" 파일은 기본 빌드를 주소만 바꿔 여는 작은 파일이라 기본 빌드가 같은 폴더에 있어야 했고, 주소로 켠 설정이 저장되어 다른 파일을 열 때 섞일 수 있었다(GPT의 0.15.6 검토)
+const params = new URLSearchParams(globalThis.P3D_PROFILE || ''); for (const [k, v] of new URLSearchParams(location.search)) params.set(k, v);
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: params.has('test') });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = !params.has('noshadow');
 document.body.appendChild(renderer.domElement);
@@ -48,17 +50,22 @@ loadKeys();
 const input = makeInput(renderer.domElement);
 const pending = []; // 다음 계산 걸음에 한 번만 들어갈 명령(손발 보내기·놓기)
 // 고를 수 있는 조작 설정(저장됨). handMode 1 = 눌러 보내기, 2 = 누르는 동안 뻗기(떼면 잡기). footAssist = 발 보조(간편 조작). diag = 진단 정보. helpAll = 조작표 모두 보기
-const OPT = { handMode: 1, grabAssist: true, poseAssist: true, easy: true, autoBody: true, keepHold: false, press: true, linkPose: false, planReach: false, autoGuard: false, footAssist: true, wallRest: false, diag: false, helpAll: false, helpFold: true, dev: false, oldPose: false };
+const OPT = { handMode: 1, grabAssist: true, poseAssist: true, easy: true, autoBody: true, keepHold: false, press: true, linkPose: false, planReach: false, autoGuard: false, footAssist: false, wallRest: false, diag: false, helpAll: false, helpFold: true, dev: false, oldPose: false };
 // 조작표 접힘(p3d-0.15.5: 새 프로필의 기본 = 접힘). 저장된 값은 사용자가 K로 직접 고른 것(helpFoldSet)일 때만 따른다 — 0.15.3·0.15.4는 고르지 않아도 기본값(펼침)을 저장했다
-try { const sv = JSON.parse(localStorage.getItem('p3dOpt_v1') || '{}'); if (!sv.helpFoldSet) delete sv.helpFold; Object.assign(OPT, sv); } catch (e) { OPT.handMode = 1; }
+// 발 보조(p3d-0.15.7, 사용자 결정 2026-11-28: **기본 끔** — 직접 디디는 것이 기본. F = 켬(초보자용 자동 발, 옵션으로 남긴다)). 저장된 값은 사용자가 F로 직접 고른 것(footAssistSet)일 때만 따른다 —
+//   0.15.6까지는 고르지 않아도 옛 기본값(켬)을 저장했으므로, 그 값이 새 기본을 덮어쓰지 않게 한다. 주소의 ?foot=1|0 이 저장된 값보다 먼저다(시험·비교 진입 파일이 켬·끔을 분명히 적는다)
+let SAVED0 = {}; try { const sv = JSON.parse(localStorage.getItem('p3dOpt_v1') || '{}'); if (!sv.helpFoldSet) delete sv.helpFold; if (!sv.footAssistSet) delete sv.footAssist; SAVED0 = { ...sv }; Object.assign(OPT, sv); } catch (e) { OPT.handMode = 1; }
+// 주소·파일 안의 설정으로 정한 값(URLK)은 저장하지 않는다(그 실행에만 쓴다) — 사용자가 그 뒤에 키로 직접 바꾸면 그때부터 저장한다(userSet)
+const URLK = new Set(), urlOpt = (p, k) => { if (params.has(p)) { OPT[k] = params.get(p) !== '0'; URLK.add(k); } }, userSet = k => URLK.delete(k);
+urlOpt('foot', 'footAssist');
 // 비교 후보(p3d-0.15.2): ?keep=1 = 보조가 먼저 잡은 손을 놓지 않음(기본 끔. 키를 새로 두지 않는다 — GPT의 0.15.1 재검토). 저장된 설정보다 주소가 먼저다
-if (params.has('keep')) OPT.keepHold = params.get('keep') !== '0';
+urlOpt('keep', 'keepHold');
 // 전신 연결(p3d-0.15.3 — **비교 후보, 화면 기본 끔**. 닿는 범위·버티는 범위가 달라지는 변경이라 사용자·GPT의 결정 전에는 기본으로 두지 않는다): ?link=1 = 켬(개발 모드의 9 키로도). 저장된 설정보다 주소가 먼저다
-if (params.has('link')) OPT.linkPose = params.get('link') !== '0';
+urlOpt('link', 'linkPose');
 // 뻗기 전 검사(p3d-0.15.5, 비교 후보 — 기본 끔, 키 없음): ?plan=1
-if (params.has('plan')) OPT.planReach = params.get('plan') !== '0';
+urlOpt('plan', 'planReach');
 // 자동 이동 보호(p3d-0.15.6, 비교 후보 — 기본 끔, 키 없음): ?guard=1
-if (params.has('guard')) OPT.autoGuard = params.get('guard') !== '0';
+urlOpt('guard', 'autoGuard');
 // 비교 스위치(p3d-0.15.4, 견주는 영상·시험용): ?sw=NOHELDCLR,FOLD_KEEP=0.3 → 계산의 전역 비교 스위치를 켠다(시험의 환경 변수와 같은 이름). 화면 위쪽에 켠 스위치를 적는다
 const SW_URL = (params.get('sw') || '').split(',').filter(Boolean); for (const k of SW_URL) { const [a, v] = k.split('='); if (/^[A-Z][A-Z0-9_]*$/.test(a)) globalThis[a] = v === undefined ? 1 : +v; }
 // 개발 모드(p3d-0.15.3): F2 또는 ?dev — 개발 키(잡기 보정 U·자세 보조 Y·누르기 P·전신 연결 9·벽 딛기 J·몸 자세 O·진단 I·뼈대 B·느리게 N·모션 M·동작 보기 G)는 이때만 듣는다. 진단 정보도 이때만 보인다
@@ -70,7 +77,7 @@ const MANUAL = /[?&]manual\b/.test(location.search); if (MANUAL) { OPT.footAssis
 // p3d-0.11.9 비교용: 주소에 ?oldrise 를 붙이면 몸 위로(W)가 옛 빠르기(초속 약 0.25m)로 돈다(새 빠르기 = 누른 빠르기 0.5m/s를 따라감). 화면 왼쪽 위에 표시
 const OLDRISE_URL = /[?&]oldrise\b/.test(location.search); if (OLDRISE_URL) globalThis.OLDRISE = 1;
 const FOOTX = /[?&]footx\b/.test(location.search); if (FOOTX) setKeys('footMod', ['KeyX'], false);
-const saveOpt = () => { if (MANUAL) return; try { localStorage.setItem('p3dOpt_v1', JSON.stringify(OPT)); } catch (e) { return; } };
+const saveOpt = () => { if (MANUAL) return; const o = { ...OPT }; for (const k of URLK) { if (k in SAVED0) o[k] = SAVED0[k]; else delete o[k]; } try { localStorage.setItem('p3dOpt_v1', JSON.stringify(o)); } catch (e) { return; } };
 // 계산이 읽는 설정은 이 한곳에서만 옮긴다(p3d-0.15.3: 다섯 군데에 흩어져 있어 새 설정을 빠뜨리기 쉬웠다)
 function syncOpt() { for (const k of ['footAssist', 'grabAssist', 'poseAssist', 'easy', 'autoBody', 'keepHold', 'press', 'linkPose', 'planReach', 'autoGuard', 'wallRest']) sim.opt[k] = OPT[k]; sim.climb.oldPose = OPT.oldPose; DIAG = !!(OPT.dev && DIAG); input.setDev(OPT.dev); }
 syncOpt();
@@ -307,7 +314,7 @@ function drawHud(fps) {
   hud.innerHTML = (!OPT.dev ? `<div class=ver>${VERSION}${SW_URL.length ? ' · 비교 스위치 ' + SW_URL.join(',') : ''}</div>` : `<div class=ver>3D 모션 시제품 ${VERSION}${OLDRISE_URL ? ' · W 옛 빠르기(?oldrise)' : ''} · ${BODY === 'old' ? '옛 몸(자작)' : '사람형 몸(Quaternius 마네킹, CC0) · 자세 ' + ({ fb: '전신 자세 풀이(O = 옛 규칙과 바꾸기)', rule: '옛 규칙 0.10.4(O = 전신 자세 풀이)', base: '0.10.0', solve: '함께 고르기(실험)', ref: '참고 자세(실험)' })[POSTURE] + (globalThis.GRIP_FRAME ? ' · 손 접촉 틀(실험)' : '')}${SW_URL.length ? ' · 비교 스위치 ' + SW_URL.join(',') : ''}</div>`)
     + (!OPT.dev ? '' : K.on ? `<div><b>동작</b> 벽 등반(IK) <span class=dim>· 지상 동작: ${sim.clipSet && sim.useClip ? '캡처' : '자작'}</span></div>` : `<div><b>모션</b> ${!sim.clipSet ? '자작(코드로 만든 동작)' : sim.useClip ? `캡처 동작${cap ? '' : ' → 지금은 자작(웅크림·점프·착지)'}` : '자작(코드로 만든 동작)'}</div>`)
     + gymLine() + `<div><b>문맥</b> <span class=ctx>${viewMode ? '시점 보기 · 조작 멈춤' : K.on ? '벽 등반' : '지상 조작'}</span> &nbsp; <b>상태</b> ${stateName()}${DIAG ? ` &nbsp; <b>속도</b> ${(K.on ? body.vel.length() : v).toFixed(2)} m/s` : ''}</div>`
-    + `<div class=dim>${OPT.dev ? `손 조작 ${OPT.handMode === 2 ? '2 · 누르는 동안 뻗고 떼면 잡기' : '1 · 눌러 보내기'} &nbsp; 발 보조 ${OPT.footAssist ? '켬' : '끔'} &nbsp; 쉬운 조작 ${OPT.easy ? '켬' : '끔'} &nbsp; 자동 몸 맞추기 ${OPT.easy && OPT.autoBody ? '켬' : '끔'}` : [OPT.handMode === 2 ? '손 조작 2' : '', OPT.footAssist ? '' : '발 보조 끔', OPT.easy ? '' : '쉬운 조작 끔', OPT.easy && !OPT.autoBody ? '자동 몸 맞추기 끔' : ''].filter(Boolean).join(' &nbsp; ')}${devLine()}${OPT.keepHold ? ' &nbsp; <b>비교: 보조가 잡은 손을 놓지 않음</b>' : ''}${OPT.wallRest ? ' &nbsp; <b>실험: 벽 딛기 켬</b>' : ''}${OPT.oldPose ? ' &nbsp; <b>비교: 옛 몸 자세(0.8.8)</b>' : ''}${FOOTX ? ' &nbsp; <b>발 선택 = X(시범 프로필)</b>' : ''}${MANUAL ? ' &nbsp; <b>수동 발 프로필</b>(저장하지 않음)' : ''}</div>`
+    + `<div class=dim>${OPT.dev ? `손 조작 ${OPT.handMode === 2 ? '2 · 누르는 동안 뻗고 떼면 잡기' : '1 · 눌러 보내기'} &nbsp; 발 보조 ${OPT.footAssist ? '켬' : '끔'} &nbsp; 쉬운 조작 ${OPT.easy ? '켬' : '끔'} &nbsp; 자동 몸 맞추기 ${OPT.easy && OPT.autoBody ? '켬' : '끔'}` : [OPT.handMode === 2 ? '손 조작 2' : '', OPT.footAssist ? '발 보조 켬(자동 발)' : '', OPT.easy ? '' : '쉬운 조작 끔', OPT.easy && !OPT.autoBody ? '자동 몸 맞추기 끔' : ''].filter(Boolean).join(' &nbsp; ')}${devLine()}${OPT.keepHold ? ' &nbsp; <b>비교: 보조가 잡은 손을 놓지 않음</b>' : ''}${OPT.wallRest ? ' &nbsp; <b>실험: 벽 딛기 켬</b>' : ''}${OPT.oldPose ? ' &nbsp; <b>비교: 옛 몸 자세(0.8.8)</b>' : ''}${FOOTX ? ' &nbsp; <b>발 선택 = X(시범 프로필)</b>' : ''}${MANUAL ? ' &nbsp; <b>수동 발 프로필</b>(저장하지 않음)' : ''}</div>`
     + (K.on && K.upWhy && UP_KO[K.upWhy] ? `<div class=warn>${UP_KO[K.upWhy][0]} <span class=dim>${UP_KO[K.upWhy][1]}</span></div>` : '')
     + (K.on ? `<div><b>손</b> ${K.hands.map((h, i) => `${i ? '오른손' : '왼손'} ${h.st === 'hold' ? `잡음(${h.edge.box.name}${DIAG ? `, 몸무게의 ${(h.loadS || 0).toFixed(1)}배` : ''})` : h.st === 'reach' ? '보내는 중' : '놓음'}`).join(' · ')}</div><div><b>발</b> ${K.feet.map((f, i) => `${i ? '오른발' : '왼발'} ${f.st === 'plant' ? ((f.loadS || 0) > 0.05 ? `디딤(${f.box.name}${DIAG ? `, ${(f.loadS || 0).toFixed(1)}배` : ''})` : `닿아만 있음(${f.box.name})`) : f.st === 'move' ? '보내는 중' : '떠 있음'}`).join(' · ')}</div>`
       : `<div><b>발</b> ${sim.motion.legs.map((L, i) => `${L.s === 'L' ? '왼발' : '오른발'} ${footName(L, i)}`).join(' · ')}</div>`)
@@ -345,14 +352,14 @@ function frame(now) {
   if (input.wasPressed('autoBody')) { OPT.autoBody = !OPT.autoBody; syncOpt(); saveOpt(); }
   if (input.wasPressed('easy')) { OPT.easy = !OPT.easy; syncOpt(); aim.resync = true; saveOpt(); }
   if (input.wasPressed('grabAssist')) { OPT.grabAssist = !OPT.grabAssist; syncOpt(); saveOpt(); }
-  if (input.wasPressed('footAssist')) { OPT.footAssist = !OPT.footAssist; syncOpt(); pending.push({ type: 'assistResume' }); saveOpt(); }
+  if (input.wasPressed('footAssist')) { OPT.footAssist = !OPT.footAssist; OPT.footAssistSet = true; userSet('footAssist'); syncOpt(); pending.push({ type: 'assistResume' }); saveOpt(); }
   if (input.wasPressed('wallRest')) { OPT.wallRest = !OPT.wallRest; syncOpt(); pending.push({ type: 'assistResume' }); saveOpt(); }
   if (input.wasPressed('diag')) { OPT.diag = !OPT.diag; syncOpt(); saveOpt(); }
   // 실험 비교(p3d-0.9.0): 몸통 자세의 층을 끄면 0.8.8의 몸통·무릎·발의 길 그대로다. 붙은 손발은 건드리지 않는다(골반과 무릎이 스프링으로 옮겨 간다)
   if (input.wasPressed('poseMode')) { POSTURE = POSTURE === 'fb' ? 'rule' : 'fb'; applyPosture(); }
   if (input.wasPressed('helpAll')) { OPT.helpFold = !OPT.helpFold; OPT.helpFoldSet = true; saveOpt(); }
   if (input.wasPressed('devMode')) { OPT.dev = !OPT.dev; syncOpt(); saveOpt(); }
-  if (input.wasPressed('linkPose')) { OPT.linkPose = !OPT.linkPose; syncOpt(); saveOpt(); }
+  if (input.wasPressed('linkPose')) { OPT.linkPose = !OPT.linkPose; userSet('linkPose'); syncOpt(); saveOpt(); }
   // 몸 좌우 입력의 기준: 화면에서 보이는 오른쪽. 시점이 몸의 옆(벽과 나란한 쪽)에 가까워 불안정할 때는 마지막 부호를 그대로 쓴다
   { const cr = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion), d = -Math.cos(body.yaw) * cr.x + Math.sin(body.yaw) * cr.z; if (Math.abs(d) > 0.3) cxSign = d > 0 ? 1 : -1; }
   updateAim();
